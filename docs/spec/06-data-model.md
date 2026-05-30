@@ -6,7 +6,7 @@ Three stores, each authoritative for its scope (see `01-architecture.md §4`):
 - **Local Device (SQLite, WAL)** — execution detail + in-flight cache.
 - **Agent Container (ephemeral)** — in-memory + workspace files, no durable user data.
 
-> **Ownership model:** `admin` (operator) manages **devices** and the **skill vault**; a `user` (customer) owns **agents/jobs/files** but never owns or sees devices. The platform places a customer's agent onto an admin-managed device.
+> **Ownership model:** `admin` (operator) manages **devices**, the **agent pool**, and the **skill vault**; a `user` (customer) owns **jobs/files** but never owns or sees devices. Agents are pooled resources — they are temporarily **allocated** to a customer's job and **released** back to the pool on job completion.
 
 IDs are **UUIDv7** (time-sortable) stored as `uuid`/`TEXT`. Timestamps are UTC (`timestamptz` / ISO-8601 text).
 
@@ -45,23 +45,25 @@ IDs are **UUIDv7** (time-sortable) stored as `uuid`/`TEXT`. Timestamps are UTC (
 
 `UNIQUE(operator_id, name)`. Devices are admin-managed infrastructure; customers never own or directly see devices. Index `idx_devices_operator` on `operator_id`.
 
-### 1.3 `agents`
+### 1.3 `agents` (pooled)
 
 | Column | Type | Notes |
 |--------|------|-------|
 | `id` | uuid PK | |
-| `device_id` | uuid FK→devices NULL | host device, **assigned by the platform scheduler** (not chosen by the customer) |
-| `user_id` | uuid FK→users | owning **customer** |
-| `name` | text NOT NULL | |
+| `device_id` | uuid FK→devices NOT NULL | host device, assigned at pool creation |
+| `user_id` | uuid FK→users NULL | **temporarily** set when allocated to a job; NULL when idle |
+| `name` | text NOT NULL | agent identifier in the pool |
 | `description` | text | |
 | `image` | text NOT NULL | docker image ref |
 | `port` | int NOT NULL | fixed host port on device |
 | `tags` | text[] | specialization tags |
-| `status` | text NOT NULL DEFAULT 'creating' | see agent state machine |
+| `status` | text NOT NULL DEFAULT 'creating' | `creating`/`idle`/`busy`/`unhealthy`/`failed`/`removed` — see pool state machine |
+| `job_id` | uuid FK→jobs NULL | current job when `busy`; NULL when `idle` |
 | `limits` | jsonb NOT NULL | `{cpu, mem_mb, disk_mb}` default `{2,4096,10240}` |
+| `allocated_at` | timestamptz NULL | when the agent became `busy` |
 | `created_at` / `updated_at` | timestamptz | |
 
-`UNIQUE(device_id, port)`, `UNIQUE(user_id, name)`. The customer owns the agent; the platform places it on an admin-managed device. Default 1 agent per user (configurable cap). Index on `user_id`, `device_id`.
+`UNIQUE(device_id, port)`. Agents are **pooled** — they exist independently of any customer. `user_id` is NULL for idle agents and set only during a job's lifetime. Indexes: `idx_agents_status (status)` for fast idle-agent lookup, `idx_agents_device`.
 
 ### 1.4 `jobs`
 
@@ -69,8 +71,8 @@ IDs are **UUIDv7** (time-sortable) stored as `uuid`/`TEXT`. Timestamps are UTC (
 |--------|------|-------|
 | `id` | uuid PK | |
 | `user_id` | uuid FK→users | |
-| `agent_id` | uuid FK→agents | |
-| `device_id` | uuid FK→devices | denormalized for routing |
+| `agent_id` | uuid FK→agents | allocated by the pool allocator; NULL until agent assigned |
+| `device_id` | uuid FK→devices | denormalized for routing; set at allocation |
 | `channel` | text NOT NULL DEFAULT 'web' | source channel |
 | `command` | text NOT NULL | user instruction |
 | `params` | jsonb | structured args |
@@ -199,14 +201,17 @@ Which **principals** (a customer **or** an organization) may **see** a `restrict
 ### 1.15 ER overview
 
 ```
-admin (users.role=admin) ──owns──*  devices ──placement──*  agents
-customer (users.role=user) ──owns──*  agents ──*  jobs ──*  files
-organizations 1──* users            (users.org_id; null = single user)
-jobs ──0..1 skills                   (jobs.skill_id; AT MOST ONE skill per job)
+admin (users.role=admin) ──manages──*  devices
+devices ──pool──*  agents               (pool of containers on each device)
+agents*──0..1 jobs     via agents.job_id (temporary; NULL when idle)
+customer (users.role=user) ──owns──*  jobs ──*  files
+                                      │
+                                      └──0..1 skills  (jobs.skill_id; AT MOST ONE)
+organizations 1──* users               (users.org_id; null = single user)
 
 skills 1──* skill_versions
 devices *──* skills        via device_skills  (admin fleet-wide install)
-agents  *──* skills        via agent_skills   (customer selection, many enabled)
+agents  *──* skills        via agent_skills   (enabled/disabled per agent in pool)
 {users|orgs} *──* skills   via skill_grants   (admin visibility for 'restricted')
 users   1──* refresh_tokens
 audit_log
@@ -234,8 +239,10 @@ CREATE TABLE agents (
   container_id TEXT,              -- docker container id
   port         INTEGER,
   tags         TEXT,              -- json array
-  status       TEXT,
+  status       TEXT,              -- idle / busy / unhealthy / failed / removed
   limits_json  TEXT,
+  user_id      TEXT,              -- NULL when idle; set during job allocation
+  job_id       TEXT,              -- NULL when idle; current job when busy
   restarts     INTEGER DEFAULT 0,
   created_at   TEXT,
   updated_at   TEXT

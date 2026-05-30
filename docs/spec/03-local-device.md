@@ -2,13 +2,13 @@
 
 A single installation on a private machine that manages multiple agents (Docker containers), holds the reverse tunnel to the gateway, stages files, and persists local state in SQLite. No public IP, no inbound ports.
 
-> **Operated by an admin, not customers.** A device is admin-managed infrastructure enrolled with an admin-issued code. It may host agents belonging to **different customers** (placed by the gateway scheduler); the device itself is agnostic to customer identity and just runs the agents/jobs it is told to. Fleet-wide skill installs from the admin apply to **every** agent it hosts.
+> **Operated by an admin, not customers.** A device is admin-managed infrastructure enrolled with an admin-issued code. It maintains a **pool of agent containers** that are temporarily allocated to customer jobs. When a job arrives, the device dispatches it to the allocated agent; when the job completes, the agent returns to the idle pool. The device itself is agnostic to customer identity — it just runs the agents/jobs it is told to. Fleet-wide skill installs from the admin apply to **every** agent in the pool.
 
 ## 1. Goals & Non-Goals
 
 **Goals**
 - Dial-out reverse WebSocket tunnel with robust reconnect.
-- Full Docker lifecycle for agents: create, start, stop, remove, health, recover.
+- Full Docker lifecycle for agent **pool**: create (pre-provision idle agents), start, stop, remove, health, recover, recycle after job completion.
 - Receive jobs/files, dispatch to agents, relay progress/results, clean up data.
 - Survive restarts: reconcile Docker + resume from SQLite.
 
@@ -26,8 +26,8 @@ device/
     ├── __main__.py            # entrypoint / CLI (enroll, run, status)
     ├── config.py              # env + config file, OS-aware paths
     ├── tunnel/                # ws client, framing, ack, reconnect, outbox flush
-    ├── jobs/                  # dispatcher, queue, progress relay
-    ├── docker/                # docker-py wrapper: lifecycle, health, recovery
+    ├── jobs/                  # dispatcher, queue, progress relay, deallocation
+    ├── docker/                # docker-py wrapper: pool lifecycle, health, recovery, reaper
     ├── files/                 # staging, mount, cleanup
     ├── agentclient/           # HTTP client to agent containers
     ├── skills/                # device-wide skill cache, dispatch receive, apply to agents
@@ -53,10 +53,12 @@ iagent-device enroll --gateway https://… --code <enrollment_code>
    → POST /devices/enroll → store device_id + device_token in SQLite/keystore
 
 iagent-device run
-   1. load config + reconcile Docker (adopt/recreate containers from SQLite)
-   2. open tunnel → send HELLO (agents, capabilities, resources)
-   3. start: heartbeat task, job dispatcher, monitor, outbox flusher
-   4. serve frames until shutdown; on disconnect → reconnect loop
+    1. load config + reconcile Docker — ensure pool of N agent containers
+       (create missing idle agents, remove surplus, recycle left-over BUSY from crash)
+    2. open tunnel → send HELLO (pool_size, capabilities, resources)
+    3. start: heartbeat task, job dispatcher + allocator, monitor, outbox flusher,
+       pool reaper (recycle finished-agents)
+    4. serve frames until shutdown; on disconnect → reconnect loop
 ```
 
 Graceful shutdown: stop accepting new jobs, finish/flush in-flight results to outbox, close tunnel with `1000`.
@@ -78,26 +80,33 @@ on JOB_DISPATCH:
   on accept: status DISPATCHED→RUNNING; relay JOB_PROGRESS as events arrive
   on agent callback result: write result to outbox as JOB_RESULT; mark terminal
   always: trigger file cleanup for the job
+  signal pool reaper: this agent is done → return to IDLE
 on JOB_CANCEL:
   POST agent /jobs/{id}/cancel; on confirm emit terminal CANCELLED
+  signal pool reaper: release agent back to IDLE
 ```
 
-- One active job per agent (agents are single-job); extra dispatch → queue depth 1 or `JOB_REJECTED` if busy (policy configurable).
+- Agents are single-job; the gateway allocator never sends two jobs to the same `BUSY` agent.
 - Progress receipt: prefer agent → device callback `POST /jobs/{id}/events`; fallback to polling `GET /jobs/{id}`.
 
-## 7. Docker Manager
+## 7. Docker Manager (Pool Management)
 
-Responsibilities (via docker-py):
+Maintains a pool of agent containers. The pool size is configured per device (default e.g. 4).
+
+### Pool operations
 
 | Action | Detail |
 |--------|--------|
-| create | pull image, create container with limits, fixed host port→container port, labels `iagent.agent_id`, mounts for workspace |
-| start/stop/restart/remove | standard lifecycle; update SQLite + emit AGENT_STATUS |
-| health check | periodic `GET /healthz`; container HEALTHCHECK as backup |
-| recovery | on failure restart up to `max_restarts` (default 3) with backoff; exceed → status FAILED, fail active job |
-| reconcile | on device boot, list containers by label; adopt matching SQLite records, recreate missing, remove orphans |
+| create (scale up) | pull image, create N idle containers with limits, fixed host port→container port, labels `iagent.agent_id`, `iagent.pool=true`, mounts for workspace |
+| start / stop / restart / remove | standard lifecycle; update SQLite + emit AGENT_STATUS |
+| health check | periodic `GET /healthz` per agent; container HEALTHCHECK as backup |
+| recovery | on failure restart up to `max_restarts` (default 3) with backoff; exceed → agent FAILED, remove from pool, create replacement |
+| reconcile (boot) | list containers by `iagent.pool=true` label; adopt matching SQLite records, create missing up to desired pool size, remove surplus, recycle any still-BUSY (orphaned after crash) → IDLE |
+| reaper | after job completion: clear workspace, emit AGENT_STATUS=IDLE, agent ready for next allocation |
 
-Resource limits (default `cpu=2, mem=4GB, disk=10GB`):
+### Resource limits
+
+Default `cpu=2, mem=4GB, disk=10GB` per agent:
 - CPU: `nano_cpus = 2_000_000_000`.
 - Memory: `mem_limit="4g"`.
 - Disk: enforce via image/storage-driver quota where supported; otherwise monitor workspace size and fail job on overflow (documented limitation per platform).

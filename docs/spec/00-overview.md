@@ -36,15 +36,15 @@ Canonical request flow (web channel):
 
 ## 3. Core Features (from goal)
 
-- **Two roles**: **admin (operator)** manages devices + the whole skill lifecycle + skill visibility; **user (customer)** owns agents/jobs/files, sends commands, and selects from visible skills. *Customers do not own or see devices.*
+- **Two roles**: **admin (operator)** manages devices + the agent pool + the whole skill lifecycle + skill visibility; **user (customer)** owns jobs/files and sends commands. *Agents are temporarily allocated to a customer's job and released when the job completes. Customers do not own or see devices.*
 - **Safe gateway**: the only public surface; authenticates users, authorizes actions, isolates tenants.
 - **Multi-channel**: web channel is built now; Feishu / QQ / others are left as an adapter interface (see `07-api.md`).
-- **Multi-agent**: one Docker container per agent; a customer registers agents (default 1, can scale up); the platform places each on an admin-managed device.
+- **Multi-agent + pooled agents**: one Docker container per agent. Agents live in a **pool** managed by the admin. When a customer posts a job, one or more agents are temporarily allocated from the pool; they are released back after the job completes.
 - **Admin-managed device fleet**: admins enroll/operate local devices; a device may host agents from multiple customers.
-- **Cloud skill vault**: skills are stored centrally on the gateway. **Admins** install/disable/update/delete skills across **all** devices and decide **which skills each customer (or organization/group) can see**; **customers** only select which visible skills their agent uses.
+- **Cloud skill vault**: skills are stored centrally on the gateway. **Admins** install/disable/update/delete skills across **all** devices and decide **which skills each customer (or organization/group) can see**; **customers** only select which visible skills their temporarily allocated agents use.
 - **Organizations (groups)**: a customer can be single or belong to a group; admins set the available skills for a whole group at once.
 - **One skill per job**: a customer selects **at most one** skill to execute a given job.
-- **Web UI**: command interface + file upload + skill selection + job control (send/cancel/status) + result display, plus an **admin console** for devices, skill vault, fleet rollout, and visibility. **No terminal access, no raw agent internals — progress-level information only.**
+- **Web UI**: command interface + file upload + skill selection + job control (send/cancel/status) + result display, plus an **admin console** for devices, agent pool, skill vault, fleet rollout, and visibility. **No terminal access, no raw agent internals — progress-level information only.**
 - **User registration & authentication.**
 
 ## 4. Technology Stack
@@ -66,10 +66,10 @@ Canonical request flow (web channel):
 
 | Component | Owns | Does NOT do |
 |-----------|------|-------------|
-| **Cloud Gateway** | User auth + roles, web API, tunnel hub, central DB, agent scheduling, job routing, file relay/staging, skill vault + fleet dispatch + visibility | Run agents, hold long-term user files after delivery |
-| **Local Device** | Tunnel client, Docker lifecycle, agent health/recovery, local job state, file staging & cleanup; admin-operated, hosts multiple customers' agents | Authenticate end users, expose public ports, decide skill policy |
-| **Agent Container** | Execute one job at a time, report progress/result, install/enable/disable skills it is told to | Persist user data after job completion |
-| **Web UI** | Customer: command UX, uploads, skill selection, job control, results. Admin: device fleet + skill vault + fleet rollout + visibility | Show terminals or raw agent logs |
+| **Cloud Gateway** | User auth + roles, web API, tunnel hub, central DB, agent pool + allocation, job routing, file relay/staging, skill vault + fleet dispatch + visibility | Run agents, hold long-term user files after delivery |
+| **Local Device** | Tunnel client, Docker lifecycle (pool of agents), agent health/recovery, local job state, file staging & cleanup; admin-operated, hosts the agent pool | Authenticate end users, expose public ports, decide skill policy |
+| **Agent Container** | Execute one job at a time, report progress/result, install/enable/disable skills it is told to; released back to pool after job done | Persist user data after job completion, belong to any customer permanently |
+| **Web UI** | Customer: command UX, uploads, skill selection, job control, results. Admin: device fleet + agent pool + skill vault + fleet rollout + visibility | Show terminals or raw agent logs |
 
 ## 6. Repository Layout (target)
 
@@ -80,7 +80,7 @@ IAgent/
 │   └── spec/                 # ← these documents
 ├── gateway/                  # Go cloud gateway
 │   ├── cmd/gateway/
-│   ├── internal/{api,tunnel,auth,store,relay,model}/
+│   ├── internal/{api,tunnel,auth,store,relay,pool,model}/
 │   └── migrations/
 ├── device/                   # Python local device service
 │   ├── iagent_device/{tunnel,docker,jobs,store,files}/
@@ -98,11 +98,11 @@ IAgent/
 | Term | Meaning |
 |------|---------|
 | **Gateway** | Public Go service; the safe edge. |
-| **Device** | Local Python service that manages agents on a private machine. |
-| **Agent** | A single AI worker = one Docker container with a fixed HTTP API. |
-| **Job** | A unit of work submitted by the user and executed by one agent. |
+| **Device** | Local Python service that manages an agent pool on a private machine. |
+| **Agent** | A single AI worker = one Docker container with a fixed HTTP API; lives in a pool, temporarily allocated to a job. |
+| **Job** | A unit of work submitted by the user; the system allocates one or more agents from the pool to execute it, then releases them on completion. |
 | **Admin / Operator** | Privileged user who manages the device fleet and the entire skill lifecycle + visibility. |
-| **User / Customer** | End user who owns agents/jobs/files, sends commands, and selects visible skills. Does not own devices. |
+| **User / Customer** | End user who owns jobs/files, sends commands, and selects visible skills. Agents are temporarily allocated per job and released after. Does not own devices. |
 | **Organization / Group** | A group of customers; admins can grant skill visibility to a whole org at once. A user belongs to at most one. |
 | **Skill** | A reusable capability/config stored in the cloud vault and installed into agents. |
 | **Skill Vault** | Central admin-owned catalog + versioned skill artifacts on the gateway, dispatched to devices. |

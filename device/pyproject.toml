@@ -1,0 +1,8 @@
+[project]
+name = "iagent-device"
+version = "0.1.0"
+description = "IAgent local device service — manages Docker containers, reverse tunnel, and agent lifecycle"
+requires-python = ">=3.11"
+
+[project.scripts]
+iagent-device = "iagent_device.__main__:main"

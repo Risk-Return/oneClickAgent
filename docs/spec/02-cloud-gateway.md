@@ -25,6 +25,7 @@ gateway/
     │   ├── auth/ devices/ agents/ jobs/ files/ skills/ ws/
     ├── auth/                      # JWT issue/verify, password hashing, RBAC
     ├── tunnel/                    # WS hub, device registry, frame codec, router
+    ├── pool/                      # agent pool allocator: select idle agent, allocate, release, scale
     ├── relay/                     # file staging + chunked push over tunnel
     ├── skillvault/                # skill catalog + artifact storage + dispatch
     ├── channel/                   # channel adapter interface (web impl + stubs)
@@ -119,9 +120,50 @@ The admin-owned source of truth for skills. The admin controls the **entire** li
 - **Reconciliation**: on tunnel (re)connect the gateway sends `SKILL_SYNC` (full desired `device_skills`/`agent_skills`) so devices converge after downtime.
 - **Authorization**: vault, fleet, and visibility routes require `role=admin`; customer selection requires agent ownership + skill visibility (`08-auth-security.md`).
 
-## 10. Agent Scheduling & Placement
+## 10. Agent Pool & Per-Job Allocation
 
-Customers own agents but never choose a device. On `POST /agents` the gateway's **scheduler** assigns the agent to an admin-managed device with available capacity (resource fit, tags, online status), records `agents.device_id`, and provisions the container via `AGENT_CREATE`. Admins may reassign via `PATCH /agents/{id}`. Placement is invisible to the customer.
+**Agents are pooled, not customer-owned.** The admin maintains a pool of agent containers across devices. When a customer submits a job, the gateway's **allocator** picks an idle agent from the pool.
+
+### Pool lifecycle (admin-managed)
+
+- Admin configures pool size per device (e.g., `IAGENT_POOL_SIZE=4`).
+- On device enrollment/reconnect, the gateway ensures the desired number of agent containers via `AGENT_CREATE` frames.
+- Agents are created with `status=IDLE`, `user_id=NULL` — no customer association.
+- The allocator tracks pool state in `agents` table: `IDLE` agents are available; `BUSY` agents are assigned to a customer's job.
+
+### Allocation flow (job submit)
+
+```
+POST /jobs:
+  1. Allocator: SELECT one IDLE agent (FIFO or resource-fit)
+  2. SET agent.user_id = job.user_id, agent.status = BUSY
+  3. Route JOB_DISPATCH with the allocated agent_id
+  4. On job terminal (SUCCEEDED/FAILED/CANCELLED):
+     SET agent.user_id = NULL, agent.status = IDLE
+```
+
+### Concurrent multi-job per customer
+
+A customer may submit multiple concurrent jobs. Each job allocates a **separate** idle agent. If no idle agent is available, the job queues at the gateway (status `QUEUED`) or returns `503 NO_IDLE_AGENT` (configurable policy).
+
+### Admin pool ops
+
+| Action | API |
+|--------|-----|
+| Set pool size per device | `POST /admin/devices/{id}/pool` `{size:N}` |
+| List pool (all agents + status) | `GET /admin/agents` |
+| Drain an agent (finish current job, then remove) | `POST /admin/agents/{id}/drain` |
+| Force-release a stuck agent | `POST /admin/agents/{id}/release` |
+
+### Pool state machine
+
+```
+CREATING → IDLE ──(allocate)──→ BUSY ──(job done)──→ IDLE
+              │                    │
+              └──→ UNHEALTHY ──→ FAILED → REMOVED
+                                    ↑
+              BUSY ──→ UNHEALTHY ───┘ (job FAILED, agent recycled)
+```
 
 ## 11. Channel Layer
 

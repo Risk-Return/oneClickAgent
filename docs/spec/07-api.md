@@ -43,35 +43,47 @@ Devices are admin-managed infrastructure. **Customers never see or manage device
 | POST | `/devices/{id}/rotate-token` | **admin** issues new `device_token`, revokes old |
 | POST | `/devices/enroll` | **called by the device**, body `{enrollment_code}` → `{device_id, device_token}` |
 
-## 4. Agents
+## 4. Agents (pool — admin managed)
 
-A **customer** owns their agents; the **platform schedules** each agent onto an admin-managed device (the customer does not choose a device).
+Agents are a **pool** of containers maintained by the admin across all devices. Customers never create, own, or manage agents directly. The pool is transparent to customers — they submit jobs and the system allocates an idle agent.
+
+### Admin pool management
 
 | Method | Path | Notes |
 |--------|------|-------|
-| GET | `/agents` | list **the caller's** agents (admin may pass `?user_id=` / `?device_id=`) |
-| POST | `/agents` | `{name, image?, tags?}` → register an agent; platform assigns a device + provisions the container |
-| GET | `/agents/{id}` | detail incl. status, usage snapshot |
-| PATCH | `/agents/{id}` | rename, tags |
-| POST | `/agents/{id}/actions` | `{action:"start"|"stop"|"restart"|"remove"}` |
-| GET | `/agents/{id}/status` | live status + resource usage |
-| DELETE | `/agents/{id}` | stop + remove container + delete record |
+| GET | `/admin/agents` | list all agents across the fleet (pool state, device, current job if busy) |
+| GET | `/admin/agents/{id}` | detail incl. status, usage, job history |
+| POST | `/admin/agents/{id}/release` | force-release a stuck agent back to `idle` |
+| POST | `/admin/agents/{id}/drain` | finish current job then remove from pool |
+| DELETE | `/admin/agents/{id}` | remove from pool immediately |
+| POST | `/admin/devices/{id}/pool` | set pool size `{size:N}` on a device (scales up/down) |
 
-Default `limits` = `{ "cpu": 2, "mem_mb": 4096, "disk_mb": 10240 }` (platform/admin policy; not customer-settable). Default agents per user = 1 (configurable cap). Placement/scheduling and resource limits are controlled by the platform; `(admin)` may reassign an agent's device via `PATCH /agents/{id}` with `device_id`.
+Default pool size per device = 4 (configurable). Limits per agent: `{ "cpu": 2, "mem_mb": 4096, "disk_mb": 10240 }`.
+
+### Customer visibility
+
+Customers see only the agents **currently allocated to their active jobs**:
+
+| Method | Path | Notes |
+|--------|------|-------|
+| GET | `/agents` | list agents **currently allocated to the caller's active jobs** — shown as "active agents" with status + usage |
+| GET | `/agents/{id}` | detail of a currently allocated agent (only while job is running) |
 
 ## 5. Jobs
 
 | Method | Path | Notes |
 |--------|------|-------|
-| POST | `/agents/{agent_id}/jobs` | `{command, params?, file_ids?, skill_id?}` → `201 {job}` (status PENDING). **At most one** `skill_id`; if present it must be `enabled` on the agent, else `422 SKILL_NOT_ENABLED` |
+| POST | `/jobs` | `{command, params?, file_ids?, skill_id?}` → `201 {job}` (status PENDING). **Agent is automatically allocated** from the pool. **At most one** `skill_id`; if present it must be `enabled` on the allocated agent, else `422 SKILL_NOT_ENABLED` |
 | GET | `/jobs?agent_id=&status=` | list jobs (paginated) |
-| GET | `/jobs/{id}` | full job incl. progress + result |
-| POST | `/jobs/{id}/cancel` | `{reason?}` → routes JOB_CANCEL |
+| GET | `/jobs/{id}` | full job incl. progress + result + allocated agent info |
+| POST | `/jobs/{id}/cancel` | `{reason?}` → routes JOB_CANCEL; on completion, agent is released back to pool |
 | GET | `/jobs/{id}/result` | terminal result (progress-level only) |
 
-Job control buttons in the UI map to: submit (`POST jobs`), cancel (`POST cancel`), status (`GET jobs/{id}` or WS).
+Job control buttons in the UI map to: submit (`POST /jobs`), cancel (`POST /jobs/{id}/cancel`), status (`GET /jobs/{id}` or WS).
 
 > **One-skill-per-job constraint:** a job runs with **at most one** skill. The submit payload accepts a single optional `skill_id` (never an array); the gateway rejects more than one (`422`).
+
+> **Agent allocation:** on job submit, the gateway selects an `idle` agent from the pool, sets it `busy`, and schedules the job. On terminal state, the agent returns to `idle`. Multiple concurrent jobs allocate separate agents.
 
 ## 6. Files
 
@@ -131,14 +143,14 @@ Controls which customers can **see** a skill. `public` skills are visible to all
 
 ### 7.4 Customer selection
 
-A customer sees only skills **visible** to them, and may enable one on their agent only if it is also **installed** on the device hosting that agent.
+A customer sees only skills **visible** to them, and may set skill preferences per agent **type** (by tags). When an agent is temporarily allocated, it uses the skill preferences that match its tags. Skills must also be **installed** on the device hosting that agent.
 
 | Method | Path | Notes |
 |--------|------|-------|
-| GET | `/skills` | list skills **visible to the caller** (resolved as `public` ∪ direct grants ∪ the caller's org grants), with per-agent availability hints |
-| GET | `/agents/{id}/skills` | skills available to this agent + enabled/disabled state |
-| POST | `/agents/{id}/skills` | `{skill_id}` enable for this agent (→ SKILL_ACTION scope=agent enable) |
-| DELETE | `/agents/{id}/skills/{skill_id}` | disable for this agent |
+| GET | `/skills` | list skills **visible to the caller** (resolved as `public` ∪ direct grants ∪ the caller's org grants) |
+| POST | `/jobs` | `{command, skill_id?}` — select **at most one** skill for the job; the allocated agent must have it enabled, else `422 SKILL_NOT_ENABLED` |
+
+Skill preferences are per-job (via `skill_id` at submit time), not per-agent — since agents are ephemeral and pooled. The agent's enabled skills are determined by which skills are `installed` on the host device (admin-managed).
 
 Skill `manifest` is a declarative JSON document (capability name, entrypoint, params schema, resource hints). Implementation detail of execution lives in the agent runtime (`04-agent-container.md`). Admin-only routes require `role=admin` (see `08-auth-security.md`).
 
@@ -187,7 +199,7 @@ Only **web** is implemented now. Other channels (Feishu, QQ, …) plug in behind
 
 ```
 ChannelAdapter:
-  parse_inbound(raw_event) -> CanonicalCommand{ user_ref, agent_ref, command, params, files[] }
+  parse_inbound(raw_event) -> CanonicalCommand{ user_ref, command, params, files[], skill_id? }
   send_outbound(user_ref, OutboundMessage{ kind:"progress"|"result", payload })
   authenticate(raw_event) -> user_id            # maps channel identity → IAgent user
 ```

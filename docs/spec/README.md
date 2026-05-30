@@ -14,7 +14,7 @@ Derived from `../braionstorm/goal.md`.
 | Databases | **PostgreSQL** (cloud) + **SQLite** (local device) |
 | Tunnel | **Self-built reverse WebSocket** (device dials out, no public IP needed) |
 | Agent form | **Generic agent + fixed HTTP API** (LLM/framework swappable, not bound) |
-| Roles & ownership | **Admin (operator)** owns the **device fleet** + entire **skill lifecycle** + **skill visibility**. **User (customer)** owns **agents/jobs/files**, does *not* own/see devices; platform schedules agent placement |
+| Roles & ownership | **Admin (operator)** owns the **device fleet + agent pool** + entire **skill lifecycle** + **skill visibility**. **User (customer)** owns **jobs/files**, does *not* own/see devices or the agent pool; agents are **temporarily allocated per job** and released on completion |
 | Skills | **Cloud skill vault** (admin). Admin installs/disables/updates/deletes skills across **all** devices and sets **visibility** (`public`/`restricted` + grants to a **user or an organization/group**); customer only **selects** visible+installed skills per agent. A job runs with **at most one** skill |
 | Organizations | Customers can be **single or grouped** into orgs; admin grants available skills to a whole org at once |
 | Auth | **JWT** (access + refresh) + **Argon2id** password hashing |

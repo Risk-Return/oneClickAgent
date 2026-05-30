@@ -35,30 +35,32 @@ Untrusted internet ── TLS ──► [Gateway]  (authn/authz, tenant scope)
 
 ### 4.1 Roles
 
-- **`admin` (operator)** — manages the **device fleet** (enroll, rotate, decommission), owns the **entire skill lifecycle** (vault, fleet install/disable/update/delete across **all** devices), and controls **skill visibility** (which customers can see which skills). Admins do **not** submit customer jobs on others' behalf.
-- **`user` (customer)** — owns **agents/jobs/files**; submits commands; receives results; **selects which visible skills to use**. A customer **does not own or even see devices**, and cannot manage skills beyond selecting from those made visible to them.
+- **`admin` (operator)** — manages the **device fleet + agent pool** (enroll, rotate, decommission, set pool size, drain/release agents), owns the **entire skill lifecycle** (vault, fleet install/disable/update/delete across **all** devices), and controls **skill visibility** (which customers can see which skills). Admins do **not** submit customer jobs on others' behalf.
+- **`user` (customer)** — owns **jobs/files**; submits commands; receives results; selects visible skills for jobs. A customer **does not own or even see devices or the agent pool**, and cannot manage skills beyond selecting from those made visible to them. Agents are transparently allocated per job and released on completion.
 
 ### 4.2 Ownership & tenant isolation
 
-- **Customer-owned resources** (`agents`, `jobs`, `files`): every route runs `tenant_scope` → assert `resource.user_id == jwt.sub`. A customer can only access their own agents/jobs/files.
-- **Admin-owned resources** (`devices`, vault `skills`, `skill_versions`, `device_skills`, `skill_grants`): require `role=admin`. Customers receive `403` (and devices are not even enumerable to them).
-- **Agent placement** is platform-controlled; the customer never references a `device_id`. The gateway resolves `agent → device` internally for routing and validates `agent.user_id == jwt.sub` before emitting any tunnel frame.
-- **Inbound device frames** are attributed to the device's hosted agents; results route to the owning customer only.
-- **WS subscriptions**: customers may subscribe only to their own `job/agent` topics; device-fleet and `skill.status` rollout topics are admin-only.
+- **Customer-owned resources** (`jobs`, `files`): every route runs `tenant_scope` → assert `resource.user_id == jwt.sub`. A customer can only access their own jobs/files.
+- **Admin-owned resources** (`devices`, `agents` (pool), vault `skills`, `skill_versions`, `device_skills`, `skill_grants`): require `role=admin`. Customers receive `403` (devices and the agent pool are not even enumerable to them).
+- **Agents are pooled** — they do not belong to any customer. On job submit, the allocator sets `agent.user_id = job.user_id` (temporary). On job completion, it clears it. Tunnel routing validates `job.user_id == jwt.sub`, not `agent.user_id`.
+- **Customer sees only allocated agents**: agents appear in the customer's view only while `agent.user_id == jwt.sub` (i.e., while their job is running).
+- **Inbound device frames** are attributed to the device's pooled agents; results route to the owning customer via `job.user_id`.
+- **WS subscriptions**: customers may subscribe only to their own `job` topics; device-fleet and `skill.status` rollout topics are admin-only.
 
 ### 4.3 Skill authorization & visibility
 
 - **Vault management**, **fleet ops** (install/disable/update/delete across all devices), **visibility** (`public`/`restricted` + grants), and **organization/membership** management require `role=admin`.
 - **Visibility resolution** — a skill is visible to a customer iff:
   `skills.visibility = 'public'` **OR** a `skill_grants` row with `(principal_type='user', principal_id=jwt.sub)` **OR** a `skill_grants` row with `(principal_type='org', principal_id=user.org_id)` (the caller's organization). Members of a granted org all inherit visibility.
-- **Customer selection** (enable/disable a skill on the customer's own agent) requires all of:
-  1. the caller owns the agent (`agent.user_id == jwt.sub`),
-  2. the skill is **visible** to the caller (per resolution above),
-  3. the skill is **installed** (not `disabled`/`deleting`) on the device hosting the agent.
+- **Customer skill selection per job**: when submitting a job with a skill_id, the gateway verifies:
+  1. the skill is **visible** to the caller (per resolution above),
+  2. the skill is **installed** (not `disabled`/`deleting`) on the device hosting the allocated agent,
+  3. the skill is **enabled** on the allocated agent (reported by `agent_skills`).
 - **One-skill-per-job**: a job submit carries **at most one** `skill_id`. The gateway rejects arrays / more than one (`422`), and verifies the chosen skill is `enabled` on the target agent before dispatch (`422 SKILL_NOT_ENABLED`).
 - The customer-facing skill list returns **only visible skills**; non-visible skills are never disclosed (no existence leak).
-- All admin skill/visibility/org/device actions are written to `audit_log` with `actor=admin user_id`.
+- All admin skill/visibility/org/device/agent-pool actions are written to `audit_log` with `actor=admin user_id`.
 - Skill artifacts are validated by `sha256` end-to-end (vault → device → agent); the agent never receives gateway/user credentials.
+- Agent allocation and deallocation is NOT an auditable customer action — it is an internal platform operation transparent to the customer.
 
 ## 5. Tunnel Security
 

@@ -65,6 +65,7 @@ cloud gateway data should be stored in a database, including:
 - agent information: agent name, agent description, agent skills, etc.
 - job information: job id, job status, job result, etc.
 - file information: file name, file path, file size, etc.
+- randomly assign a agent to user when user post a job, replease after job done.
 
 # tunnel management
 tunnel should be able to:

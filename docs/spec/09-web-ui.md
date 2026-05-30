@@ -41,16 +41,17 @@ The app has a **customer experience** (default) and an **admin console** (gated 
 - Overview cards: agent count/status, recent jobs, quick "New Job". **No device info** (customers don't see devices).
 
 ### 3.3 Agents (customer)
-- List of agents with status badge (RUNNING/UNHEALTHY/STOPPED), tags, live resource usage (cpu/mem/disk bars). **No device shown.**
-- Agent detail: status, selected skills, controls (start/stop/restart), recent jobs.
-- Create agent (name, optional tags). **No device choice** — the platform places it automatically. Default 1 agent per user.
+- Shows agents **currently allocated to the customer's active jobs** — these are "active agents" that are temporarily in use.
+- Each shows which job it is running, status (IDLE/BUSY), live resource usage (cpu/mem/disk bars), and the agent's tags. **No device shown.**
+- Agent detail: current job status, selected skills for this job. No controls (start/stop/restart — those are admin pool ops).
+- **Customers never create agents.** Agents are pooled and auto-allocated per job. After the job completes, the agent disappears from the customer's view.
 
 ### 3.4 Command / Job
 The central workspace:
 - **Command interface**: a textarea/structured form to enter the instruction + optional params.
 - **File upload**: drag-and-drop, multi-file, progress bars, attaches `file_ids` to the job.
-- **Skill selector**: choose **one** skill to run this job (single-select / radio, or none) — a job uses **at most one** skill. Only enabled+visible skills are listed.
-- **Submit (send job)** button → creates job, switches to live view.
+- **Skill selector**: choose **one** skill to run this job (single-select / radio, or none) — a job uses **at most one** skill. Only visible skills that are installed on the pool are listed.
+- **Submit (send job)** button → creates job, system allocates an agent from the pool, switches to live view.
 - **Live job view**: status pill, progress bar (percent), streaming progress messages (text only), elapsed time.
 - **Cancel job** button (enabled while non-terminal).
 - **Result display**: progress-level result rendered as formatted text/structured summary; downloadable output artifacts if provided.
@@ -60,12 +61,13 @@ The central workspace:
 
 ### 3.6 Skills (customer)
 - Shows **only skills made visible to the customer** (`GET /skills`). Each entry shows name, description, and a read-only manifest summary.
-- On an agent, the customer toggles **enabled/disabled** among visible skills that are **installed** on the agent's host device. Skills that are visible but not yet installed appear as unavailable with a hint; non-visible skills are never shown.
+- The customer selects a skill when submitting a job (at most one). Skills must be **installed** on the pool's host devices to be selectable. Skills visible but not installed appear as unavailable with a hint; non-visible skills are never shown.
 - Customers **cannot** install/update/delete skills — that is admin-only.
 
 ### 3.7 Admin Console (`role=admin` only)
 A distinct section, hidden entirely from customers:
-- **Device fleet**: list all devices + online status, last seen, resources, hosted agents. "Add device" flow → one-time enrollment code + cross-platform setup instructions (Windows/macOS). Rotate token, rename, decommission.
+- **Device fleet**: list all devices + online status, last seen, resources, hosted agent pool. "Add device" flow → one-time enrollment code + cross-platform setup instructions (Windows/macOS). Configure pool size per device. Rotate token, rename, decommission.
+- **Agent pool (fleet-wide)**: view all agents across the fleet, their status (idle/busy/unhealthy/failed), current job if busy. Drain or force-release stuck agents.
 - **Skill vault**: browse catalog + versions; create entries; publish/deprecate/delete versions (upload manifest + artifact).
 - **Fleet rollout**: install/disable/update/delete a skill across **all** devices; per-device rollout status badges (`installing`/`installed`/`disabled`/`updating`/`error`) live via `skill.status`.
 - **Organizations (groups)**: create/rename/delete orgs; add/remove customer members. View an org's members + granted skills.
@@ -88,19 +90,19 @@ A distinct section, hidden entirely from customers:
 
 | UI action | API |
 |-----------|-----|
-| Send job (with ≤ 1 skill) | `POST /agents/{id}/jobs` `{command, file_ids?, skill_id?}` |
+| Send job (with ≤ 1 skill) | `POST /jobs` `{command, file_ids?, skill_id?}` |
 | Cancel job | `POST /jobs/{id}/cancel` |
 | Query status | WS `job:{id}` (live) + `GET /jobs/{id}` (refresh) |
 | Upload file | `POST /files` then reference `file_ids` on submit |
 | List visible skills (customer) | `GET /skills` |
-| Enable skill on agent (customer) | `POST /agents/{id}/skills` |
-| Disable skill on agent (customer) | `DELETE /agents/{id}/skills/{skill_id}` |
+| List active agents (customer) | `GET /agents` (only those allocated to the caller's active jobs) |
 | Install skill fleet-wide (admin) | `POST /admin/skills/{id}/install` |
 | Disable/update/delete fleet skill (admin) | `POST /admin/skills/{id}/disable\|update` · `DELETE /admin/skills/{id}/install` |
 | Publish vault skill version (admin) | `POST /admin/skills/{id}/versions` |
 | Set visibility / grant to user or org (admin) | `PATCH /admin/skills/{id}/visibility` · `POST /admin/skills/{id}/grants {principal_type, principal_id}` |
 | Manage organization + members (admin) | `POST /admin/orgs` · `POST /admin/orgs/{id}/members` |
 | Manage device (admin) | `POST /devices` · `POST /devices/{id}/rotate-token` |
+| Set pool size / view agents (admin) | `POST /admin/devices/{id}/pool` · `GET /admin/agents` |
 
 ## 6. State & Error Handling
 
@@ -125,5 +127,5 @@ A distinct section, hidden entirely from customers:
 ## 9. Testing
 
 - Component tests (Vitest + Testing Library).
-- E2E (Playwright): register → enroll device (mock) → create agent → submit job → watch progress → see result → cancel path.
+- E2E (Playwright): register → enroll device (mock) → admin configures pool → submit job → agent auto-allocated → watch progress → see result → agent released → cancel path.
 - Mock WS server for realtime tests.

@@ -1,0 +1,7 @@
+{
+  "name": "iagent-web",
+  "private": true,
+  "version": "0.1.0",
+  "type": "module",
+  "description": "IAgent web UI — React 18 + TypeScript + Vite + Tailwind + shadcn/ui"
+}

@@ -37,14 +37,14 @@
 
 Every routable entity has a stable ID:
 
-- `user_id` — a user. `role=admin` (operator) manages **devices**; `role=user` (customer) owns **agents/jobs/files**.
+- `user_id` — a user. `role=admin` (operator) manages **devices + agent pool**; `role=user` (customer) owns **jobs/files**.
 - `org_id` — optional **organization/group** a customer belongs to (null = single user); used by admins to grant skill visibility to a whole group.
 - `device_id` — an admin-managed local device; carries a `device_token` for tunnel auth. Customers never see devices.
-- `agent_id` — a **customer-owned** agent; the platform places it on exactly one `device_id` (bound to a fixed host port there).
+- `agent_id` — a **pooled** agent container on a device; exists independently of any customer. Temporarily **allocated** to a customer's job and **released** back to the pool on job completion.
 - `job_id` — globally unique (UUIDv7 recommended) so it can be correlated across gateway/device/agent.
 - `file_id` — globally unique; tracks lifecycle and storage location.
 
-Routing key for a command: `(user_id, agent_id, job_id)`. The customer never supplies a `device_id`; the gateway resolves `agent_id → device_id` internally and validates that the `agent_id` belongs to the authenticated **customer** (`agent.user_id`) before routing.
+Routing key for a command: `(user_id, agent_id, job_id)`. The customer never supplies a `device_id` or `agent_id` directly; on job submission the gateway's **allocator** picks an idle agent from the pool, binds `agent_id` to the job, and internally resolves `agent_id → device_id` for tunnel routing. Tenant validation asserts the job belongs to the authenticated customer (`job.user_id`); the agent itself is pool-scoped, not customer-scoped.
 
 ## 3. End-to-End Sequences
 
@@ -63,21 +63,25 @@ Device boot
 ### 3.2 Submit a job (web)
 
 ```
-(Prereq: customer registered the agent via POST /agents; the gateway scheduler placed it on an admin-managed device — see 02-cloud-gateway §10.)
-User → Web UI → POST /api/v1/agents/{agent_id}/jobs {command, file_ids[]}
+(Prereq: admin maintains a pool of idle agent containers on devices.)
+User → Web UI → POST /api/v1/jobs {command, file_ids[], skill_id?}
 Gateway:
-  1. AuthZ: customer owns agent (agent.user_id) → resolve host device internally
-  2. Persist job (status=PENDING)
+  1. Persist job (status=PENDING)
+  2. **Allocate**: pick an idle agent from the pool (agent.user_id = NULL, status=idle)
+     → set agent.user_id = job.user_id, agent.status = busy
+     → resolve host device from agent.device_id
   3. If files referenced: ensure staged on device (see 3.4)
   4. Route JOB_DISPATCH frame over tunnel → device
 Device:
-  5. Persist local job (status=QUEUED) → dispatch to agent container
+  5. Persist local job (status=QUEUED) → dispatch to the allocated agent container
 Agent:
   6. status RUNNING → emits PROGRESS events
 Device → Gateway: relays JOB_PROGRESS frames (status, percent, message)
 Gateway: updates job row + fan-out to subscribed Web UI (WS)
 Agent: returns RESULT → Device → Gateway → job status SUCCEEDED/FAILED
 Web UI: shows result; Device triggers file cleanup for that job
+**Release**: Gateway sets agent.user_id = NULL, agent.status = idle
+  — agent returns to pool, ready for the next customer's job
 ```
 
 ### 3.3 Cancel / status
@@ -131,9 +135,9 @@ New agent: device applies all 'installed' fleet skills before the agent goes RUN
 
 ## 4. Data Flow & Source of Truth
 
-- **Cloud PostgreSQL** is authoritative for users, devices, agents, jobs (canonical status), files (metadata), and the **skill vault** (catalog, versions, desired `device_skills`/`agent_skills`).
-- **Local SQLite** is authoritative for *device-local execution detail* (container ids, workspace paths, local queue, cached skill packages) and is a cache of jobs currently in-flight.
-- Reconciliation: on tunnel (re)connect, device sends a `STATE_SYNC` snapshot of in-flight jobs/agents; gateway reconciles canonical status (e.g., mark orphaned RUNNING jobs as FAILED if the device reports them unknown). Skill desired-state is reconciled via `SKILL_SYNC`.
+- **Cloud PostgreSQL** is authoritative for users, devices, the agent pool (with allocation status), jobs (canonical status), files (metadata), and the **skill vault** (catalog, versions, desired `device_skills`/`agent_skills`).
+- **Local SQLite** is authoritative for *device-local execution detail* (container ids, pool state, workspace paths, local queue, cached skill packages) and is a cache of jobs currently in-flight.
+- Reconciliation: on tunnel (re)connect, device sends a `STATE_SYNC` snapshot of in-flight jobs/agents (pool state); gateway reconciles canonical status (e.g., mark orphaned RUNNING jobs as FAILED, release their agents back to the pool, if the device reports them unknown). Skill desired-state is reconciled via `SKILL_SYNC`.
 
 ## 5. State Machines
 
@@ -157,12 +161,14 @@ PENDING ──► QUEUED ──► DISPATCHED ──► RUNNING ──► SUCCEE
 ENROLLED → ONLINE ⇄ OFFLINE   (ONLINE requires live tunnel + heartbeats)
 ```
 
-### Agent
+### Agent (pooled)
 
 ```
-CREATING → RUNNING ⇄ UNHEALTHY → (restart) → RUNNING
-RUNNING → STOPPED → REMOVED
-UNHEALTHY → (max retries exceeded) → FAILED
+CREATING → IDLE ⇄ BUSY     (IDLE = available for allocation; BUSY = assigned to a customer job)
+IDLE → UNHEALTHY → (restart) → IDLE
+UNHEALTHY → (max retries exceeded) → FAILED → REMOVED
+BUSY → (job done) → IDLE   (released back to pool)
+BUSY → UNHEALTHY → (job FAILED) → IDLE  (agent recycled after failure)
 ```
 
 ### Device-wide skill (`device_skills`)
@@ -185,8 +191,8 @@ INSTALLING / UPDATING → ERROR → (retry) → INSTALLED
 ## 7. Concurrency Model
 
 - **Gateway**: one goroutine per device tunnel (read pump) + per-connection write pump with an outbound queue; web WS subscriptions fanned out via an in-memory pub/sub keyed by `user_id`/`job_id`.
-- **Device**: asyncio event loop; one task per agent dispatch; bounded job queue per agent (default depth 1 — agents are single-job).
-- **Agent**: single active job; returns `409 Busy` if a second job is dispatched.
+- **Device**: asyncio event loop; one task per agent dispatch; agents are single-job — the allocator never dispatches two jobs to the same agent while it is `BUSY`.
+- **Agent**: single active job; returns `409 Busy` if a second job is dispatched (safety net).
 
 ## 8. Security Posture (detail in `08-auth-security.md`)
 

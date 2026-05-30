@@ -1,0 +1,13 @@
+# systemd unit for Linux — iagent-device background service.
+[Unit]
+Description=IAgent Local Device
+After=docker.service network-online.target
+
+[Service]
+Type=simple
+ExecStart=/usr/local/bin/iagent-device run
+Restart=on-failure
+RestartSec=10
+
+[Install]
+WantedBy=multi-user.target

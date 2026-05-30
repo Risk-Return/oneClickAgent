@@ -1,0 +1,5 @@
+[project]
+name = "iagent-agent"
+version = "0.1.0"
+description = "IAgent agent container runtime — generic AI agent with fixed HTTP API"
+requires-python = ">=3.11"
