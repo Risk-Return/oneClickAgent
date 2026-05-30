@@ -2,7 +2,7 @@
 
 Three stores, each authoritative for its scope (see `01-architecture.md §4`):
 
-- **Cloud (PostgreSQL 15+)** — users, devices (admin-managed), agents (customer-owned), jobs (canonical), files (metadata), skills + visibility, audit.
+- **Cloud (PostgreSQL 15+)** — users, devices (admin-managed), agents (admin-managed pool, temporarily allocated per job), jobs (canonical), files (metadata), skills + visibility, audit.
 - **Local Device (SQLite, WAL)** — execution detail + in-flight cache.
 - **Agent Container (ephemeral)** — in-memory + workspace files, no durable user data.
 

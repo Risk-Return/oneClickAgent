@@ -3,6 +3,24 @@ name = "iagent-device"
 version = "0.1.0"
 description = "IAgent local device service — manages Docker containers, reverse tunnel, and agent lifecycle"
 requires-python = ">=3.11"
+dependencies = [
+    "websockets>=13.0",
+    "docker>=7.0",
+    "httpx>=0.27",
+    "aiosqlite>=0.20",
+    "pydantic>=2.5",
+    "pydantic-settings>=2.1",
+    "keyring>=25.0",
+    "platformdirs>=4.0",
+]
 
 [project.scripts]
 iagent-device = "iagent_device.__main__:main"
+
+[project.optional-dependencies]
+dev = [
+    "pytest>=8.0",
+    "pytest-asyncio>=0.24",
+    "ruff>=0.4",
+    "mypy>=1.9",
+]

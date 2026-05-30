@@ -3,3 +3,19 @@ name = "iagent-agent"
 version = "0.1.0"
 description = "IAgent agent container runtime — generic AI agent with fixed HTTP API"
 requires-python = ">=3.11"
+dependencies = [
+    "fastapi>=0.115",
+    "uvicorn[standard]>=0.30",
+    "httpx>=0.27",
+    "pydantic>=2.5",
+    "typing-extensions>=4.10",
+]
+
+[project.optional-dependencies]
+dev = [
+    "pytest>=8.0",
+    "pytest-asyncio>=0.24",
+    "httpx>=0.27",
+    "ruff>=0.4",
+    "mypy>=1.9",
+]

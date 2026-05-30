@@ -42,7 +42,7 @@ The app has a **customer experience** (default) and an **admin console** (gated 
 
 ### 3.3 Agents (customer)
 - Shows agents **currently allocated to the customer's active jobs** — these are "active agents" that are temporarily in use.
-- Each shows which job it is running, status (IDLE/BUSY), live resource usage (cpu/mem/disk bars), and the agent's tags. **No device shown.**
+- Each shows which job it is running, status (BUSY), live resource usage (cpu/mem/disk bars), and the agent's tags. **No device shown.**
 - Agent detail: current job status, selected skills for this job. No controls (start/stop/restart — those are admin pool ops).
 - **Customers never create agents.** Agents are pooled and auto-allocated per job. After the job completes, the agent disappears from the customer's view.
 
