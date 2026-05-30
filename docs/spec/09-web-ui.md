@@ -53,8 +53,11 @@ The central workspace:
 - **Skill selector**: choose **one** skill to run this job (single-select / radio, or none) — a job uses **at most one** skill. Only visible skills that are installed on the pool are listed.
 - **Submit (send job)** button → creates job, system allocates an agent from the pool, switches to live view.
 - **Live job view**: status pill, progress bar (percent), streaming progress messages (text only), elapsed time.
-- **Cancel job** button (enabled while non-terminal).
+  - **Queued state**: if all agents are busy, the job shows an "In Queue" state with position badge ("#3 in queue") and estimated wait time. A cancel button is available while queued.
+  - **Running state**: standard progress bar, status, messages.
+- **Cancel job** button (enabled while non-terminal — queued or running).
 - **Result display**: progress-level result rendered as formatted text/structured summary; downloadable output artifacts if provided.
+- **Queue full error**: if user has reached the max queued jobs cap (10 by default), the submit button shows a clear error: "Too many queued jobs — wait or cancel one."
 
 ### 3.5 Jobs History
 - Paginated list with filters (agent, status, date). Click → job detail (progress timeline + result).
@@ -70,6 +73,7 @@ A distinct section, hidden entirely from customers:
 - **Agent pool (fleet-wide)**: view all agents across the fleet, their status (idle/busy/unhealthy/failed), current job if busy. Drain or force-release stuck agents.
 - **Skill vault**: browse catalog + versions; create entries; publish/deprecate/delete versions (upload manifest + artifact).
 - **Fleet rollout**: install/disable/update/delete a skill across **all** devices; per-device rollout status badges (`installing`/`installed`/`disabled`/`updating`/`error`) live via `skill.status`.
+- **User management (tiers)**: view customer list with tier (free/pro/enterprise). Set tier to control queue priority.
 - **Organizations (groups)**: create/rename/delete orgs; add/remove customer members. View an org's members + granted skills.
 - **Visibility**: set each skill `public`/`restricted` and grant/revoke to **individual customers or whole organizations** (granting an org makes the skill visible to every member).
 
@@ -81,6 +85,7 @@ A distinct section, hidden entirely from customers:
 - Open WS to `/ws` after login; subscribe to topics for the current view (`job:{id}`, `agent:{id}`, `device:{id}`).
 - Map events → cache updates:
   - `job.progress` → update job percent/message.
+  - `job.queue_update` → update queue position and estimated wait.
   - `job.result` → mark terminal, render result, toast.
   - `agent.status` / `device.status` → update badges/usage.
   - `skill.status` → update device-wide skill install/update progress badges (admin views).
@@ -90,7 +95,8 @@ A distinct section, hidden entirely from customers:
 
 | UI action | API |
 |-----------|-----|
-| Send job (with ≤ 1 skill) | `POST /jobs` `{command, file_ids?, skill_id?}` |
+| Send job (with ≤ 1 skill) | `POST /jobs` `{command, file_ids?, skill_id?}` — returns `201` (immediate) or `202` (queued with position) |
+| View queue position | WS `job.queue_update` event with `{queue_position, estimated_wait_seconds}` |
 | Cancel job | `POST /jobs/{id}/cancel` |
 | Query status | WS `job:{id}` (live) + `GET /jobs/{id}` (refresh) |
 | Upload file | `POST /files` then reference `file_ids` on submit |
@@ -103,6 +109,7 @@ A distinct section, hidden entirely from customers:
 | Manage organization + members (admin) | `POST /admin/orgs` · `POST /admin/orgs/{id}/members` |
 | Manage device (admin) | `POST /devices` · `POST /devices/{id}/rotate-token` |
 | Set pool size / view agents (admin) | `POST /admin/devices/{id}/pool` · `GET /admin/agents` |
+| Set user tier (admin) | `PATCH /admin/users/{id}/tier` `{tier:"free"|"pro"|"enterprise"}` |
 
 ## 6. State & Error Handling
 
@@ -110,6 +117,9 @@ A distinct section, hidden entirely from customers:
 - Empty states with clear CTAs (e.g., "No agents yet — create one").
 - Error surfaces: inline form errors, toast for transient failures, full-page for fatal.
 - Specific handling: `DEVICE_OFFLINE` on submit → friendly banner with "device offline" guidance.
+- `QUEUE_FULL` (429) → inline error: "You have 10 jobs in queue. Cancel one or wait."
+- `QUEUE_TIMEOUT` → job card shows "Job expired in queue" with option to resubmit.
+- Queue position updates: WS event `job.queue_update` with `{queue_position, estimated_wait_seconds}` so the UI refreshes position without polling.
 - Token expiry → silent refresh; on refresh failure → redirect to login.
 
 ## 7. Visual Design

@@ -24,6 +24,7 @@ IDs are **UUIDv7** (time-sortable) stored as `uuid`/`TEXT`. Timestamps are UTC (
 | `password_hash` | text NOT NULL | Argon2id |
 | `status` | text NOT NULL DEFAULT 'active' | `active`/`disabled` |
 | `role` | text NOT NULL DEFAULT 'user' | `user`/`admin` |
+| `tier` | text NOT NULL DEFAULT 'free' | `free`/`pro`/`enterprise` — affects queue priority; set by admin |
 | `org_id` | uuid FK→organizations NULL | optional **group/organization** the customer belongs to (null = single user) |
 | `created_at` / `updated_at` | timestamptz | |
 
@@ -71,6 +72,7 @@ IDs are **UUIDv7** (time-sortable) stored as `uuid`/`TEXT`. Timestamps are UTC (
 |--------|------|-------|
 | `id` | uuid PK | |
 | `user_id` | uuid FK→users | |
+| `user_tier` | text NOT NULL | denormalized from users.tier at submission time; used for queue ordering |
 | `agent_id` | uuid FK→agents | allocated by the pool allocator; NULL until agent assigned |
 | `device_id` | uuid FK→devices | denormalized for routing; set at allocation |
 | `channel` | text NOT NULL DEFAULT 'web' | source channel |
@@ -81,11 +83,13 @@ IDs are **UUIDv7** (time-sortable) stored as `uuid`/`TEXT`. Timestamps are UTC (
 | `percent` | int DEFAULT 0 | 0–100 |
 | `progress_message` | text | latest human-readable status |
 | `result` | jsonb | terminal payload (progress-level only) |
-| `error_code` / `error_message` | text | on failure |
+| `error_code` / `error_message` | text | on failure (`QUEUE_TIMEOUT`, `SKILL_NOT_ENABLED`, etc.) |
+| `queued_at` | timestamptz NULL | when the job entered QUEUED state (set by allocator) |
+| `queue_expires_at` | timestamptz NULL | = queued_at + IAGENT_QUEUE_TTL; checked on dequeue |
 | `submitted_at` / `started_at` / `finished_at` | timestamptz | |
 | `created_at` / `updated_at` | timestamptz | |
 
-Indexes: `idx_jobs_user_created (user_id, created_at desc)`, `idx_jobs_agent`, partial index on `status` for active jobs.
+Indexes: `idx_jobs_queue (status, user_tier, created_at)` — partial index for dequeue query (WHERE status = 'QUEUED'), `idx_jobs_user_created (user_id, created_at desc)`, `idx_jobs_agent`, partial index on `status` for active jobs.
 
 ### 1.5 `job_files` (link)
 

@@ -89,7 +89,7 @@ Contains SQLite DB + per-job workspaces (auto-cleaned).
 
 | Component | Source | Key vars |
 |-----------|--------|----------|
-| Gateway | env / `.env` | `IAGENT_DB_URL`, `IAGENT_JWT_SECRET`, `IAGENT_FILE_STORE`, `IAGENT_HTTP_ADDR` |
+| Gateway | env / `.env` | `IAGENT_DB_URL`, `IAGENT_JWT_SECRET`, `IAGENT_FILE_STORE`, `IAGENT_HTTP_ADDR`, `IAGENT_QUEUE_TTL`, `IAGENT_MAX_QUEUED_PER_USER` |
 | Device | env / config file | `IAGENT_GATEWAY_URL`, `IAGENT_AGENT_IMAGE`, `IAGENT_PORT_RANGE`, `IAGENT_MAX_RESTARTS` |
 | Agent | env at create | `IAGENT_AGENT_PORT`, `IAGENT_AGENT_ID`, `IAGENT_BRAIN`, LLM secrets |
 | Web | build-time env | `VITE_API_BASE`, `VITE_WS_BASE` |
@@ -135,11 +135,12 @@ Secrets via environment/secret manager; never committed.
 ## 11. End-to-End Verification (per goal's E2E step)
 
 1. Bring up gateway + postgres (compose); seed an **admin** user.
-2. **As admin**: register a device → get enrollment code; enroll + run `iagent-device` on a machine with Docker → device shows ONLINE.
-3. **As admin**: publish a skill version to the vault → install it fleet-wide → confirm rollout `installed`; set it `public` (or grant a customer).
-4. **As customer**: register, log in, create an agent → platform places it on the device → container starts, status RUNNING.
-5. **As customer**: enable a visible+installed skill on the agent; submit a job with an uploaded file → observe live progress → receive result.
-6. Verify file workspace is wiped after job completion.
-7. Cancel a job mid-run → status CANCELLED.
-8. Kill the tunnel → confirm reconnect + buffered result delivery.
-9. Verify a customer cannot see devices or other customers' agents/skills (authz).
+2. **As admin**: register a device → get enrollment code; enroll + run `iagent-device` on a machine with Docker → device shows ONLINE; configure pool size (e.g., 2 agents).
+3. **As admin**: publish a skill version to the vault → install it fleet-wide → confirm rollout `installed`; set it `public` (or grant a customer). Set a customer's tier to `pro`.
+4. **As customer**: register, log in → see pool agents auto-created on device (status IDLE). Submit a job with an uploaded file → agent auto-allocated → observe live progress → receive result.
+5. Verify file workspace is wiped after job completion.
+6. Cancel a job mid-run → status CANCELLED.
+7. **Queue test**: submit N+1 jobs (where N = pool size). Verify the extra job enters QUEUED state with queue_position. Verify tier ordering: enterprise jobs dequeued before pro, pro before free. Verify QUEUE_TIMEOUT after TTL expiry.
+8. **Queue cap test**: submit beyond per-user queue cap → verify 429 QUEUE_FULL.
+9. Kill the tunnel → confirm reconnect + buffered result delivery.
+10. Verify a customer cannot see devices or other customers' agents/skills (authz).

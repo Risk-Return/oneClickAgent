@@ -135,16 +135,84 @@ The admin-owned source of truth for skills. The admin controls the **entire** li
 
 ```
 POST /jobs:
-  1. Allocator: SELECT one IDLE agent (FIFO or resource-fit)
-  2. SET agent.user_id = job.user_id, agent.status = BUSY
-  3. Route JOB_DISPATCH with the allocated agent_id
+  1. Check per-user queue cap → if exceeded, 429 QUEUE_FULL
+  2. Persist job (status=PENDING)
+  3. Allocator: SELECT one IDLE agent (FIFO or resource-fit)
+     3a. If found:
+         SET agent.user_id = job.user_id, agent.status = BUSY
+         job.status = DISPATCHED → Route JOB_DISPATCH
+         Return 201
+     3b. If NOT found:
+         job.status = QUEUED
+         SET queued_at = now(), queue_expires_at = now() + TTL
+         Return 202 { queue_position, estimated_wait_seconds }
   4. On job terminal (SUCCEEDED/FAILED/CANCELLED):
      SET agent.user_id = NULL, agent.status = IDLE
+     Wake-up allocator → dequeue next job (see above)
 ```
 
-### Concurrent multi-job per customer
+### Job Queue (when all agents are occupied)
 
-A customer may submit multiple concurrent jobs. Each job allocates a **separate** idle agent. If no idle agent is available, the job queues at the gateway (status `QUEUED`) or returns `503 NO_IDLE_AGENT` (configurable policy).
+When no idle agent is available at job submission, the job enters a **gateway-side queue** (`status=QUEUED`) and waits for an agent to become free.
+
+#### Queue ordering
+
+```
+ORDER BY tier_priority ASC, created_at ASC
+```
+
+- Primary: **user tier** (`enterprise` → `pro` → `free`)
+- Secondary: FIFO within tier (earliest submitted first)
+
+Tier priority mapping:
+| Tier | Priority |
+|------|----------|
+| `enterprise` | 0 (highest) |
+| `pro` | 1 |
+| `free` | 2 (lowest) |
+
+Tier is set by admin on the user record; it affects queue position only, not resource limits.
+
+#### Wake-up mechanism
+
+On every agent release (job terminal state), the allocator runs:
+
+```
+1. SELECT * FROM jobs WHERE status = 'QUEUED'
+   ORDER BY user_tier ASC, created_at ASC
+   LIMIT 1
+2. If found: allocate agent → JOB_DISPATCH
+3. Repeat until no queued job or no idle agent
+```
+
+When a new device comes online or a scaled-up pool adds idle agents, the same wake-up runs.
+
+#### Queue TTL
+
+- Configurable `IAGENT_QUEUE_TTL` (default 1 hour).
+- Each queued job records `queued_at` and `queue_expires_at`.
+- A lightweight background ticker (every 30s) or the dequeue check expires jobs:
+
+```
+queued_at + TTL < now() → status = FAILED, error_code = QUEUE_TIMEOUT
+```
+
+The UI shows a friendly "Job expired in queue" message.
+
+#### Per-user queue cap
+
+- Configurable `IAGENT_MAX_QUEUED_PER_USER` (default 10).
+- If a user already has this many QUEUED jobs, `POST /jobs` rejects with `429 QUEUE_FULL`.
+- Running jobs do not count toward the cap; only queued ones.
+
+#### API responses
+
+| Scenario | Status | Body |
+|----------|--------|------|
+| Agent allocated immediately | `201` | `{job, status: "DISPATCHED", agent_id, ...}` |
+| Job queued (no idle agent) | `202` | `{job, status: "QUEUED", queue_position: N, estimated_wait_seconds: M, ...}` |
+| User at queue cap | `429` | `{error:{code:"QUEUE_FULL", message:"Max 10 queued jobs"}}` |
+| Queue TTL expired | (on GET) | `status:"FAILED", error_code:"QUEUE_TIMEOUT"` |
 
 ### Admin pool ops
 
@@ -184,6 +252,8 @@ CREATING → IDLE ──(allocate)──→ BUSY ──(job done)──→ IDLE
 | `IAGENT_MAX_UPLOAD_MB` | `100` | |
 | `IAGENT_HEARTBEAT_S` | `15` | tunnel heartbeat |
 | `IAGENT_AGENTS_PER_USER` | `1` | default cap |
+| `IAGENT_QUEUE_TTL` | `1h` | max time a job waits in queue before QUEUE_TIMEOUT |
+| `IAGENT_MAX_QUEUED_PER_USER` | `10` | per-user cap on QUEUED jobs |
 
 ## 13. Observability
 
@@ -196,6 +266,8 @@ CREATING → IDLE ──(allocate)──→ BUSY ──(job done)──→ IDLE
 | Scenario | Behavior |
 |----------|----------|
 | Device offline at submit | `409 DEVICE_OFFLINE` (UI shows actionable error) |
+| Queue TTL expired | job auto-transitions QUEUED → FAILED with `QUEUE_TIMEOUT` on next dequeue check |
+| Queue cap exceeded | `429 QUEUE_FULL` returned to caller (UI shows "too many queued jobs") |
 | Tunnel drops mid-job | keep job RUNNING; reconcile on reconnect via STATE_SYNC |
 | Duplicate tunnel frame | idempotent handler (by `job_id`+`event_seq`), ACK |
 | DB unavailable | `/readyz` fails; reject writes with `503` |
@@ -203,6 +275,6 @@ CREATING → IDLE ──(allocate)──→ BUSY ──(job done)──→ IDLE
 
 ## 15. Testing
 
-- Unit: auth, tenant scoping, frame codec, ack/retransmit, job state transitions, skill dispatch + reconcile.
-- Integration: ephemeral PostgreSQL (testcontainers), fake device WS client simulating tunnel.
+- Unit: auth, tenant scoping, frame codec, ack/retransmit, job state transitions (including queue → dispatch, queue → timeout), allocator dequeue ordering (tier + FIFO), skill dispatch + reconcile.
+- Integration: ephemeral PostgreSQL (testcontainers), fake device WS client simulating tunnel, queue with mock pool (all agents busy → queued → release → dequeue).
 - E2E: with real device + agent (see `10-deployment.md`).

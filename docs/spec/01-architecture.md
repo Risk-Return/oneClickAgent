@@ -149,11 +149,11 @@ PENDING ──► QUEUED ──► DISPATCHED ──► RUNNING ──► SUCCEE
    └───────────┴────────────┴────────────┴────────► CANCELLED
 ```
 
-- `PENDING`: accepted at gateway, not yet routed.
-- `QUEUED`: accepted by device, waiting for agent.
-- `DISPATCHED`: handed to agent container.
+- `PENDING`: accepted at gateway, allocator attempting immediate allocation.
+- `QUEUED`: no idle agent in pool — waiting at gateway allocator. Ordered by user tier (enterprise > pro > free) then FIFO. Subject to `IAGENT_QUEUE_TTL`.
+- `DISPATCHED`: agent allocated, job frame routed to device over tunnel.
 - `RUNNING`: agent confirmed start.
-- Terminal: `SUCCEEDED`, `FAILED`, `CANCELLED`. Terminal triggers file cleanup.
+- Terminal: `SUCCEEDED`, `FAILED`, `CANCELLED`. Terminal triggers file cleanup and agent release (wake-up allocator → dequeue next job).
 
 ### Device
 

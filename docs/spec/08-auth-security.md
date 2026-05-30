@@ -35,8 +35,8 @@ Untrusted internet ── TLS ──► [Gateway]  (authn/authz, tenant scope)
 
 ### 4.1 Roles
 
-- **`admin` (operator)** — manages the **device fleet + agent pool** (enroll, rotate, decommission, set pool size, drain/release agents), owns the **entire skill lifecycle** (vault, fleet install/disable/update/delete across **all** devices), and controls **skill visibility** (which customers can see which skills). Admins do **not** submit customer jobs on others' behalf.
-- **`user` (customer)** — owns **jobs/files**; submits commands; receives results; selects visible skills for jobs. A customer **does not own or even see devices or the agent pool**, and cannot manage skills beyond selecting from those made visible to them. Agents are transparently allocated per job and released on completion.
+- **`admin` (operator)** — manages the **device fleet + agent pool** (enroll, rotate, decommission, set pool size, drain/release agents), manages **user tiers** (free/pro/enterprise for queue priority), owns the **entire skill lifecycle** (vault, fleet install/disable/update/delete across **all** devices), and controls **skill visibility** (which customers can see which skills). Admins do **not** submit customer jobs on others' behalf.
+- **`user` (customer)** — owns **jobs/files**; submits commands; receives results; selects visible skills for jobs. A customer **does not own or even see devices or the agent pool**, and cannot manage skills beyond selecting from those made visible to them. Agents are transparently allocated per job and released on completion. The customer's `tier` affects job queue priority.
 
 ### 4.2 Ownership & tenant isolation
 

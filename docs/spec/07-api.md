@@ -27,7 +27,7 @@ Base URL: `https://<gateway-host>/api/v1`. All bodies are JSON unless noted. All
 | POST | `/auth/logout` | `{refresh}` | `204` (revokes refresh) |
 | GET  | `/auth/me` | — | `200 {user}` |
 
-`access` JWT TTL = 15 min; `refresh` TTL = 30 days, rotating. See `08-auth-security.md`.
+`access` JWT TTL = 15 min; `refresh` TTL = 30 days, rotating. `user` object includes `tier` (free/pro/enterprise). See `08-auth-security.md`.
 
 ## 3. Devices (admin only)
 
@@ -73,17 +73,19 @@ Customers see only the agents **currently allocated to their active jobs**:
 
 | Method | Path | Notes |
 |--------|------|-------|
-| POST | `/jobs` | `{command, params?, file_ids?, skill_id?}` → `201 {job}` (status PENDING). **Agent is automatically allocated** from the pool. **At most one** `skill_id`; if present it must be `enabled` on the allocated agent, else `422 SKILL_NOT_ENABLED` |
+| POST | `/jobs` | `{command, params?, file_ids?, skill_id?}` → `201 {job}` if agent allocated immediately (status `DISPATCHED`), or `202 {job}` if queued (status `QUEUED` with queue info). **At most one** `skill_id`; if present it must be `enabled` on the allocated agent, else `422 SKILL_NOT_ENABLED`. Returns `429 QUEUE_FULL` if user at queue cap. |
 | GET | `/jobs?agent_id=&status=` | list jobs (paginated) |
-| GET | `/jobs/{id}` | full job incl. progress + result + allocated agent info |
-| POST | `/jobs/{id}/cancel` | `{reason?}` → routes JOB_CANCEL; on completion, agent is released back to pool |
+| GET | `/jobs/{id}` | full job incl. progress + result + allocated agent info; when `status=QUEUED` also includes `queue_position`, `estimated_wait_seconds` |
+| POST | `/jobs/{id}/cancel` | `{reason?}` → routes JOB_CANCEL; on completion, agent is released back to pool and allocator dequeues next |
 | GET | `/jobs/{id}/result` | terminal result (progress-level only) |
 
 Job control buttons in the UI map to: submit (`POST /jobs`), cancel (`POST /jobs/{id}/cancel`), status (`GET /jobs/{id}` or WS).
 
 > **One-skill-per-job constraint:** a job runs with **at most one** skill. The submit payload accepts a single optional `skill_id` (never an array); the gateway rejects more than one (`422`).
 
-> **Agent allocation:** on job submit, the gateway selects an `idle` agent from the pool, sets it `busy`, and schedules the job. On terminal state, the agent returns to `idle`. Multiple concurrent jobs allocate separate agents.
+> **Agent allocation:** on job submit, the gateway selects an `idle` agent from the pool, sets it `busy`, and schedules the job. On terminal state, the agent returns to `idle` and triggers dequeue. Multiple concurrent jobs allocate separate agents.
+
+> **Queue behaviour:** if no idle agent is available, the job enters a tiered FIFO queue (`enterprise > pro > free`). The response includes `queue_position` and `estimated_wait_seconds`. Jobs expire after `IAGENT_QUEUE_TTL` (default 1h) with error `QUEUE_TIMEOUT`. Per-user cap is `IAGENT_MAX_QUEUED_PER_USER` (default 10); exceeding returns `429 QUEUE_FULL`.
 
 ## 6. Files
 
@@ -171,6 +173,12 @@ A customer may be standalone (single) or belong to an **organization** (group). 
 
 A user belongs to at most one organization. Changing membership re-resolves that user's visible-skill set immediately.
 
+### 8.1 User Tier Management (admin)
+
+| Method | Path | Notes |
+|--------|------|-------|
+| PATCH | `/admin/users/{id}/tier` | `{tier:"free"|"pro"|"enterprise"}` set a customer's tier for queue priority. Changes affect subsequent job submissions. |
+
 ## 9. Realtime — Web WebSocket
 
 - **Endpoint**: `wss://<gateway-host>/ws` with `?token=<access_jwt>` or `Authorization` header.
@@ -186,6 +194,7 @@ A user belongs to at most one organization. Changing membership re-resolves that
   | Event | Payload |
   |-------|---------|
   | `job.progress` | `{ job_id, status, percent, message, ts }` |
+  | `job.queue_update` | `{ job_id, queue_position, estimated_wait_seconds }` (sent when position changes) |
   | `job.result` | `{ job_id, status, result?, error?, finished_at }` |
   | `agent.status` | `{ agent_id, status, usage }` |
   | `device.status` | `{ device_id, status, last_seen }` |

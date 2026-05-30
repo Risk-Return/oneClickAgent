@@ -100,9 +100,9 @@ IAgent/
 | **Gateway** | Public Go service; the safe edge. |
 | **Device** | Local Python service that manages an agent pool on a private machine. |
 | **Agent** | A single AI worker = one Docker container with a fixed HTTP API; lives in a pool, temporarily allocated to a job. |
-| **Job** | A unit of work submitted by the user; the system allocates one or more agents from the pool to execute it, then releases them on completion. |
+| **Job** | A unit of work submitted by the user; the system allocates one or more agents from the pool to execute it, then releases them on completion. If no agent is available, the job queues in a tiered FIFO order. |
 | **Admin / Operator** | Privileged user who manages the device fleet and the entire skill lifecycle + visibility. |
-| **User / Customer** | End user who owns jobs/files, sends commands, and selects visible skills. Agents are temporarily allocated per job and released after. Does not own devices. |
+| **User / Customer** | End user who owns jobs/files, sends commands, and selects visible skills. Agents are temporarily allocated per job and released after. Has a `tier` (free/pro/enterprise) affecting queue priority. Does not own devices. |
 | **Organization / Group** | A group of customers; admins can grant skill visibility to a whole org at once. A user belongs to at most one. |
 | **Skill** | A reusable capability/config stored in the cloud vault and installed into agents. |
 | **Skill Vault** | Central admin-owned catalog + versioned skill artifacts on the gateway, dispatched to devices. |
