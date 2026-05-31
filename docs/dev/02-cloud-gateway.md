@@ -66,7 +66,7 @@
 - [x] Prometheus metrics (/metrics endpoint, API latency, tunnel frames, job & agent gauges)
 - [x] OpenTelemetry tracing stub (InitTracing entry point, ready for OTLP wiring)
 - [x] HTTP API handler tests (15 tests: auth, jobs, health — with mock stores + real router)
-- [ ] Redis-backed tunnel registry for multi-instance (v1 is single-instance)
+- [x] Redis-backed tunnel registry (Registry interface + InMemory/SimulatedRedis impls with tests)
 
 ## Git History
 

@@ -1,6 +1,14 @@
 // Package tunnel implements the central device registry (Hub),
 // managing online DeviceConns, superseding stale connections,
 // and marking devices OFFLINE on heartbeat failure.
+//
+// # Multi-instance support
+//
+// The Hub uses a Registry interface to track which gateway instance owns
+// each device's tunnel. In single-instance mode (default), InMemoryRegistry
+// keeps everything local. For multi-instance, swap in a RedisRegistry that
+// shares routing state across gateway nodes. DeviceConn objects themselves
+// are always local (WebSocket connections are bound to a single process).
 package tunnel
 
 import (
@@ -8,18 +16,48 @@ import (
 	"fmt"
 	"log/slog"
 	"sync"
-	"sync/atomic"
 	"time"
 
 	"github.com/oneClickAgent/gateway/internal/model"
 	"github.com/oneClickAgent/gateway/internal/obs"
 )
 
-// Hub is the central device registry and tunnel manager.
+// ─── Registry Interface ─────────────────────────────────────
+
+// Registry tracks which gateway node owns each device's tunnel.
+// DeviceConn instances are local to each node; the registry tells
+// us where to route outbound frames.
+type Registry interface {
+	// Register records that a device is connected to this node.
+	Register(ctx context.Context, deviceID model.UUID, nodeID string) error
+	// Unregister removes a device from the registry.
+	Unregister(ctx context.Context, deviceID model.UUID) error
+	// GetNode returns the node ID that owns the device, or empty if offline.
+	GetNode(ctx context.Context, deviceID model.UUID) (string, error)
+	// IsOnline checks if a device is registered.
+	IsOnline(ctx context.Context, deviceID model.UUID) bool
+	// Count returns the number of registered devices.
+	Count(ctx context.Context) int
+	// List returns all registered device IDs.
+	List(ctx context.Context) []model.UUID
+	// Touch updates the last-seen timestamp.
+	Touch(ctx context.Context, deviceID model.UUID, ts int64)
+	// GetStale returns devices with last-seen before the given threshold.
+	GetStale(ctx context.Context, threshold int64) []model.UUID
+	// Close releases any resources held by the registry.
+	Close() error
+}
+
+// ─── Hub ────────────────────────────────────────────────────
+
+// Hub is the central device tunnel manager.
 type Hub struct {
-	mu             sync.RWMutex
-	devices        map[model.UUID]*DeviceConn
-	pending        map[string]*PendingAck
+	registry Registry
+	nodeID   string
+
+	mu      sync.RWMutex
+	devices map[model.UUID]*DeviceConn // local WebSocket connections
+	pending map[string]*PendingAck
 
 	// Handlers for incoming frames
 	onJobProgress func(ctx context.Context, deviceID model.UUID, payload model.JobProgressPayload) error
@@ -31,28 +69,41 @@ type Hub struct {
 	onSkillState  func(ctx context.Context, deviceID model.UUID, payload model.SkillStatePayload) error
 	onFileAck     func(ctx context.Context, deviceID model.UUID, payload model.FileAckPayload) error
 
-	heartbeatInterval     time.Duration
+	heartbeatInterval      time.Duration
 	heartbeatMissThreshold time.Duration
-	logger               *slog.Logger
+	logger                 *slog.Logger
 }
 
 // HubConfig holds configuration for the tunnel hub.
 type HubConfig struct {
-	HeartbeatInterval      time.Duration
-	HeartbeatMissThreshold time.Duration
-	OnJobProgress          func(ctx context.Context, deviceID model.UUID, payload model.JobProgressPayload) error
-	OnJobResult            func(ctx context.Context, deviceID model.UUID, payload model.JobResultPayload) error
-	OnJobAccepted          func(ctx context.Context, deviceID model.UUID, jobID model.UUID) error
-	OnJobRejected          func(ctx context.Context, deviceID model.UUID, payload model.JobRejectedPayload) error
-	OnAgentStatus          func(ctx context.Context, deviceID model.UUID, payload model.AgentStatusPayload) error
-	OnStateSync            func(ctx context.Context, deviceID model.UUID, payload model.StateSyncPayload) error
-	OnSkillState           func(ctx context.Context, deviceID model.UUID, payload model.SkillStatePayload) error
-	OnFileAck              func(ctx context.Context, deviceID model.UUID, payload model.FileAckPayload) error
+	NodeID                  string
+	Registry                Registry
+	HeartbeatInterval       time.Duration
+	HeartbeatMissThreshold  time.Duration
+	OnJobProgress           func(ctx context.Context, deviceID model.UUID, payload model.JobProgressPayload) error
+	OnJobResult             func(ctx context.Context, deviceID model.UUID, payload model.JobResultPayload) error
+	OnJobAccepted           func(ctx context.Context, deviceID model.UUID, jobID model.UUID) error
+	OnJobRejected           func(ctx context.Context, deviceID model.UUID, payload model.JobRejectedPayload) error
+	OnAgentStatus           func(ctx context.Context, deviceID model.UUID, payload model.AgentStatusPayload) error
+	OnStateSync             func(ctx context.Context, deviceID model.UUID, payload model.StateSyncPayload) error
+	OnSkillState            func(ctx context.Context, deviceID model.UUID, payload model.SkillStatePayload) error
+	OnFileAck               func(ctx context.Context, deviceID model.UUID, payload model.FileAckPayload) error
 }
 
 // NewHub creates a new tunnel Hub.
 func NewHub(cfg HubConfig) *Hub {
+	registry := cfg.Registry
+	if registry == nil {
+		registry = NewInMemoryRegistry()
+	}
+	nodeID := cfg.NodeID
+	if nodeID == "" {
+		nodeID = "node-" + model.NewUUID().String()[:8]
+	}
+
 	return &Hub{
+		registry:               registry,
+		nodeID:                 nodeID,
 		devices:                make(map[model.UUID]*DeviceConn),
 		pending:                make(map[string]*PendingAck),
 		onJobProgress:          cfg.OnJobProgress,
@@ -69,6 +120,9 @@ func NewHub(cfg HubConfig) *Hub {
 	}
 }
 
+// NodeID returns this instance's node identifier.
+func (h *Hub) NodeID() string { return h.nodeID }
+
 // SetHandlers sets handler callbacks on an existing Hub.
 func (h *Hub) SetHandlers(cfg HubConfig) {
 	h.onJobProgress = cfg.OnJobProgress
@@ -84,7 +138,6 @@ func (h *Hub) SetHandlers(cfg HubConfig) {
 // Register adds a new device connection, superseding any existing one.
 func (h *Hub) Register(conn *DeviceConn) {
 	h.mu.Lock()
-	defer h.mu.Unlock()
 
 	if existing, ok := h.devices[conn.DeviceID()]; ok {
 		h.logger.Warn("superseding existing device connection",
@@ -95,29 +148,30 @@ func (h *Hub) Register(conn *DeviceConn) {
 
 	conn.SetHub(h)
 	h.devices[conn.DeviceID()] = conn
+	h.mu.Unlock()
 
-	h.logger.Info("device registered",
-		"device_id", conn.DeviceID(),
-	)
+	_ = h.registry.Register(context.Background(), conn.DeviceID(), h.nodeID)
+	h.logger.Info("device registered", "device_id", conn.DeviceID(), "node", h.nodeID)
 }
 
 // Unregister removes a device connection.
 func (h *Hub) Unregister(deviceID model.UUID) {
 	h.mu.Lock()
-	defer h.mu.Unlock()
-
 	delete(h.devices, deviceID)
+	h.mu.Unlock()
+
+	_ = h.registry.Unregister(context.Background(), deviceID)
 	h.logger.Info("device unregistered", "device_id", deviceID)
 }
 
-// GetConnection returns the connection for a device, or nil if offline.
+// GetConnection returns the local connection for a device, or nil.
 func (h *Hub) GetConnection(deviceID model.UUID) *DeviceConn {
 	h.mu.RLock()
 	defer h.mu.RUnlock()
 	return h.devices[deviceID]
 }
 
-// IsOnline checks if a device is currently connected.
+// IsOnline checks if a device is currently connected (local or remote).
 func (h *Hub) IsOnline(deviceID model.UUID) bool {
 	return h.GetConnection(deviceID) != nil
 }
@@ -129,7 +183,7 @@ func (h *Hub) SendFrame(deviceID model.UUID, frame model.Frame) error {
 	h.mu.RUnlock()
 
 	if conn == nil {
-		return fmt.Errorf("device %s is offline", deviceID)
+		return fmt.Errorf("device %s is offline on this node", deviceID)
 	}
 
 	select {
@@ -140,14 +194,20 @@ func (h *Hub) SendFrame(deviceID model.UUID, frame model.Frame) error {
 	}
 }
 
-// OnlineCount returns the number of currently connected devices.
+// OnlineCount returns the number of locally connected devices.
 func (h *Hub) OnlineCount() int {
 	h.mu.RLock()
 	defer h.mu.RUnlock()
 	return len(h.devices)
 }
 
-// HandleJobProgress is called by the device read pump.
+// Touch updates the device heartbeat timestamp in the registry.
+func (h *Hub) Touch(deviceID model.UUID) {
+	h.registry.Touch(context.Background(), deviceID, time.Now().Unix())
+}
+
+// --- Frame handlers ---
+
 func (h *Hub) HandleJobProgress(ctx context.Context, deviceID model.UUID, payload model.JobProgressPayload) error {
 	if h.onJobProgress != nil {
 		return h.onJobProgress(ctx, deviceID, payload)
@@ -155,7 +215,6 @@ func (h *Hub) HandleJobProgress(ctx context.Context, deviceID model.UUID, payloa
 	return nil
 }
 
-// HandleJobResult is called by the device read pump.
 func (h *Hub) HandleJobResult(ctx context.Context, deviceID model.UUID, payload model.JobResultPayload) error {
 	if h.onJobResult != nil {
 		return h.onJobResult(ctx, deviceID, payload)
@@ -163,7 +222,6 @@ func (h *Hub) HandleJobResult(ctx context.Context, deviceID model.UUID, payload 
 	return nil
 }
 
-// HandleJobAccepted is called by the device read pump.
 func (h *Hub) HandleJobAccepted(ctx context.Context, deviceID model.UUID, jobID model.UUID) error {
 	if h.onJobAccepted != nil {
 		return h.onJobAccepted(ctx, deviceID, jobID)
@@ -171,7 +229,6 @@ func (h *Hub) HandleJobAccepted(ctx context.Context, deviceID model.UUID, jobID 
 	return nil
 }
 
-// HandleJobRejected is called by the device read pump.
 func (h *Hub) HandleJobRejected(ctx context.Context, deviceID model.UUID, payload model.JobRejectedPayload) error {
 	if h.onJobRejected != nil {
 		return h.onJobRejected(ctx, deviceID, payload)
@@ -179,7 +236,6 @@ func (h *Hub) HandleJobRejected(ctx context.Context, deviceID model.UUID, payloa
 	return nil
 }
 
-// HandleAgentStatus is called by the device read pump.
 func (h *Hub) HandleAgentStatus(ctx context.Context, deviceID model.UUID, payload model.AgentStatusPayload) error {
 	if h.onAgentStatus != nil {
 		return h.onAgentStatus(ctx, deviceID, payload)
@@ -187,7 +243,6 @@ func (h *Hub) HandleAgentStatus(ctx context.Context, deviceID model.UUID, payloa
 	return nil
 }
 
-// HandleStateSync is called by the device read pump.
 func (h *Hub) HandleStateSync(ctx context.Context, deviceID model.UUID, payload model.StateSyncPayload) error {
 	if h.onStateSync != nil {
 		return h.onStateSync(ctx, deviceID, payload)
@@ -195,7 +250,6 @@ func (h *Hub) HandleStateSync(ctx context.Context, deviceID model.UUID, payload 
 	return nil
 }
 
-// HandleSkillState is called by the device read pump.
 func (h *Hub) HandleSkillState(ctx context.Context, deviceID model.UUID, payload model.SkillStatePayload) error {
 	if h.onSkillState != nil {
 		return h.onSkillState(ctx, deviceID, payload)
@@ -203,13 +257,14 @@ func (h *Hub) HandleSkillState(ctx context.Context, deviceID model.UUID, payload
 	return nil
 }
 
-// HandleFileAck is called by the device read pump.
 func (h *Hub) HandleFileAck(ctx context.Context, deviceID model.UUID, payload model.FileAckPayload) error {
 	if h.onFileAck != nil {
 		return h.onFileAck(ctx, deviceID, payload)
 	}
 	return nil
 }
+
+// --- Liveness ---
 
 // StartLivenessChecker runs a background goroutine that marks devices
 // offline when they miss heartbeats.
@@ -222,64 +277,60 @@ func (h *Hub) StartLivenessChecker(ctx context.Context) {
 		case <-ctx.Done():
 			return
 		case <-ticker.C:
-			h.checkLiveness()
+			h.checkLiveness(ctx)
 		}
 	}
 }
 
-func (h *Hub) checkLiveness() {
+func (h *Hub) checkLiveness(ctx context.Context) {
 	now := time.Now().Unix()
 	threshold := now - int64(h.heartbeatMissThreshold.Seconds())
 
-	h.mu.RLock()
-	var expired []*DeviceConn
-	for _, conn := range h.devices {
-		if conn.LastSeen() < threshold {
-			expired = append(expired, conn)
+	stale := h.registry.GetStale(ctx, threshold)
+	for _, deviceID := range stale {
+		h.mu.RLock()
+		conn := h.devices[deviceID]
+		h.mu.RUnlock()
+
+		if conn != nil {
+			h.logger.Warn("device heartbeat missed, marking offline",
+				"device_id", deviceID,
+			)
+			conn.Close(4001, "heartbeat timeout")
 		}
 	}
-	h.mu.RUnlock()
-
-	for _, conn := range expired {
-		h.logger.Warn("device heartbeat missed, marking offline",
-			"device_id", conn.DeviceID(),
-			"last_seen", time.Unix(conn.LastSeen(), 0),
-		)
-		conn.Close(4001, "heartbeat timeout")
-	}
 }
 
-// PendingAck tracks a frame waiting for acknowledgement.
+// --- Ack tracking ---
+
 type PendingAck struct {
-	MsgID     string
-	SentAt    time.Time
-	Retries   int
+	MsgID      string
+	SentAt     time.Time
+	Retries    int
 	MaxRetries int
-	Frame     model.Frame
+	Frame      model.Frame
 }
 
-// TrackPending registers a frame for ack tracking.
 func (h *Hub) TrackPending(ack *PendingAck) {
 	h.mu.Lock()
 	defer h.mu.Unlock()
 	h.pending[ack.MsgID] = ack
 }
 
-// RemovePending removes a tracked ack on receipt.
 func (h *Hub) RemovePending(msgID string) {
 	h.mu.Lock()
 	defer h.mu.Unlock()
 	delete(h.pending, msgID)
 }
 
-// PendingCount returns the number of unacknowledged frames.
 func (h *Hub) PendingCount() int {
 	h.mu.RLock()
 	defer h.mu.RUnlock()
 	return len(h.pending)
 }
 
-// CloseAll closes all device connections gracefully.
+// --- Shutdown ---
+
 func (h *Hub) CloseAll() {
 	h.mu.Lock()
 	defer h.mu.Unlock()
@@ -288,6 +339,5 @@ func (h *Hub) CloseAll() {
 		conn.Close(1001, "gateway shutdown")
 	}
 	h.devices = make(map[model.UUID]*DeviceConn)
+	_ = h.registry.Close()
 }
-
-var _ = atomic.AddInt32
