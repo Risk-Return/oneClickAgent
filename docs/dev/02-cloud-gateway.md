@@ -7,7 +7,7 @@
 | **Last Updated** | 2026-05-31 |
 | **Build** | `go build ./...` passes |
 | **Vet** | `go vet ./...` passes |
-| **Tests** | `go test ./...` — 7 packages with tests, all passing |
+| **Tests** | `go test ./...` — 8 packages, all passing (7 unit + 1 integration) |
 
 ## Packages Implemented
 
@@ -62,7 +62,7 @@
 
 - [x] Database migrations (`gateway/migrations/` — up/down SQL created)
 - [x] Unit tests (model, config, auth, tunnel, pubsub, pool, channel — 7 packages)
-- [ ] Integration tests (testcontainers + fake device WS client — store layer needs real DB)
+- [x] Integration tests (store layer against real PostgreSQL — 11 tests covering all tables)
 - [ ] Prometheus metrics wiring (obs package has placeholder)
 - [ ] OpenTelemetry tracing
 - [ ] Redis-backed tunnel registry for multi-instance (v1 is single-instance)

@@ -65,9 +65,13 @@ func (s *JobStore) UpdateProgress(ctx context.Context, id model.UUID, percent in
 
 func (s *JobStore) UpdateResult(ctx context.Context, id model.UUID, status model.JobStatus, result *string) error {
 	now := time.Now().UTC()
+	var resultVal interface{}
+	if result != nil {
+		resultVal = *result
+	}
 	_, err := s.db.Pool.Exec(ctx,
 		`UPDATE jobs SET status=$2, result=$3, finished_at=$4, updated_at=$4 WHERE id=$1`,
-		id, status, result, now,
+		id, status, resultVal, now,
 	)
 	return err
 }

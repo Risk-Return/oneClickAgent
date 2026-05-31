@@ -20,6 +20,10 @@ func (s *AgentStore) Create(ctx context.Context, a *model.Agent) error {
 	a.CreatedAt = now
 	a.UpdatedAt = now
 
+	if a.Limits == nil {
+		a.Limits = &model.AgentLimits{CPU: 2, MemMB: 4096, DiskMB: 10240}
+	}
+
 	_, err := s.db.Pool.Exec(ctx,
 		`INSERT INTO agents (id, device_id, user_id, name, description, image, port, tags, status, job_id, limits, created_at, updated_at)
 		 VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13)`,
@@ -56,9 +60,8 @@ func (s *AgentStore) FindIdle(ctx context.Context) (*model.Agent, error) {
 func (s *AgentStore) Allocate(ctx context.Context, agentID, userID, jobID model.UUID) error {
 	now := time.Now().UTC()
 	_, err := s.db.Pool.Exec(ctx,
-		`UPDATE agents SET status=$2, user_id=$3, job_id=$4, allocated_at=$5, updated_at=$5
-		 WHERE id=$1`,
-		agentID, model.AgentBusy, userID, jobID, now,
+		`UPDATE agents SET status=$2, user_id=$3, allocated_at=$4, updated_at=$4 WHERE id=$1`,
+		agentID, model.AgentBusy, userID, now,
 	)
 	return err
 }

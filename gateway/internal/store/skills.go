@@ -300,26 +300,49 @@ func (s *SkillStore) ListGrants(ctx context.Context, skillID model.UUID) ([]mode
 
 func (s *SkillStore) IsSkillVisibleToUser(ctx context.Context, skillID, userID model.UUID, orgID *model.UUID) (bool, error) {
 	var count int
+	if orgID != nil {
+		err := s.db.Pool.QueryRow(ctx,
+			`SELECT COUNT(*) FROM skills s
+			 WHERE s.id=$1 AND (
+			   s.visibility='public'
+			   OR EXISTS (SELECT 1 FROM skill_grants sg WHERE sg.skill_id=s.id AND sg.principal_type='user' AND sg.principal_id=$2)
+			   OR EXISTS (SELECT 1 FROM skill_grants sg WHERE sg.skill_id=s.id AND sg.principal_type='org' AND sg.principal_id=$3)
+			 )`, skillID, userID, *orgID,
+		).Scan(&count)
+		return count > 0, err
+	}
 	err := s.db.Pool.QueryRow(ctx,
 		`SELECT COUNT(*) FROM skills s
 		 WHERE s.id=$1 AND (
 		   s.visibility='public'
 		   OR EXISTS (SELECT 1 FROM skill_grants sg WHERE sg.skill_id=s.id AND sg.principal_type='user' AND sg.principal_id=$2)
-		   OR ($3 IS NOT NULL AND EXISTS (SELECT 1 FROM skill_grants sg WHERE sg.skill_id=s.id AND sg.principal_type='org' AND sg.principal_id=$3))
-		 )`, skillID, userID, orgID,
+		 )`, skillID, userID,
 	).Scan(&count)
 	return count > 0, err
 }
 
 func (s *SkillStore) ListVisibleSkills(ctx context.Context, userID model.UUID, orgID *model.UUID) ([]model.Skill, error) {
-	rows, err := s.db.Pool.Query(ctx,
-		`SELECT DISTINCT s.id, s.key, s.name, s.description, s.visibility, s.latest_version, s.status, s.created_at, s.updated_at
+	var query string
+	var args []interface{}
+
+	if orgID != nil {
+		query = `SELECT DISTINCT s.id, s.key, s.name, s.description, s.visibility, s.latest_version, s.status, s.created_at, s.updated_at
 		 FROM skills s
 		 WHERE s.visibility='public'
 		   OR EXISTS (SELECT 1 FROM skill_grants sg WHERE sg.skill_id=s.id AND sg.principal_type='user' AND sg.principal_id=$1)
-		   OR ($2 IS NOT NULL AND EXISTS (SELECT 1 FROM skill_grants sg WHERE sg.skill_id=s.id AND sg.principal_type='org' AND sg.principal_id=$2))
-		 ORDER BY s.created_at DESC`, userID, orgID,
-	)
+		   OR EXISTS (SELECT 1 FROM skill_grants sg WHERE sg.skill_id=s.id AND sg.principal_type='org' AND sg.principal_id=$2)
+		 ORDER BY s.created_at DESC`
+		args = []interface{}{userID, *orgID}
+	} else {
+		query = `SELECT DISTINCT s.id, s.key, s.name, s.description, s.visibility, s.latest_version, s.status, s.created_at, s.updated_at
+		 FROM skills s
+		 WHERE s.visibility='public'
+		   OR EXISTS (SELECT 1 FROM skill_grants sg WHERE sg.skill_id=s.id AND sg.principal_type='user' AND sg.principal_id=$1)
+		 ORDER BY s.created_at DESC`
+		args = []interface{}{userID}
+	}
+
+	rows, err := s.db.Pool.Query(ctx, query, args...)
 	if err != nil {
 		return nil, err
 	}
