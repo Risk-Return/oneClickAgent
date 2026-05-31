@@ -72,3 +72,5 @@
 
 - `3c1038a` — feat: implement Cloud Gateway module
 - `f758375` — rename: IAgent → oneClickAgent
+- `252d80f` — docs(dev): record cloud gateway module implementation status
+- `dca4669` — feat: add migrations, align schema to spec, add unit tests
