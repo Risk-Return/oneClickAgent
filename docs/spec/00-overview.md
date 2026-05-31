@@ -44,7 +44,10 @@ Canonical request flow (web channel):
 - **Cloud skill vault**: skills are stored centrally on the gateway. **Admins** install/disable/update/delete skills across **all** devices and decide **which skills each customer (or organization/group) can see**; **customers** only select which visible skills their temporarily allocated agents use.
 - **Organizations (groups)**: a customer can be single or belong to a group; admins set the available skills for a whole group at once.
 - **One skill per job**: a customer selects **at most one** skill to execute a given job.
-- **Web UI**: command interface + file upload + skill selection + job control (send/cancel/status) + result display, plus an **admin console** for devices, agent pool, skill vault, fleet rollout, and visibility. **No terminal access, no raw agent internals — progress-level information only.**
+- **Pre-built agent image (Ubuntu)**: each agent container ships ready-to-run with a default agent (`opencode`), a headless stealth browser (`camoufox`), language runtimes (Node/Python/Go/Rust/Java), and warmed dependency caches. Devices **pre-pull** the image.
+- **Interactive browser control (VNC)**: a customer can take **live control** of the agent's headless browser from the web UI (relayed over the tunnel — no inbound device port) — e.g. to log into a site by hand.
+- **Encrypted login vault**: logins captured during a VNC session are stored **encrypted** in the gateway and re-injected into the agent's browser on later jobs, so it starts already signed in; wiped from the agent after each job.
+- **Web UI**: command interface + file upload + skill selection + saved-login selection + job control (send/cancel/status) + live browser (VNC) + result display, plus an **admin console** for devices, agent pool, skill vault, fleet rollout, and visibility. **No terminal access, no raw agent internals — progress-level information only.**
 - **User registration & authentication.**
 
 ## 4. Technology Stack
@@ -53,7 +56,7 @@ Canonical request flow (web channel):
 |-------|-----------|-----------|
 | Cloud Gateway | **Go** (1.22+), `net/http`, `gorilla/websocket`, `chi` router | High-concurrency, simple static binary, great fit for the reverse tunnel hub. |
 | Local Device | **Python** (3.11+), `FastAPI`, `uvicorn`, `websockets`, `docker` (docker-py) | Native Docker control + AI ecosystem. |
-| Agent Container | **Python** runtime exposing a fixed HTTP API; LLM/framework not bound by spec | Generic, swappable agent implementation. |
+| Agent Container | **Ubuntu 24.04** image, **Python** supervisor exposing a fixed HTTP API; bundles `opencode` + `camoufox` (headless browser) + Node/Python/Go/Rust/Java + Xvfb/x11vnc; LLM/framework not bound by spec | Generic, swappable agent that is ready-to-run and supports interactive VNC. |
 | Frontend | **React 18 + TypeScript + Vite**, **Tailwind CSS**, **shadcn/ui**, **Lucide** icons | Modern, accessible, fast. |
 | Cloud DB | **PostgreSQL 15+** | Central source of truth for users, devices, agents, jobs, files. |
 | Local DB | **SQLite** (WAL mode) | Lightweight per-device state; no server to run. |
@@ -66,10 +69,10 @@ Canonical request flow (web channel):
 
 | Component | Owns | Does NOT do |
 |-----------|------|-------------|
-| **Cloud Gateway** | User auth + roles, web API, tunnel hub, central DB, agent pool + allocation, job routing, file relay/staging, skill vault + fleet dispatch + visibility | Run agents, hold long-term user files after delivery |
-| **Local Device** | Tunnel client, Docker lifecycle (pool of agents), agent health/recovery, local job state, file staging & cleanup; admin-operated, hosts the agent pool | Authenticate end users, expose public ports, decide skill policy |
-| **Agent Container** | Execute one job at a time, report progress/result, install/enable/disable skills it is told to; released back to pool after job done | Persist user data after job completion, belong to any customer permanently |
-| **Web UI** | Customer: command UX, uploads, skill selection, job control, results. Admin: device fleet + agent pool + skill vault + fleet rollout + visibility | Show terminals or raw agent logs |
+| **Cloud Gateway** | User auth + roles, web API, tunnel hub, central DB, agent pool + allocation, job routing, file relay/staging, skill vault + fleet dispatch + visibility, **VNC session relay** (pairs browser↔device sockets), **encrypted credential vault** (saved logins, inject per job) | Run agents, hold long-term user files; parse/store RFB bytes; hold cookie plaintext at rest |
+| **Local Device** | Tunnel client, Docker lifecycle (pool of agents), agent health/recovery, local job state, file staging & cleanup, **agent-image pre-pull**, **VNC bridge** (TCP↔WS to the container's loopback RFB), **credential pass-through** (stream cookies G↔agent); admin-operated, hosts the agent pool | Authenticate end users, expose public ports/RFB, decide skill policy, persist cookies |
+| **Agent Container** | Execute one job at a time, report progress/result, install/enable/disable skills; run the bundled headless browser + on-demand VNC; accept injected login cookies; released back to pool after job done | Persist user data/credentials after job completion, belong to any customer permanently, expose VNC to the internet |
+| **Web UI** | Customer: command UX, uploads, skill + saved-login selection, job control, live browser (VNC), results. Admin: device fleet + agent pool + skill vault + fleet rollout + visibility | Show terminals or raw agent logs |
 
 ## 6. Repository Layout (target)
 
@@ -107,7 +110,12 @@ IAgent/
 | **Skill** | A reusable capability/config stored in the cloud vault and installed into agents. |
 | **Skill Vault** | Central admin-owned catalog + versioned skill artifacts on the gateway, dispatched to devices. |
 | **Skill visibility** | Admin setting (`public`/`restricted` + grants) deciding which customers can see a skill. |
-| **Tunnel** | Persistent reverse WebSocket from device → gateway. |
+| **Agent image** | Ubuntu-based Docker image bundling `opencode`, `camoufox`, language runtimes + warmed deps, and the Xvfb/x11vnc stack; pre-pulled by devices. |
+| **opencode** | The default bundled agent/brain (`opencode-ai`). |
+| **Camoufox** | The bundled headless stealth browser the agent drives and that VNC renders. |
+| **VNC session** | A live, relayed view/control of an agent's headless browser from the web UI (noVNC ↔ gateway ↔ device ↔ container RFB). |
+| **Credential vault** | Encrypted store of a customer's saved website logins (storage-state), injected into the agent browser per job. |
+| **Tunnel** | Persistent reverse WebSocket from device → gateway (control). A separate on-demand binary socket carries interactive VNC. |
 | **Channel** | An input/output surface (web now; Feishu/QQ later). |
 
 ## 8. Reading Order

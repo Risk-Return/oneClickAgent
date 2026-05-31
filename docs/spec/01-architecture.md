@@ -13,6 +13,8 @@
 │   ├─ Tunnel Hub            registry of connected devices + routing     │
 │   ├─ File Relay/Staging    accept uploads, stage, push to device       │
 │   ├─ Skill Vault           catalog + artifacts; dispatch to devices    │
+│   ├─ VNC Relay             pair browser↔device sockets; relay RFB bytes │
+│   ├─ Credential Vault      encrypted login cookies; inject per job     │
 │   └─ Store (PostgreSQL)    source of truth                             │
 ├──────────────────────────────────────────────────────────────────────┤
 │ Reverse Tunnel (WSS, JSON frames)                                      │
@@ -23,13 +25,17 @@
 │   ├─ Docker Manager        create/start/stop/health/recover containers │
 │   ├─ File Stager           receive files, mount into agent, cleanup    │
 │   ├─ Skill Manager         cache vault skills; apply to all agents     │
+│   ├─ VNC Bridge            TCP↔WS bridge to container RFB (no inbound)  │
+│   ├─ Cred Relay            stream login cookies G↔agent (no persist)   │
 │   ├─ Monitor               resource & status sampling                  │
 │   └─ Store (SQLite)        local device/agent/job/file state           │
 ├──────────────────────────────────────────────────────────────────────┤
-│ Agent Container (Python, HTTP API) — one per agent                     │
+│ Agent Container (Ubuntu image, HTTP API) — one per agent               │
 │   ├─ Job Executor          run one job, emit progress, return result   │
 │   ├─ Skill Manager         install/update/enable/disable/delete skills │
-│   └─ Workspace             ephemeral data, wiped after job done         │
+│   ├─ Browser + VNC         headless camoufox on Xvfb; x11vnc (loopback) │
+│   ├─ Toolchain             opencode + node/python/go/rust/java (warmed) │
+│   └─ Workspace             ephemeral data + browser profile, wiped      │
 └──────────────────────────────────────────────────────────────────────┘
 ```
 
@@ -43,6 +49,8 @@ Every routable entity has a stable ID:
 - `agent_id` — a **pooled** agent container on a device; exists independently of any customer. Temporarily **allocated** to a customer's job and **released** back to the pool on job completion.
 - `job_id` — globally unique (UUIDv7 recommended) so it can be correlated across gateway/device/agent.
 - `file_id` — globally unique; tracks lifecycle and storage location.
+- `session_id` — an interactive **VNC session** bound to a running job's agent; its RFB stream is relayed over a dedicated, on-demand socket (`05-tunnel-protocol §9`).
+- `credential_id` — a customer's **encrypted saved login** in the credential vault, optionally injected into a job's agent browser (`06-data-model §1.16`).
 
 Routing key for a command: `(user_id, agent_id, job_id)`. The customer never supplies a `device_id` or `agent_id` directly; on job submission the gateway's **allocator** picks an idle agent from the pool, binds `agent_id` to the job, and internally resolves `agent_id → device_id` for tunnel routing. Tenant validation asserts the job belongs to the authenticated customer (`job.user_id`); the agent itself is pool-scoped, not customer-scoped.
 
@@ -133,6 +141,31 @@ Reconnect: Gateway sends SKILL_SYNC (desired device_skills + agent_skills) so th
 New agent: device applies all 'installed' fleet skills before the agent goes RUNNING.
 ```
 
+### 3.6 Interactive browser (VNC) & login cookies
+
+```
+Inject saved logins on dispatch (customer attached credential_ids):
+  Gateway decrypts each credential (AES-256-GCM) in memory
+    → CRED_PUSH {storage_state} over tunnel → Device → POST agent /browser/state
+  Agent loads cookies into /work/profile before brain.run; wiped on job terminal.
+
+Open a live VNC session (job RUNNING):
+  Customer → POST /jobs/{id}/vnc → Gateway: vnc_sessions row + single-use session_token
+           → VNC_OPEN {relay_url, session_token} over tunnel → Device
+  Device → POST agent /vnc/start (Xvfb+x11vnc+camoufox) → VNC_OPENED {rfb_password}
+  Device → dials a SECOND socket out: wss://gateway/session/{id} (binary RFB)
+  Browser noVNC → wss://gateway/ws/vnc/{id} → Gateway pairs the two sockets → live control
+
+Save a login from the session:
+  Customer → POST /vnc/{id}/save-login {label}
+  Device → GET agent /browser/state?origin → CRED_CAPTURE → Gateway encrypts + stores
+
+Close: job terminal / idle / max-TTL / user → VNC_CLOSE; device POST agent /vnc/stop.
+```
+
+- The VNC RFB stream uses a **separate binary socket** (the device dials out per session); it never touches the JSON control tunnel and needs no inbound device port.
+- Login cookies are **encrypted at rest** in the gateway, decrypted only in memory at dispatch, and **never persisted** on the device or agent (wiped with `/work/profile`).
+
 ## 4. Data Flow & Source of Truth
 
 - **Cloud PostgreSQL** is authoritative for users, devices, the agent pool (with allocation status), jobs (canonical status), files (metadata), and the **skill vault** (catalog, versions, desired `device_skills`/`agent_skills`).
@@ -179,6 +212,19 @@ INSTALLED → UPDATING → INSTALLED
 (any) → DELETING → (removed)
 INSTALLING / UPDATING → ERROR → (retry) → INSTALLED
 ```
+
+### VNC session (`vnc_sessions`)
+
+```
+PENDING ──(VNC_OPENED ready)──► READY ──(both sockets paired)──► ACTIVE ──► CLOSED
+   │                              │                               │
+   └──────────────────────────────┴───────────────────────────────┴──► ERROR
+```
+
+- `PENDING`: session row created, `VNC_OPEN` routed to device, awaiting `VNC_OPENED`.
+- `READY`: agent VNC stack up, device session socket dialed; awaiting the browser noVNC socket.
+- `ACTIVE`: both sockets paired; raw RFB relayed live.
+- Terminal `CLOSED`: job terminal, user close, idle (`IAGENT_VNC_IDLE_TTL`) or max (`IAGENT_VNC_MAX_TTL`). `ERROR`: agent/relay failure. Always tears down the agent VNC stack.
 
 ## 6. Reliability & Recovery
 

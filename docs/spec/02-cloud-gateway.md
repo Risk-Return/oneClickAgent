@@ -22,12 +22,14 @@ gateway/
 └── internal/
     ├── config/                    # env + file config, validation
     ├── httpapi/                   # chi routers, handlers, middleware
-    │   ├── auth/ devices/ agents/ jobs/ files/ skills/ ws/
+    │   ├── auth/ devices/ agents/ jobs/ files/ skills/ vnc/ credentials/ ws/
     ├── auth/                      # JWT issue/verify, password hashing, RBAC
     ├── tunnel/                    # WS hub, device registry, frame codec, router
     ├── pool/                      # agent pool allocator: select idle agent, allocate, release, scale
     ├── relay/                     # file staging + chunked push over tunnel
     ├── skillvault/                # skill catalog + artifact storage + dispatch
+    ├── vncrelay/                  # interactive VNC session pairing + binary byte relay (§16)
+    ├── credvault/                 # encrypted login-credential vault (AES-256-GCM, push/capture) (§17)
     ├── channel/                   # channel adapter interface (web impl + stubs)
     ├── store/                     # PostgreSQL repositories (pgx)
     ├── model/                     # domain types + DTOs
@@ -236,7 +238,7 @@ CREATING → IDLE ──(allocate)──→ BUSY ──(job done)──→ IDLE
 ## 11. Channel Layer
 
 - `channel.Adapter` interface (see `07-api.md §10`). Web adapter implemented; Feishu/QQ registered as no-op stubs returning `NOT_IMPLEMENTED`.
-- Inbound from any channel funnels into the same internal `SubmitJob(userID, agentID, cmd, params, fileIDs, skillID)` use-case, where `skillID` is **at most one** enabled skill (validated against `agent_skills`).
+- Inbound from any channel funnels into the same internal `SubmitJob(userID, agentID, cmd, params, fileIDs, skillID, credentialIDs)` use-case, where `skillID` is **at most one** enabled skill (validated against `agent_skills`) and `credentialIDs` are the caller's saved logins to inject (validated as owned by `userID`).
 
 ## 12. Configuration (env)
 
@@ -254,6 +256,12 @@ CREATING → IDLE ──(allocate)──→ BUSY ──(job done)──→ IDLE
 | `IAGENT_AGENTS_PER_USER` | `1` | default cap |
 | `IAGENT_QUEUE_TTL` | `1h` | max time a job waits in queue before QUEUE_TIMEOUT |
 | `IAGENT_MAX_QUEUED_PER_USER` | `10` | per-user cap on QUEUED jobs |
+| `IAGENT_VNC_IDLE_TTL` | `5m` | close a VNC session after this idle period |
+| `IAGENT_VNC_MAX_TTL` | `30m` | hard cap on a single VNC session duration |
+| `IAGENT_VNC_MAX_SESSIONS_PER_USER` | `2` | concurrent interactive sessions per customer |
+| `IAGENT_VNC_SESSION_BUF_BYTES` | `4MiB` | per-session relay buffer cap (backpressure) |
+| `IAGENT_CRED_KEY` | — | base64 AES-256 data key (or `IAGENT_CRED_KMS` for envelope/KMS) for the credential vault |
+| `IAGENT_CRED_KMS` | — | KMS key id for envelope encryption (overrides `IAGENT_CRED_KEY`) |
 
 ## 13. Observability
 
@@ -275,6 +283,54 @@ CREATING → IDLE ──(allocate)──→ BUSY ──(job done)──→ IDLE
 
 ## 15. Testing
 
-- Unit: auth, tenant scoping, frame codec, ack/retransmit, job state transitions (including queue → dispatch, queue → timeout), allocator dequeue ordering (tier + FIFO), skill dispatch + reconcile.
-- Integration: ephemeral PostgreSQL (testcontainers), fake device WS client simulating tunnel, queue with mock pool (all agents busy → queued → release → dequeue).
+- Unit: auth, tenant scoping, frame codec, ack/retransmit, job state transitions (including queue → dispatch, queue → timeout), allocator dequeue ordering (tier + FIFO), skill dispatch + reconcile, credential encrypt/decrypt round-trip, VNC session token issue/verify + pairing.
+- Integration: ephemeral PostgreSQL (testcontainers), fake device WS client simulating tunnel, queue with mock pool (all agents busy → queued → release → dequeue), a fake device session socket exchanging bytes through the VNC relay, `CRED_PUSH`/`CRED_CAPTURE` round-trip with a fake device.
 - E2E: with real device + agent (see `10-deployment.md`).
+
+## 16. VNC Session Relay
+
+The gateway is a **transparent byte relay** for interactive browser sessions; it never parses RFB. Wire protocol: `05-tunnel-protocol §9`. The `vncrelay` package maintains a registry of sessions and pairs two sockets per `session_id`.
+
+```go
+type Session struct {
+    id          SessionID
+    userID      UserID
+    jobID       JobID
+    deviceID    DeviceID
+    tokenHash   []byte           // single-use relay token
+    browser     *websocket.Conn  // /ws/vnc/{id}  (noVNC side)
+    device      *websocket.Conn  // /session/{id} (device bridge side)
+    state       atomic.Int32     // pending/ready/active/closed
+    lastActive  atomic.Int64
+}
+```
+
+### Open flow
+
+```
+POST /jobs/{id}/vnc (07-api §5.1):
+  1. Assert caller owns the running job; assert agent has VNC enabled (HELLO capabilities).
+  2. Create vnc_sessions row (status=pending) + single-use session_token (store only hash, TTL 60s).
+  3. Route VNC_OPEN {session_id, relay_url:wss://…/session/{id}, session_token, ttl_s} over the device tunnel.
+  4. Device replies VNC_OPENED {status:ready, rfb_password}; gateway stores status=ready.
+  5. Return {session_id, ws_url:/ws/vnc/{id}, rfb_password, ttl_s} to the browser.
+```
+
+### Relay
+
+- `/session/{id}` (device side): authenticate `session_token` → match `session_id` → bind to `Session.device`. Subprotocol `iagent.session.v1`, binary.
+- `/ws/vnc/{id}` (browser side): authenticate JWT → assert `session.user_id == jwt.sub` → bind to `Session.browser`. Binary.
+- When **both** sockets are bound → status `active`; two goroutines pump bytes browser↔device with a per-session buffer cap (`IAGENT_VNC_SESSION_BUF_BYTES`); update `lastActive`.
+- A background ticker closes sessions idle > `IAGENT_VNC_IDLE_TTL` or older than `IAGENT_VNC_MAX_TTL`, and on job terminal; sends `VNC_CLOSE` over the tunnel and closes both sockets.
+- Per-user concurrency capped by `IAGENT_VNC_MAX_SESSIONS_PER_USER`.
+- Multi-instance note: like the device tunnel, a session is sticky to the instance holding the device socket; the Redis-backed registry (§4 scaling note) routes the browser socket to that instance.
+
+## 17. Credential Vault
+
+Encrypted store of customer browser logins (`06-data-model §1.16`); the gateway is the **only** holder of the key. Wire protocol: `05-tunnel-protocol §10`.
+
+- **Encryption**: `AES-256-GCM`. A random 96-bit nonce per write; ciphertext + nonce + auth tag + `key_id` stored. The data key comes from `IAGENT_CRED_KEY` or, preferably, envelope-encrypted via `IAGENT_CRED_KMS` (KMS-managed; supports rotation by `key_id`).
+- **Capture** (`POST /vnc/{id}/save-login`): instruct the device to export the live browser's storage-state for the session origin → receive `CRED_CAPTURE` → verify `sha256` → encrypt → insert `browser_credentials` → `CRED_CAPTURE_ACK`. Cookie content never touches the browser client.
+- **Inject** (on job submit with `credential_ids`): for each owned credential, decrypt in memory → verify `sha256` → `CRED_PUSH` over the tunnel → device injects into the agent → `CRED_PUSH_ACK`. Plaintext is held only transiently in memory, never logged, never written to disk.
+- **Authorization**: all vault routes tenant-scoped (`credential.user_id == jwt.sub`). A job may only reference the caller's own credentials.
+- **Lifecycle**: customer-managed (list/rename/delete); `last_used_at` updated on inject; deleting a credential does not affect running jobs that already injected it.

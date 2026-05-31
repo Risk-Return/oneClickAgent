@@ -2,7 +2,7 @@
 
 Three stores, each authoritative for its scope (see `01-architecture.md §4`):
 
-- **Cloud (PostgreSQL 15+)** — users, devices (admin-managed), agents (admin-managed pool, temporarily allocated per job), jobs (canonical), files (metadata), skills + visibility, audit.
+- **Cloud (PostgreSQL 15+)** — users, devices (admin-managed), agents (admin-managed pool, temporarily allocated per job), jobs (canonical), files (metadata), skills + visibility, the **encrypted browser-credential vault**, **VNC session** records, audit.
 - **Local Device (SQLite, WAL)** — execution detail + in-flight cache.
 - **Agent Container (ephemeral)** — in-memory + workspace files, no durable user data.
 
@@ -90,6 +90,8 @@ IDs are **UUIDv7** (time-sortable) stored as `uuid`/`TEXT`. Timestamps are UTC (
 | `created_at` / `updated_at` | timestamptz | |
 
 Indexes: `idx_jobs_queue (status, user_tier, created_at)` — partial index for dequeue query (WHERE status = 'QUEUED'), `idx_jobs_user_created (user_id, created_at desc)`, `idx_jobs_agent`, partial index on `status` for active jobs.
+
+A job may also reference **saved logins** to inject into its agent's browser (see `job_credentials` §1.17) and may open an interactive **VNC session** (see `vnc_sessions` §1.15).
 
 ### 1.5 `job_files` (link)
 
@@ -200,9 +202,59 @@ Which **principals** (a customer **or** an organization) may **see** a `restrict
 
 ### 1.14 `audit_log`
 
-`(id uuid PK, user_id uuid, actor text, action text, target_type text, target_id uuid, meta jsonb, created_at timestamptz)`. Admin actions (fleet skill install/disable/update/delete, vault publish, visibility grants, org/member management, device management) are recorded here.
+`(id uuid PK, user_id uuid, actor text, action text, target_type text, target_id uuid, meta jsonb, created_at timestamptz)`. Admin actions (fleet skill install/disable/update/delete, vault publish, visibility grants, org/member management, device management) are recorded here. Customer credential-vault actions (save/delete a login) and VNC session open/close are also recorded (without any cookie content).
 
-### 1.15 ER overview
+### 1.15 `vnc_sessions` (interactive browser sessions)
+
+An interactive VNC view of a running job's agent browser, relayed to the web UI (see `05-tunnel-protocol §9`). One row per session; lifecycle is short (bound to the job/agent).
+
+| Column | Type | Notes |
+|--------|------|-------|
+| `id` | uuid PK | `session_id` |
+| `user_id` | uuid FK→users | owner (customer); tenant-scoped |
+| `job_id` | uuid FK→jobs | the active job being controlled |
+| `agent_id` | uuid FK→agents | the allocated agent hosting the browser |
+| `device_id` | uuid FK→devices | host device (for routing the relay) |
+| `status` | text NOT NULL DEFAULT 'pending' | `pending`/`ready`/`active`/`closed`/`error` |
+| `token_hash` | text NOT NULL | hash of the single-use session relay token (never stored plaintext) |
+| `token_expires_at` | timestamptz | connect deadline (default now + 60s) |
+| `started_at` / `ended_at` | timestamptz | |
+| `close_reason` | text | `user`/`job_terminal`/`idle_timeout`/`max_timeout`/`error` |
+| `created_at` | timestamptz | |
+
+Indexes: `idx_vnc_user (user_id)`, `idx_vnc_job (job_id)`, partial index on `status` for active sessions. The relay carries **no** RFB bytes through the DB; only session metadata is stored.
+
+### 1.16 `browser_credentials` (encrypted login vault)
+
+A customer's saved website logins (cookies + localStorage = **storage-state**), captured during a VNC session and re-injected into an agent's browser when a later job needs them. **Encrypted at rest**; the gateway holds the only key and decrypts just-in-time before dispatch (see `08-auth-security §13`). Plaintext is **never** stored.
+
+| Column | Type | Notes |
+|--------|------|-------|
+| `id` | uuid PK | |
+| `user_id` | uuid FK→users | owner (customer); tenant-scoped |
+| `label` | text NOT NULL | user-facing name, e.g. "GitHub login" |
+| `origin` | text NOT NULL | site origin the login applies to, e.g. `https://github.com` |
+| `storage_state_enc` | bytea NOT NULL | **AES-256-GCM** ciphertext of the storage-state JSON |
+| `nonce` | bytea NOT NULL | GCM nonce/IV (unique per write) |
+| `auth_tag` | bytea NOT NULL | GCM authentication tag |
+| `key_id` | text NOT NULL | envelope/KMS key id used (supports rotation) |
+| `sha256` | text NOT NULL | integrity of the **plaintext** (verified after decrypt on inject) |
+| `last_used_at` | timestamptz | updated on each inject |
+| `created_at` / `updated_at` | timestamptz | |
+
+`UNIQUE(user_id, label)`. Index `idx_cred_user_origin (user_id, origin)`. Credentials are customer-owned (not shared); only the owning customer may reference them in a job.
+
+### 1.17 `job_credentials` (link)
+
+Which saved logins are injected for a job. Unlike skills (at most one per job), a job may inject **several** logins (e.g. two sites).
+
+| Column | Type | Notes |
+|--------|------|-------|
+| `job_id` | uuid FK→jobs | |
+| `credential_id` | uuid FK→browser_credentials | must belong to the same `user_id` as the job |
+| PK | `(job_id, credential_id)` | |
+
+### 1.18 ER overview
 
 ```
 admin (users.role=admin) ──manages──*  devices
@@ -217,6 +269,9 @@ skills 1──* skill_versions
 devices *──* skills        via device_skills  (admin fleet-wide install)
 agents  *──* skills        via agent_skills   (enabled/disabled per agent in pool)
 {users|orgs} *──* skills   via skill_grants   (admin visibility for 'restricted')
+customer 1──* browser_credentials  (encrypted login vault; user-owned)
+jobs *──* browser_credentials  via job_credentials (logins injected into the agent browser)
+customer 1──* vnc_sessions ── 1 jobs/agents  (interactive browser control)
 users   1──* refresh_tokens
 audit_log
 ```
@@ -307,12 +362,24 @@ CREATE TABLE agent_skills (      -- per-agent enable/disable of an installed ski
   updated_at TEXT,
   PRIMARY KEY (agent_id, skill_id)
 );
+
+CREATE TABLE vnc_sessions (      -- interactive browser session bridge (NO credential bytes stored)
+  session_id TEXT PRIMARY KEY,
+  job_id     TEXT,
+  agent_id   TEXT,
+  rfb_port   INTEGER,            -- container loopback RFB port the bridge connects to
+  status     TEXT,              -- pending/ready/active/closed/error
+  created_at TEXT,
+  ended_at   TEXT
+);
 ```
 
 Notes:
 - `device_skills` is the device's cache of vault skills; the device applies them to all its agents.
 - `outbox` guarantees terminal results survive restarts until cloud ACK.
 - `workspace_dir` is removed on job terminal state; row kept for audit until cloud confirms.
+- `vnc_sessions` tracks only bridge state (ports/status); the RFB byte stream is relayed live and never stored.
+- **Credentials/cookies are NEVER persisted on the device.** Injected storage-state is streamed straight from gateway → agent and captured storage-state straight from agent → gateway (`05-tunnel-protocol §10`); nothing touches SQLite or disk.
 - Use `PRAGMA journal_mode=WAL;` and a single writer connection.
 
 ---
@@ -327,7 +394,7 @@ No durable user storage. In-process state only:
 /work/output/    # result artifacts (returned, then wiped)
 ```
 
-State object (in memory): `{ current_job: {job_id, status, percent, message, started_at} | null, skills:[...] }`. On job completion the executor wipes `/work/inputs`, `/work/scratch`, `/work/output`.
+State object (in memory): `{ current_job: {job_id, status, percent, message, started_at} | null, skills:[...], vnc:{enabled, rfb_port} | null }`. Injected login storage-state lives only in `/work/profile`. On job completion the executor wipes `/work/inputs`, `/work/scratch`, `/work/output`, **and `/work/profile`**.
 
 ---
 
@@ -336,6 +403,9 @@ State object (in memory): `{ current_job: {job_id, status, percent, message, sta
 | Data | Where | Lifetime |
 |------|-------|----------|
 | User input files | Agent workspace | Deleted on job terminal state |
+| Injected login storage-state | Agent `/work/profile` | Deleted on job terminal state (never persisted) |
+| Saved login (encrypted) | Cloud `browser_credentials` | Retained until the customer deletes it |
+| VNC session metadata | Cloud `vnc_sessions` | Retained per audit policy; no RFB bytes stored |
 | User input files | Device staging | Deleted on `FILE_PURGED` after job done |
 | User input files | Cloud staging | Deleted after device confirms staged + job done (configurable grace, default 24h) |
 | Job result (progress-level) | Cloud `jobs.result` | Retained per user policy (default 90 days) |

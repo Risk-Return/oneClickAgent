@@ -15,7 +15,7 @@ How to build, configure, and run each component. Two installations from the goal
 |-----------|----------|-----------|
 | Gateway | static Go binary + container image | `go build`, multi-arch image |
 | Device | Python package + CLI (`iagent-device`) | `pyproject.toml`, `pipx`/venv |
-| Agent | Docker image `iagent/agent` (multi-arch) | `docker buildx` amd64+arm64 |
+| Agent | Docker image `iagent/agent` (**Ubuntu 24.04** base, multi-arch, multi-GB) | `docker buildx` amd64+arm64 |
 | Web | static bundle (served by gateway or CDN) | `vite build` |
 
 ## 2. Cloud Gateway Deployment
@@ -81,18 +81,44 @@ Contains SQLite DB + per-job workspaces (auto-cleaned).
 
 ## 4. Agent Image
 
-- Built/published as `iagent/agent:<version>` (multi-arch). Devices pull on demand.
-- Device creates containers with labels `iagent.agent_id`, fixed host port, resource limits, hardening flags (see `08-auth-security §6`).
+Built/published as `iagent/agent:<version>` (multi-arch). The image is **Ubuntu 24.04**-based and ships a full toolchain, so it is large (multi-GB); devices **pre-pull** it before serving jobs.
+
+### Contents (per `04-agent-container §2/§10`)
+
+- Default agent **opencode** (`npm i -g opencode-ai@latest`) and headless browser **camoufox** (`npx @askjo/camofox-browser`).
+- Language runtimes: **Node 20, Python 3.12, Go 1.22, Rust stable, Temurin 21 JDK** + `build-essential`, `git`, `curl`.
+- VNC stack: **Xvfb + x11vnc** (+ minimal fonts/fluxbox) for interactive browser sessions.
+- **Warm dependency caches** built from `agent/deps/` manifests (`package.json`, `requirements.txt`, `go.mod`, `Cargo.toml`, `pom.xml`).
+
+### Build & publish
+
+```
+docker buildx build --platform linux/amd64,linux/arm64 \
+  -t iagent/agent:<version> -t iagent/agent:latest agent/ --push
+```
+
+- **Multi-stage** build (builder warms caches → slim final stage). Verify each runtime + opencode + camoufox are present via an image smoke test in CI.
+- **arch caveat**: confirm camoufox + runtime availability on `arm64`; if a dependency is amd64-only, publish an amd64-only tag and document it.
+- Layer ordering: runtimes/toolchain first (rarely change), dependency caches next, app last — maximizes layer reuse and keeps rebuilds fast.
+
+### Runtime
+
+- Device creates containers with labels `iagent.agent_id`, fixed host **HTTP** port, resource limits, hardening flags (see `08-auth-security §6`). The **RFB port is loopback-only and never published** (`-p`).
+- Disk: the bundled toolchain + browser is sizeable; the per-agent `disk` limit default may need raising for browser-heavy jobs (configurable).
 - Custom agent types = alternate images implementing the same HTTP contract (`04-agent-container.md`).
 
 ## 5. Configuration Summary
 
 | Component | Source | Key vars |
 |-----------|--------|----------|
-| Gateway | env / `.env` | `IAGENT_DB_URL`, `IAGENT_JWT_SECRET`, `IAGENT_FILE_STORE`, `IAGENT_HTTP_ADDR`, `IAGENT_QUEUE_TTL`, `IAGENT_MAX_QUEUED_PER_USER` |
-| Device | env / config file | `IAGENT_GATEWAY_URL`, `IAGENT_AGENT_IMAGE`, `IAGENT_PORT_RANGE`, `IAGENT_MAX_RESTARTS` |
-| Agent | env at create | `IAGENT_AGENT_PORT`, `IAGENT_AGENT_ID`, `IAGENT_BRAIN`, LLM secrets |
+| Gateway | env / `.env` | `IAGENT_DB_URL`, `IAGENT_JWT_SECRET`, `IAGENT_FILE_STORE`, `IAGENT_HTTP_ADDR`, `IAGENT_QUEUE_TTL`, `IAGENT_MAX_QUEUED_PER_USER`, `IAGENT_VNC_IDLE_TTL`, `IAGENT_VNC_MAX_TTL`, `IAGENT_VNC_MAX_SESSIONS_PER_USER`, **`IAGENT_CRED_KEY`** (or `IAGENT_CRED_KMS`) |
+| Device | env / config file | `IAGENT_GATEWAY_URL`, `IAGENT_AGENT_IMAGE`, `IAGENT_PREPULL_IMAGE`, `IAGENT_PORT_RANGE`, `IAGENT_MAX_RESTARTS`, `IAGENT_SESSION_DIAL_TIMEOUT_S` |
+| Agent | env at create | `IAGENT_AGENT_PORT`, `IAGENT_AGENT_ID`, `IAGENT_BRAIN`, `IAGENT_VNC_ENABLED`, `IAGENT_VNC_PORT`, `IAGENT_BROWSER_CMD`, LLM secrets |
 | Web | build-time env | `VITE_API_BASE`, `VITE_WS_BASE` |
+
+> **Credential vault key required:** the gateway will refuse to start (or to serve credential routes) without `IAGENT_CRED_KEY`/`IAGENT_CRED_KMS`. Generate a 32-byte key: `openssl rand -base64 32`. Store via secret manager; never commit.
+
+> **WSS for sessions:** the reverse proxy must also pass through `wss://.../session/{id}` and `wss://.../ws/vnc/{id}` (long-lived, binary upgrades) in addition to `/tunnel` and `/ws`.
 
 Secrets via environment/secret manager; never committed.
 
@@ -144,3 +170,8 @@ Secrets via environment/secret manager; never committed.
 8. **Queue cap test**: submit beyond per-user queue cap → verify 429 QUEUE_FULL.
 9. Kill the tunnel → confirm reconnect + buffered result delivery.
 10. Verify a customer cannot see devices or other customers' agents/skills (authz).
+11. **Agent image**: confirm the device **pre-pulled** the Ubuntu image and that a container reports opencode + camoufox + node/python/go/rust/java present (`GET /status`).
+12. **VNC**: on a running job, **as customer** open Browser Control → noVNC connects and renders the headless browser → interact (move mouse / type) → confirm the RFB port is loopback-only (not published on the host).
+13. **Save login**: log into a test site in the VNC view → "Save login" → verify an encrypted row in `browser_credentials` (ciphertext, no plaintext) → entry appears in Saved Logins.
+14. **Inject**: submit a new job attaching that `credential_id` → confirm the agent browser starts already signed in → confirm `/work/profile` (cookies) is wiped on job terminal.
+15. **Session teardown**: verify the VNC session auto-closes on job terminal / idle / max-TTL, and the agent VNC stack is torn down.

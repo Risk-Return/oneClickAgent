@@ -46,6 +46,7 @@ Untrusted internet ── TLS ──► [Gateway]  (authn/authz, tenant scope)
 - **Customer sees only allocated agents**: agents appear in the customer's view only while `agent.user_id == jwt.sub` (i.e., while their job is running).
 - **Inbound device frames** are attributed to the device's pooled agents; results route to the owning customer via `job.user_id`.
 - **WS subscriptions**: customers may subscribe only to their own `job` topics; device-fleet and `skill.status` rollout topics are admin-only.
+- **VNC sessions** (`vnc_sessions`) and **saved logins** (`browser_credentials`) are **customer-owned**: every VNC/credential route asserts `resource.user_id == jwt.sub`. A customer may only open a VNC session for their own running job and may only inject their own credentials.
 
 ### 4.3 Skill authorization & visibility
 
@@ -81,8 +82,10 @@ Untrusted internet ── TLS ──► [Gateway]  (authn/authz, tenant scope)
 | Resources | `cpu=2, mem=4g, disk=10g`, `pids_limit` set |
 | Secrets | injected at create time (env/secret mount), excluded from logs and `/status` |
 | Data | user files wiped on job terminal state; nothing persisted across jobs |
+| Browser/VNC | RFB server binds **loopback only**, never published to host; per-session random RFB password; VNC stack runs only during a session |
+| Credentials | injected storage-state confined to `/work/profile`, wiped on job terminal; never logged or in `/status` |
 
-The agent never receives the user's JWT or the device_token. It only knows its job context.
+The agent never receives the user's JWT, the device_token, or the credential-vault key. It only knows its job context.
 
 ## 7. File Security
 
@@ -125,9 +128,38 @@ The agent never receives the user's JWT or the device_token. It only knows its j
 | Agent escape attempt | dropped caps, non-root, no host net, read-only fs, resource limits |
 | Replay of tunnel frames | idempotent handlers, msg_id dedupe |
 | DoS on gateway | rate limits, connection caps, backpressure, `4290` |
+| Stolen saved cookies (DB dump) | AES-256-GCM at rest; key in KMS/env, not in DB; plaintext never stored |
+| VNC session hijack | JWT + session ownership on browser side; single-use `session_token` on device side; per-session RFB password; short TTL |
+| Credential exfiltration via agent | agent never sees the vault key/owner; storage-state confined to `/work/profile`, wiped on terminal; not in logs/`/status` |
+| Cross-tenant credential reuse | a job may reference only the caller's own `credential_ids` (else `403`) |
 
 ## 12. Compliance & Hygiene
 
 - Dependency scanning (Go `govulncheck`, Python `pip-audit`), image scanning (Trivy) in CI.
 - Least-privilege deploy; gateway runs as non-root; minimal base images.
 - Security headers on web responses (HSTS, CSP, X-Content-Type-Options, etc.).
+
+## 13. Browser Sessions (VNC) & Credential Vault
+
+The Docker/browser feature has two security-sensitive halves: live **VNC sessions** and the **encrypted login-cookie vault**.
+
+### 13.1 VNC session security
+
+Interactive browser (VNC) sessions are relayed gateway↔device↔container with **no inbound device port** (`05-tunnel-protocol §9`).
+
+- **Two-sided auth**: the browser side of the relay (`/ws/vnc/{id}`) requires the user's JWT **and** ownership of `vnc_sessions.user_id`; the device side (`/session/{id}`) requires the single-use `session_token` (hash stored, TTL 60s to connect, bound to `session_id`+`device_id`+`user_id`).
+- **RFB auth**: x11vnc enforces a **per-session random password** generated at `/vnc/start`; it is delivered to the noVNC client only (via the trusted control tunnel → gateway → browser), never exposed in URLs or logs.
+- **Loopback only**: the container RFB port is never published to the host; only the device's in-process bridge connects to it.
+- **Bounded lifetime**: sessions auto-close on job terminal, idle (`IAGENT_VNC_IDLE_TTL`), or max duration (`IAGENT_VNC_MAX_TTL`); per-user concurrency capped.
+- **Transparent relay**: the gateway never parses or stores RFB bytes; only session metadata is persisted.
+
+### 13.2 Credential vault & login-cookie protection
+
+Saved website logins (cookies + localStorage = **storage-state**) are stored **encrypted** in the cloud (`06-data-model §1.16`) and re-injected into a container's browser per job (`05-tunnel-protocol §10`).
+
+- **Encryption at rest**: `AES-256-GCM` with a unique 96-bit nonce per write; ciphertext + nonce + auth tag + `key_id` persisted. Plaintext is **never** written to disk or DB.
+- **Key management**: the data key is provided via `IAGENT_CRED_KEY` (base64 AES-256) or, preferably, envelope-encrypted via KMS (`IAGENT_CRED_KMS`). Keys live outside the database; rotation tracked by `key_id`. The gateway is the **sole** key holder — neither device nor agent ever receives it.
+- **Capture path**: storage-state is exported from the live browser only during an authenticated VNC session and relayed device→gateway (`CRED_CAPTURE`); it never transits the browser client. Integrity checked via `sha256` of plaintext before encryption.
+- **Inject path**: at dispatch the gateway decrypts in memory, verifies `sha256`, and pushes over the tunnel (`CRED_PUSH`); the device streams it straight to the agent. Plaintext exists only transiently in memory on gateway and device; the agent confines it to `/work/profile` and wipes it on job terminal.
+- **Tenant isolation**: credentials are customer-owned; only the owner may list/rename/delete or reference them in a job.
+- **No logging**: storage-state and RFB bytes are excluded from all logs, traces, `/status`, and audit `meta` (only the credential `id`/`label`/`origin` are auditable).

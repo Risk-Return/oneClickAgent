@@ -21,7 +21,7 @@ If `HELLO` is not received within `10s` of upgrade, the gateway closes with `400
 
 ## 2. Framing
 
-All frames are **UTF-8 JSON text** WebSocket messages (binary frames reserved for future chunk optimization). Envelope:
+All frames on the **main control tunnel** are **UTF-8 JSON text** WebSocket messages. (Binary, low-latency byte streams — e.g. interactive VNC — use a **separate session-relay socket**, §9, not the control tunnel.) Envelope:
 
 ```jsonc
 {
@@ -64,7 +64,7 @@ Rules:
 
 | Type | Payload |
 |------|---------|
-| `JOB_DISPATCH` | `{ job_id, agent_id, command, params, file_ids:[], skill_id?, submitted_at }` (at most one `skill_id`) |
+| `JOB_DISPATCH` | `{ job_id, agent_id, command, params, file_ids:[], skill_id?, credential_ids:[]?, submitted_at }` (at most one `skill_id`; `credential_ids` = saved logins to inject — the decrypted storage-state is pushed separately via `CRED_PUSH`, §10) |
 | `JOB_CANCEL` | `{ job_id, reason }` |
 | `JOB_QUERY` | `{ job_id }` |
 
@@ -138,6 +138,27 @@ Skill packages are dispatched from the **cloud skill vault** to the device, chun
 | `FILE_ACK` | D→G | `{ file_id, status:"STAGED_DEVICE"|"ERROR", message? }` |
 | `FILE_PURGED` | D→G | `{ file_id, job_id }` |
 
+### 4.8 Interactive VNC session control (§9)
+
+Control frames that set up / tear down an interactive browser (VNC) session. The actual RFB byte stream travels on a **separate session-relay socket** (§9), not here.
+
+| Type | Dir | Payload |
+|------|-----|---------|
+| `VNC_OPEN` | G→D | `{ session_id, agent_id, job_id, relay_url, session_token, ttl_s }` — open a bridge: dial `relay_url`, start the agent VNC stack |
+| `VNC_OPENED` | D→G | `{ session_id, status:"ready"|"error", rfb_password?, message? }` — `rfb_password` is the agent's one-time RFB secret, relayed to the browser by the gateway |
+| `VNC_CLOSE` | both | `{ session_id, reason }` — either side may close (user closed, job terminal, timeout) |
+
+### 4.9 Credential transfer (§10)
+
+Login storage-state (cookies + localStorage) moved between the encrypted cloud vault and the container's ephemeral browser profile.
+
+| Type | Dir | Payload |
+|------|-----|---------|
+| `CRED_PUSH` | G→D | `{ job_id, credential_id, origin, storage_state, sha256 }` — decrypted storage-state to inject for a job; chunked like files if > frame cap |
+| `CRED_PUSH_ACK` | D→G | `{ job_id, credential_id, status:"INJECTED"|"ERROR", message? }` |
+| `CRED_CAPTURE` | D→G | `{ session_id, job_id, label, origin, storage_state, sha256 }` — a login captured from a VNC session, to be encrypted + stored |
+| `CRED_CAPTURE_ACK` | G→D | `{ credential_id, status:"STORED"|"ERROR", message? }` |
+
 ## 5. File Transfer
 
 - Inputs flow **gateway → device** only (user uploads). Results are returned in `JOB_RESULT` (small) or, for large artifacts, via a result-file flow mirroring §4.7 in the device→gateway direction (`FILE_PULL_*`, reserved).
@@ -167,3 +188,65 @@ Skill packages are dispatched from the **cloud skill vault** to the device, chun
 
 - `v` and subprotocol `iagent.tunnel.v1` are bumped together on breaking changes.
 - Gateway MAY support multiple versions concurrently; `HELLO_ACK` echoes the negotiated version.
+- The session-relay subprotocol `iagent.session.v1` (§9) is versioned independently of the control tunnel.
+
+## 9. Interactive Session Relay (VNC)
+
+Interactive VNC is **binary, low-latency, and high-bandwidth** — unsuitable for the JSON/base64 control tunnel (1 MiB frame cap, ACK-per-frame). It uses a **separate, on-demand WebSocket** the device dials out per session, so the device still needs no inbound ports.
+
+### Establishment
+
+```
+1. Browser → POST /jobs/{id}/vnc (07-api §5.1) → Gateway creates vnc_sessions row + session_token (short TTL)
+2. Gateway → VNC_OPEN {session_id, relay_url, session_token, ttl_s} over the MAIN control tunnel → Device
+3. Device → POST agent /vnc/start → agent brings up Xvfb+x11vnc, returns rfb_port + rfb_password
+4. Device → VNC_OPENED {session_id, status:"ready", rfb_password} on the main tunnel
+5. Device → dials a SECOND socket out:  wss://<gateway>/session/<session_id>
+        Subprotocol: iagent.session.v1 ;  Authorization: Bearer <session_token>
+6. Gateway pairs the device session socket with the browser noVNC socket
+        (wss://<gateway>/ws/vnc/<session_id>, 07-api §9.1) by session_id
+7. Gateway hands rfb_password to the browser (POST response / noVNC config); RFB auth proceeds end-to-end
+```
+
+### Data plane
+
+```
+browser noVNC ⇄ [Gateway /ws/vnc/{sid}] ⇄ raw RFB bytes ⇄ [Gateway /session/{sid}] ⇄ device ⇄ 127.0.0.1:rfb_port (x11vnc)
+```
+
+- The session socket carries **binary** WebSocket messages = raw RFB bytes, **no JSON envelope, no per-message ACK**. The device is the `websockify`-equivalent (TCP↔WS bridge to the container's loopback RFB port); the gateway is a transparent byte relay and **does not parse RFB**.
+- **Auth**: `session_token` is single-use, bound to `(session_id, device_id, user_id)`, TTL `ttl_s` (default 60s to connect; the established socket lives for the session). The browser side is authorized by the user's JWT + `session_id` ownership.
+- **Lifecycle / teardown**: any of {user closes, job terminal, idle > `IAGENT_VNC_IDLE_TTL`, max > `IAGENT_VNC_MAX_TTL`} closes the pair; the gateway sends `VNC_CLOSE` on the main tunnel and the device calls agent `POST /vnc/stop`. A closed/half-open peer closes the other side.
+- **Backpressure**: standard WS flow control; the gateway caps per-session in-flight bytes and closes the session on sustained overflow (`4290`-style).
+- **Concurrency**: multiple sessions per device are allowed (at most one per active job that opens VNC); each is its own socket keyed by `session_id`.
+- **Close codes** reuse §6 (`4001` bad/expired session_token, `4002` session superseded, `4290` overloaded).
+
+## 10. Credential Transfer (Login Cookies)
+
+Moves browser login storage-state between the **encrypted cloud vault** (`06-data-model §1.16`) and a container's ephemeral `/work/profile`. The gateway is the **only** holder of the encryption key: it decrypts just-in-time before `CRED_PUSH` and encrypts on `CRED_CAPTURE`. Storage-state is never persisted on the device.
+
+### Inject (gateway → device, per job)
+
+```
+On JOB_DISPATCH carrying credential_ids:
+  for each credential_id: Gateway decrypts storage_state from the vault
+    → CRED_PUSH {job_id, credential_id, origin, storage_state, sha256}
+  Device → POST agent /browser/state {storage_state}  (verify sha256 first)
+    → CRED_PUSH_ACK {status:"INJECTED"|"ERROR"}
+  Agent writes into /work/profile before brain.run; wiped on job terminal
+```
+
+### Capture (device → gateway, save login from a VNC session)
+
+```
+User clicks "save login" in the web UI during a VNC session:
+  Gateway → (control) instructs device to capture for the session's origin
+  Device → GET agent /browser/state?origin=<site>  → storage_state
+  Device → CRED_CAPTURE {session_id, job_id, label, origin, storage_state, sha256}
+  Gateway encrypts (AES-256-GCM, envelope key) + stores in browser_credentials
+    → CRED_CAPTURE_ACK {credential_id, status:"STORED"}
+```
+
+- **Chunking**: storage-state is usually < 1 MiB and fits one frame; if larger, chunk exactly like files (§5: 256 KiB base64 chunks, `sha256` verified on completion).
+- **Idempotency**: `CRED_PUSH`/`CRED_CAPTURE` handlers are idempotent by `(job_id, credential_id)` / `(session_id, origin)`.
+- **Hygiene**: device never writes storage-state to SQLite or disk; it streams straight to/from the agent. The agent confines it to `/work/profile` and wipes on terminal state. Never logged on any hop. See `08-auth-security §13`.

@@ -18,8 +18,11 @@ Derived from `../braionstorm/goal.md`.
 | Skills | **Cloud skill vault** (admin). Admin installs/disables/updates/deletes skills across **all** devices and sets **visibility** (`public`/`restricted` + grants to a **user or an organization/group**); customer only **selects** visible+installed skills per agent. A job runs with **at most one** skill |
 | Organizations | Customers can be **single or grouped** into orgs; admin grants available skills to a whole org at once |
 | Queue | **Tiered FIFO** (enterprise > pro > free), configurable TTL (1h default), per-user cap (10 default), `QUEUE_TIMEOUT` and `QUEUE_FULL` errors |
+| Agent image | **Ubuntu 24.04** Docker image bundling default agent **opencode**, headless browser **camoufox**, runtimes (Node/Python/Go/Rust/Java) + warmed dependency caches + **Xvfb/x11vnc**; multi-arch, **pre-pulled** by devices |
+| Interactive browser (VNC) | Customer can **live-control** the agent's headless browser via **noVNC**, relayed over a dedicated on-demand binary socket (device dials out, no inbound port); RFB stays loopback-bound in the container |
+| Login credential vault | Website logins (cookies + storage-state) captured in a VNC session, **encrypted at rest** (AES-256-GCM, gateway-only key), and **re-injected** into the agent browser per job; never persisted on device/agent, wiped after the job |
 | Channels | **Web** built now; Feishu/QQ/others via adapter interface (stubs) |
-| Cross-platform | Device/agent toolchain runs on **Windows + macOS** (and Linux) |
+| Cross-platform | Device/agent toolchain runs on **Windows + macOS** (and Linux); the agent image runs as a Linux container under Docker Desktop |
 
 ## Documents
 

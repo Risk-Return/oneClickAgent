@@ -9,6 +9,7 @@ Default channel. A friendly, modern interface for controlling agents. **No termi
 - Data fetching: **TanStack Query** (REST) + a thin WS client for realtime.
 - Routing: **React Router**. Forms: **react-hook-form** + **zod**.
 - State: server state via Query; minimal global UI state via Zustand/Context.
+- **Interactive browser**: **noVNC** (`@novnc/novnc`) rendering the agent's headless browser over the `/ws/vnc/{session_id}` WebSocket (`07-api §9.1`).
 
 ```
 web/
@@ -17,7 +18,7 @@ web/
     ├── auth/           # token mgmt, guards
     ├── pages/          # route screens
     ├── components/     # shared UI (shadcn-based)
-    ├── features/       # agents, jobs, files, skills, devices
+    ├── features/       # agents, jobs, files, skills, devices, credentials, vnc
     └── store/          # ui state
 ```
 
@@ -51,13 +52,21 @@ The central workspace:
 - **Command interface**: a textarea/structured form to enter the instruction + optional params.
 - **File upload**: drag-and-drop, multi-file, progress bars, attaches `file_ids` to the job.
 - **Skill selector**: choose **one** skill to run this job (single-select / radio, or none) — a job uses **at most one** skill. Only visible skills that are installed on the pool are listed.
+- **Saved logins selector**: optionally attach one or more saved logins (`credential_ids`) so the agent's browser starts already signed in. Shows the caller's vault entries (label + origin); never shows cookie contents.
 - **Submit (send job)** button → creates job, system allocates an agent from the pool, switches to live view.
 - **Live job view**: status pill, progress bar (percent), streaming progress messages (text only), elapsed time.
   - **Queued state**: if all agents are busy, the job shows an "In Queue" state with position badge ("#3 in queue") and estimated wait time. A cancel button is available while queued.
-  - **Running state**: standard progress bar, status, messages.
+  - **Running state**: standard progress bar, status, messages, plus an **"Open Browser"** button to launch the live VNC view (§3.4.1).
 - **Cancel job** button (enabled while non-terminal — queued or running).
 - **Result display**: progress-level result rendered as formatted text/structured summary; downloadable output artifacts if provided.
 - **Queue full error**: if user has reached the max queued jobs cap (10 by default), the submit button shows a clear error: "Too many queued jobs — wait or cancel one."
+
+#### 3.4.1 Browser Control (live VNC)
+Available while a job is **running** (and the agent has VNC enabled):
+- **Open Browser** → `POST /jobs/{id}/vnc` → opens a **noVNC** canvas in a panel/modal, connected to `wss://<gateway>/ws/vnc/{session_id}` and authenticated with the returned single-use `rfb_password`.
+- The user can **see and control** the agent's headless browser live (mouse/keyboard) — e.g. log into a website, solve a challenge, take over.
+- **Save login** button → `POST /vnc/{session_id}/save-login {label}` captures the current site's cookies into the encrypted vault for reuse on future jobs (§3.7). A confirmation toast shows the saved label/origin; cookie contents are never displayed.
+- **Connection status** indicator (connecting / live / closed); session auto-closes on job end, idle, or max-duration with a clear notice. **Close** button ends the session (`DELETE /vnc/{session_id}`).
 
 ### 3.5 Jobs History
 - Paginated list with filters (agent, status, date). Click → job detail (progress timeline + result).
@@ -67,7 +76,14 @@ The central workspace:
 - The customer selects a skill when submitting a job (at most one). Skills must be **installed** on the pool's host devices to be selectable. Skills visible but not installed appear as unavailable with a hint; non-visible skills are never shown.
 - Customers **cannot** install/update/delete skills — that is admin-only.
 
-### 3.7 Admin Console (`role=admin` only)
+### 3.7 Saved Logins (customer)
+Manage the encrypted login-cookie vault (`07-api §5.2`):
+- List saved logins (`GET /credentials`) showing **label**, **origin**, last-used, created — **never** cookie contents.
+- **Rename** (`PATCH /credentials/{id}`) and **delete** (`DELETE /credentials/{id}`).
+- Logins are **created only from a live VNC session** ("Save login", §3.4.1) — there is no manual cookie upload, by design (cookie content never transits the client).
+- Clear explanation copy: "Saved logins are encrypted and reused to sign the agent's browser into a site for you. They are wiped from the agent after each job."
+
+### 3.8 Admin Console (`role=admin` only)
 A distinct section, hidden entirely from customers:
 - **Device fleet**: list all devices + online status, last seen, resources, hosted agent pool. "Add device" flow → one-time enrollment code + cross-platform setup instructions (Windows/macOS). Configure pool size per device. Rotate token, rename, decommission.
 - **Agent pool (fleet-wide)**: view all agents across the fleet, their status (idle/busy/unhealthy/failed), current job if busy. Drain or force-release stuck agents.
@@ -77,7 +93,7 @@ A distinct section, hidden entirely from customers:
 - **Organizations (groups)**: create/rename/delete orgs; add/remove customer members. View an org's members + granted skills.
 - **Visibility**: set each skill `public`/`restricted` and grant/revoke to **individual customers or whole organizations** (granting an org makes the skill visible to every member).
 
-### 3.8 Settings
+### 3.9 Settings
 - Profile (username/email), password change, sessions/logout, theme.
 
 ## 4. Realtime Integration
@@ -89,6 +105,7 @@ A distinct section, hidden entirely from customers:
   - `job.result` → mark terminal, render result, toast.
   - `agent.status` / `device.status` → update badges/usage.
   - `skill.status` → update device-wide skill install/update progress badges (admin views).
+- **VNC**: the noVNC client opens its own binary WebSocket to `/ws/vnc/{session_id}` (separate from the JSON realtime WS); it carries raw RFB and is closed when the panel closes or the job ends.
 - Reconnect with backoff; on reconnect, re-fetch active resources to reconcile.
 
 ## 5. Job Control UX Mapping
@@ -101,6 +118,10 @@ A distinct section, hidden entirely from customers:
 | Query status | WS `job:{id}` (live) + `GET /jobs/{id}` (refresh) |
 | Upload file | `POST /files` then reference `file_ids` on submit |
 | List visible skills (customer) | `GET /skills` |
+| Attach saved logins to a job (customer) | `POST /jobs {credential_ids}` |
+| Open live browser (VNC) | `POST /jobs/{id}/vnc` then connect noVNC to `/ws/vnc/{session_id}` |
+| Save a login from VNC session | `POST /vnc/{session_id}/save-login {label}` |
+| Manage saved logins (customer) | `GET/PATCH/DELETE /credentials` |
 | List active agents (customer) | `GET /agents` (only those allocated to the caller's active jobs) |
 | Install skill fleet-wide (admin) | `POST /admin/skills/{id}/install` |
 | Disable/update/delete fleet skill (admin) | `POST /admin/skills/{id}/disable\|update` · `DELETE /admin/skills/{id}/install` |
@@ -138,4 +159,5 @@ A distinct section, hidden entirely from customers:
 
 - Component tests (Vitest + Testing Library).
 - E2E (Playwright): register → enroll device (mock) → admin configures pool → submit job → agent auto-allocated → watch progress → see result → agent released → cancel path.
-- Mock WS server for realtime tests.
+- VNC flow (Playwright + mock relay): open Browser Control on a running job → noVNC connects → "Save login" → entry appears in Saved Logins → attach it to a new job.
+- Mock WS server for realtime tests (both the JSON `/ws` and the binary `/ws/vnc/{id}` channels).

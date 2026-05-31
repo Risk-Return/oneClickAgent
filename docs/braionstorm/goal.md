@@ -87,3 +87,13 @@ skill should be able to:
 - delete skills for all agents on a local device by command from cloud gateway by admin
 - cloud skill vault: store skills for agents on cloud gateway and dispatch to local devices
 - user can select skills for agents on cloud gateway
+
+# docker 
+docker should follow requirements:
+- linux system, ideally ubuntu
+- pre-installed on local device
+- default agent should be pre-installed on local device: opencode : npm i -g opencode-ai@latest, camofox-browser: npx @askjo/camofox-browser
+- default dependencies should be pre-installed on local device: nodejs, python,go,rust,java etc.
+- default packages for dependencies should be pre-installed on local device based on the dependencies files.
+- support vnc: login with vnc client from headless browser which is support by camofox-browser. a tunnel should be created for vnc connection. make sure user can login to a website to control the browser through vnc successfully from web UI.
+- login cookie should be stored in cloud gateway database for security reason. can be resused and pass to a docker container when job is assigned to the agent.

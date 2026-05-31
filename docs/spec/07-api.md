@@ -73,7 +73,7 @@ Customers see only the agents **currently allocated to their active jobs**:
 
 | Method | Path | Notes |
 |--------|------|-------|
-| POST | `/jobs` | `{command, params?, file_ids?, skill_id?}` → `201 {job}` if agent allocated immediately (status `DISPATCHED`), or `202 {job}` if queued (status `QUEUED` with queue info). **At most one** `skill_id`; if present it must be `enabled` on the allocated agent, else `422 SKILL_NOT_ENABLED`. Returns `429 QUEUE_FULL` if user at queue cap. |
+| POST | `/jobs` | `{command, params?, file_ids?, skill_id?, credential_ids?}` → `201 {job}` if agent allocated immediately (status `DISPATCHED`), or `202 {job}` if queued (status `QUEUED` with queue info). **At most one** `skill_id`; if present it must be `enabled` on the allocated agent, else `422 SKILL_NOT_ENABLED`. `credential_ids` (optional, may be several) are the caller's saved logins to inject into the agent browser — each must belong to the caller, else `403`. Returns `429 QUEUE_FULL` if user at queue cap. |
 | GET | `/jobs?agent_id=&status=` | list jobs (paginated) |
 | GET | `/jobs/{id}` | full job incl. progress + result + allocated agent info; when `status=QUEUED` also includes `queue_position`, `estimated_wait_seconds` |
 | POST | `/jobs/{id}/cancel` | `{reason?}` → routes JOB_CANCEL; on completion, agent is released back to pool and allocator dequeues next |
@@ -86,6 +86,32 @@ Job control buttons in the UI map to: submit (`POST /jobs`), cancel (`POST /jobs
 > **Agent allocation:** on job submit, the gateway selects an `idle` agent from the pool, sets it `busy`, and schedules the job. On terminal state, the agent returns to `idle` and triggers dequeue. Multiple concurrent jobs allocate separate agents.
 
 > **Queue behaviour:** if no idle agent is available, the job enters a tiered FIFO queue (`enterprise > pro > free`). The response includes `queue_position` and `estimated_wait_seconds`. Jobs expire after `IAGENT_QUEUE_TTL` (default 1h) with error `QUEUE_TIMEOUT`. Per-user cap is `IAGENT_MAX_QUEUED_PER_USER` (default 10); exceeding returns `429 QUEUE_FULL`.
+
+### 5.1 Interactive Browser (VNC)
+
+While a job is **running**, the customer can open a live VNC view of the agent's headless browser (e.g. to log into a site by hand). The RFB stream is relayed over the tunnel; the device never opens an inbound port (see `05-tunnel-protocol §9`).
+
+| Method | Path | Notes |
+|--------|------|-------|
+| POST | `/jobs/{id}/vnc` | open a session for the caller's running job → `201 {session_id, ws_url, rfb_password, ttl_s}`. `409` if job not running or VNC disabled on the agent |
+| GET | `/jobs/{id}/vnc` | current session status `{session_id, status}` (`pending`/`ready`/`active`/`closed`) |
+| DELETE | `/vnc/{session_id}` | close the session (also auto-closed on job terminal / idle / max-duration) |
+| POST | `/vnc/{session_id}/save-login` | `{label}` capture the current site login from the live browser into the credential vault → `201 {credential_id}` (see §5.2, `CRED_CAPTURE`) |
+
+The live pixels are carried on the realtime noVNC WebSocket `wss://<gateway>/ws/vnc/{session_id}` (§9.1). `rfb_password` is single-use and passed to the noVNC client only. Only the **owning customer** of the job may open/use the session.
+
+### 5.2 Login Credential Vault (customer)
+
+A customer's saved website logins (cookies + storage-state), captured from a VNC session and re-injected into a later job's agent browser. **Stored encrypted** in the gateway (`06-data-model §1.16`); the customer manages their own, and references them at job submit via `credential_ids`.
+
+| Method | Path | Notes |
+|--------|------|-------|
+| GET | `/credentials` | list the caller's saved logins `[{id, label, origin, last_used_at, created_at}]` (**never** returns cookie content) |
+| GET | `/credentials/{id}` | metadata only (no storage-state) |
+| PATCH | `/credentials/{id}` | `{label}` rename |
+| DELETE | `/credentials/{id}` | delete a saved login |
+
+Logins are **created** only via a VNC session (`POST /vnc/{session_id}/save-login`), never uploaded directly (cookie content never transits the client). Storage-state is decrypted server-side only at dispatch and pushed to the device over the tunnel (`CRED_PUSH`). All routes are tenant-scoped to the caller.
 
 ## 6. Files
 
@@ -202,6 +228,14 @@ A user belongs to at most one organization. Changing membership re-resolves that
 
 - Subscriptions are tenant-scoped; the server rejects topics the user does not own.
 
+### 9.1 Interactive Browser WebSocket (noVNC)
+
+- **Endpoint**: `wss://<gateway-host>/ws/vnc/{session_id}` with `?token=<access_jwt>` (or `Authorization` header).
+- **Subprotocol**: `binary` — the socket carries **raw RFB bytes** (the noVNC client treats it as a websockified VNC stream); no JSON envelope.
+- The gateway authorizes the JWT + asserts the caller owns `vnc_sessions.user_id`, then relays bytes to the paired device session socket (`05-tunnel-protocol §9`).
+- The web client uses **noVNC** (`@novnc/novnc`) pointed at this URL, authenticating RFB with the `rfb_password` returned by `POST /jobs/{id}/vnc`.
+- Closed when either peer closes, on job terminal, or on idle/max-duration timeout.
+
 ## 10. Channel Adapter Interface (multi-channel)
 
 Only **web** is implemented now. Other channels (Feishu, QQ, …) plug in behind a normalized interface so the core never changes.
@@ -231,8 +265,12 @@ The device talks to each agent container over `http://127.0.0.1:<agent_port>`. D
 | POST | `/skills` | install/update a skill `{skill_id, version, manifest, artifact_path}` |
 | POST | `/skills/{id}/disable` / `/enable` | toggle a skill on this agent |
 | DELETE | `/skills/{id}` | remove a skill |
+| GET | `/vnc` | VNC info `{enabled, rfb_host, rfb_port}` for the device bridge (loopback only) |
+| POST | `/vnc/start` / `/vnc/stop` | start/stop the Xvfb+x11vnc+browser stack for the current job (`/start` → `{rfb_port, rfb_password}`) |
+| POST | `/browser/state` | inject login storage-state `{storage_state}` into the browser profile |
+| GET | `/browser/state?origin=` | export current storage-state for capture |
 
-Agent → device progress is delivered via callback `POST {device_callback}/jobs/{id}/events` (preferred) or polling.
+Agent → device progress is delivered via callback `POST {device_callback}/jobs/{id}/events` (preferred) or polling. The device reaches the agent's VNC RFB port only on loopback and bridges it to the gateway over a session socket; it is never published to the host.
 
 ## 12. Health & Ops (gateway)
 
