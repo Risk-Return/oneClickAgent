@@ -11,8 +11,8 @@ import (
 	"os"
 	"path/filepath"
 
-	"github.com/iagent/gateway/internal/model"
-	"github.com/iagent/gateway/internal/store"
+	"github.com/oneClickAgent/gateway/internal/model"
+	"github.com/oneClickAgent/gateway/internal/store"
 )
 
 // Vault manages the skill catalog and artifact storage.

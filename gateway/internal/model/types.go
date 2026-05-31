@@ -1,5 +1,5 @@
 // Package model defines domain types, DTOs, enums, and shared value objects
-// for the IAgent Cloud Gateway.
+// for the oneClickAgent Cloud Gateway.
 package model
 
 import (

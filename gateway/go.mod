@@ -1,4 +1,4 @@
-module github.com/iagent/gateway
+module github.com/oneClickAgent/gateway
 
 go 1.25.0
 

@@ -11,8 +11,8 @@ import (
 	"time"
 
 	"github.com/gorilla/websocket"
-	"github.com/iagent/gateway/internal/model"
-	"github.com/iagent/gateway/internal/obs"
+	"github.com/oneClickAgent/gateway/internal/model"
+	"github.com/oneClickAgent/gateway/internal/obs"
 )
 
 // DeviceConn represents a live tunnel connection to a device.

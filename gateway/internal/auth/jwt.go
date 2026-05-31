@@ -10,10 +10,10 @@ import (
 	"time"
 
 	"github.com/golang-jwt/jwt/v5"
-	"github.com/iagent/gateway/internal/model"
+	"github.com/oneClickAgent/gateway/internal/model"
 )
 
-// Claims represents the JWT claims for IAgent.
+// Claims represents the JWT claims for oneClickAgent.
 type Claims struct {
 	jwt.RegisteredClaims
 	Role  model.UserRole `json:"role"`

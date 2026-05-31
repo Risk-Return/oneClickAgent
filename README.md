@@ -1,6 +1,6 @@
 [中文版](README.zh.md)
 
-# IAgent
+# oneClickAgent
 
 A friendly web interface for controlling remote AI agents that run inside Docker containers on local devices, brokered through a public cloud gateway.
 
@@ -69,7 +69,7 @@ Required env vars: `IAGENT_DB_URL`, `IAGENT_JWT_SECRET` (min 32 chars).
 ## Repository Layout
 
 ```
-IAgent/
+oneClickAgent/
 ├── docs/
 │   ├── braionstorm/goal.md          # project vision
 │   └── spec/                        # detailed specs

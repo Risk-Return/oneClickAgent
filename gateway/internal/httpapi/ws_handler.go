@@ -6,9 +6,9 @@ import (
 	"net/http"
 
 	"github.com/gorilla/websocket"
-	"github.com/iagent/gateway/internal/auth"
-	"github.com/iagent/gateway/internal/model"
-	"github.com/iagent/gateway/internal/pubsub"
+	"github.com/oneClickAgent/gateway/internal/auth"
+	"github.com/oneClickAgent/gateway/internal/model"
+	"github.com/oneClickAgent/gateway/internal/pubsub"
 )
 
 var upgrader = websocket.Upgrader{
@@ -17,7 +17,7 @@ var upgrader = websocket.Upgrader{
 	CheckOrigin: func(r *http.Request) bool {
 		return true // Configure properly in production
 	},
-	Subprotocols: []string{"iagent.web.v1"},
+	Subprotocols: []string{"oneClickAgent.web.v1"},
 }
 
 func (deps *Dependencies) handleWebSocket() http.HandlerFunc {

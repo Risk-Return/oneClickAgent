@@ -6,11 +6,11 @@ import (
 	"log/slog"
 	"time"
 
-	"github.com/iagent/gateway/internal/model"
-	"github.com/iagent/gateway/internal/obs"
-	"github.com/iagent/gateway/internal/pubsub"
-	"github.com/iagent/gateway/internal/store"
-	"github.com/iagent/gateway/internal/tunnel"
+	"github.com/oneClickAgent/gateway/internal/model"
+	"github.com/oneClickAgent/gateway/internal/obs"
+	"github.com/oneClickAgent/gateway/internal/pubsub"
+	"github.com/oneClickAgent/gateway/internal/store"
+	"github.com/oneClickAgent/gateway/internal/tunnel"
 )
 
 // Allocator handles agent pool lifecycle and job queue management.

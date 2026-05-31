@@ -5,7 +5,7 @@ package channel
 import (
 	"context"
 
-	"github.com/iagent/gateway/internal/model"
+	"github.com/oneClickAgent/gateway/internal/model"
 )
 
 // Adapter defines the interface for a communication channel.

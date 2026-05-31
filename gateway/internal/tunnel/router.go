@@ -7,7 +7,7 @@ import (
 	"encoding/json"
 	"fmt"
 
-	"github.com/iagent/gateway/internal/model"
+	"github.com/oneClickAgent/gateway/internal/model"
 )
 
 // FrameHandler is a function that handles a specific frame payload.

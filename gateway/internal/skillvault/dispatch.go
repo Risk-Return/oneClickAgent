@@ -13,10 +13,10 @@ import (
 	"sync"
 	"time"
 
-	"github.com/iagent/gateway/internal/model"
-	"github.com/iagent/gateway/internal/obs"
-	"github.com/iagent/gateway/internal/store"
-	"github.com/iagent/gateway/internal/tunnel"
+	"github.com/oneClickAgent/gateway/internal/model"
+	"github.com/oneClickAgent/gateway/internal/obs"
+	"github.com/oneClickAgent/gateway/internal/store"
+	"github.com/oneClickAgent/gateway/internal/tunnel"
 )
 
 const skillChunkSize = 256 * 1024

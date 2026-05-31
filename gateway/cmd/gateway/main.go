@@ -1,4 +1,4 @@
-// Main entry point for the IAgent Cloud Gateway.
+// Main entry point for the oneClickAgent Cloud Gateway.
 // Wires config, initialises store/tunnel hub/pubsub/HTTP server,
 // and handles graceful shutdown (SIGINT/SIGTERM).
 package main
@@ -12,17 +12,17 @@ import (
 	"syscall"
 	"time"
 
-	"github.com/iagent/gateway/internal/auth"
-	"github.com/iagent/gateway/internal/config"
-	"github.com/iagent/gateway/internal/httpapi"
-	"github.com/iagent/gateway/internal/model"
-	"github.com/iagent/gateway/internal/obs"
-	"github.com/iagent/gateway/internal/pool"
-	"github.com/iagent/gateway/internal/pubsub"
-	"github.com/iagent/gateway/internal/relay"
-	"github.com/iagent/gateway/internal/skillvault"
-	"github.com/iagent/gateway/internal/store"
-	"github.com/iagent/gateway/internal/tunnel"
+	"github.com/oneClickAgent/gateway/internal/auth"
+	"github.com/oneClickAgent/gateway/internal/config"
+	"github.com/oneClickAgent/gateway/internal/httpapi"
+	"github.com/oneClickAgent/gateway/internal/model"
+	"github.com/oneClickAgent/gateway/internal/obs"
+	"github.com/oneClickAgent/gateway/internal/pool"
+	"github.com/oneClickAgent/gateway/internal/pubsub"
+	"github.com/oneClickAgent/gateway/internal/relay"
+	"github.com/oneClickAgent/gateway/internal/skillvault"
+	"github.com/oneClickAgent/gateway/internal/store"
+	"github.com/oneClickAgent/gateway/internal/tunnel"
 )
 
 func main() {
@@ -35,7 +35,7 @@ func main() {
 
 	// Initialise structured logging
 	logger := obs.InitLogger(cfg.LogLevel, cfg.LogFormat)
-	logger.Info("starting IAgent Cloud Gateway",
+	logger.Info("starting oneClickAgent Cloud Gateway",
 		"env", cfg.Env,
 		"addr", cfg.HTTPAddr,
 	)

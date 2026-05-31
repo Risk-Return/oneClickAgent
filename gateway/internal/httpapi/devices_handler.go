@@ -4,7 +4,7 @@ import (
 	"net/http"
 
 	"github.com/go-chi/chi/v5"
-	"github.com/iagent/gateway/internal/model"
+	"github.com/oneClickAgent/gateway/internal/model"
 )
 
 func (deps *Dependencies) handleDeviceEnroll() http.HandlerFunc {

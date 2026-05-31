@@ -7,14 +7,14 @@ import (
 
 	"github.com/go-chi/chi/v5"
 	"github.com/go-chi/cors"
-	"github.com/iagent/gateway/internal/auth"
-	"github.com/iagent/gateway/internal/config"
-	"github.com/iagent/gateway/internal/pool"
-	"github.com/iagent/gateway/internal/pubsub"
-	"github.com/iagent/gateway/internal/relay"
-	"github.com/iagent/gateway/internal/skillvault"
-	"github.com/iagent/gateway/internal/store"
-	"github.com/iagent/gateway/internal/tunnel"
+	"github.com/oneClickAgent/gateway/internal/auth"
+	"github.com/oneClickAgent/gateway/internal/config"
+	"github.com/oneClickAgent/gateway/internal/pool"
+	"github.com/oneClickAgent/gateway/internal/pubsub"
+	"github.com/oneClickAgent/gateway/internal/relay"
+	"github.com/oneClickAgent/gateway/internal/skillvault"
+	"github.com/oneClickAgent/gateway/internal/store"
+	"github.com/oneClickAgent/gateway/internal/tunnel"
 )
 
 // Dependencies holds all services needed by the HTTP API.

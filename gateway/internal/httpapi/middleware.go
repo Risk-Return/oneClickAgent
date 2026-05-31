@@ -11,8 +11,8 @@ import (
 	"time"
 
 	"github.com/go-chi/chi/v5/middleware"
-	"github.com/iagent/gateway/internal/auth"
-	"github.com/iagent/gateway/internal/model"
+	"github.com/oneClickAgent/gateway/internal/auth"
+	"github.com/oneClickAgent/gateway/internal/model"
 )
 
 type contextKey string

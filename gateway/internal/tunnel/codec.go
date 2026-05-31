@@ -6,7 +6,7 @@ import (
 	"encoding/json"
 	"fmt"
 
-	"github.com/iagent/gateway/internal/model"
+	"github.com/oneClickAgent/gateway/internal/model"
 )
 
 // EncodeFrame marshals a frame to JSON bytes.

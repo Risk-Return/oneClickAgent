@@ -11,8 +11,8 @@ import (
 	"sync/atomic"
 	"time"
 
-	"github.com/iagent/gateway/internal/model"
-	"github.com/iagent/gateway/internal/obs"
+	"github.com/oneClickAgent/gateway/internal/model"
+	"github.com/oneClickAgent/gateway/internal/obs"
 )
 
 // Hub is the central device registry and tunnel manager.

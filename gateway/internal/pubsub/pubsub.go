@@ -6,7 +6,7 @@ package pubsub
 import (
 	"sync"
 
-	"github.com/iagent/gateway/internal/model"
+	"github.com/oneClickAgent/gateway/internal/model"
 )
 
 // Subscriber receives events pushed to its channel.

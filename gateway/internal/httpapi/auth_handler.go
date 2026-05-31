@@ -5,9 +5,9 @@ import (
 	"net/http"
 	"time"
 
-	"github.com/iagent/gateway/internal/auth"
-	"github.com/iagent/gateway/internal/model"
-	"github.com/iagent/gateway/internal/store"
+	"github.com/oneClickAgent/gateway/internal/auth"
+	"github.com/oneClickAgent/gateway/internal/model"
+	"github.com/oneClickAgent/gateway/internal/store"
 )
 
 func (deps *Dependencies) handleRegister() http.HandlerFunc {

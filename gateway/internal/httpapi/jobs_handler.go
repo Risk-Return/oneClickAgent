@@ -5,8 +5,8 @@ import (
 	"net/http"
 
 	"github.com/go-chi/chi/v5"
-	"github.com/iagent/gateway/internal/model"
-	"github.com/iagent/gateway/internal/pubsub"
+	"github.com/oneClickAgent/gateway/internal/model"
+	"github.com/oneClickAgent/gateway/internal/pubsub"
 )
 
 func (deps *Dependencies) handleSubmitJob() http.HandlerFunc {

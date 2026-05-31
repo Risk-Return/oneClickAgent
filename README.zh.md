@@ -1,6 +1,6 @@
 [English](README.md)
 
-# IAgent
+# oneClickAgent
 
 一个友好的 Web 界面，用于控制运行在本地设备 Docker 容器中的远程 AI Agent，通过公有云网关进行代理。
 
@@ -69,7 +69,7 @@ go run ./cmd/gateway
 ## 项目结构
 
 ```
-IAgent/
+oneClickAgent/
 ├── docs/
 │   ├── braionstorm/goal.md          # 项目愿景
 │   └── spec/                        # 详细规格文档

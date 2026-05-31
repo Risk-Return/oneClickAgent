@@ -5,7 +5,7 @@ import (
 	"fmt"
 	"time"
 
-	"github.com/iagent/gateway/internal/model"
+	"github.com/oneClickAgent/gateway/internal/model"
 	"github.com/jackc/pgx/v5"
 )
 

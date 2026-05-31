@@ -5,7 +5,7 @@ package auth
 import (
 	"errors"
 
-	"github.com/iagent/gateway/internal/model"
+	"github.com/oneClickAgent/gateway/internal/model"
 )
 
 var (
