@@ -1,6 +1,169 @@
 // Package httpapi registers all REST + WS routes on a chi router,
 // applies the middleware chain, and wires handlers to store/tunnel/pubsub/pool.
-// Customer routes: auth, jobs, files, visible skills, active agents.
-// Admin routes: devices, agent pool (inspect/drain/release), skill vault,
-//   fleet rollout, visibility grants, organizations.
 package httpapi
+
+import (
+	"net/http"
+
+	"github.com/go-chi/chi/v5"
+	"github.com/go-chi/cors"
+	"github.com/iagent/gateway/internal/auth"
+	"github.com/iagent/gateway/internal/config"
+	"github.com/iagent/gateway/internal/pool"
+	"github.com/iagent/gateway/internal/pubsub"
+	"github.com/iagent/gateway/internal/relay"
+	"github.com/iagent/gateway/internal/skillvault"
+	"github.com/iagent/gateway/internal/store"
+	"github.com/iagent/gateway/internal/tunnel"
+)
+
+// Dependencies holds all services needed by the HTTP API.
+type Dependencies struct {
+	Config    config.Config
+	DB        *store.DB
+	Hub       *tunnel.Hub
+	Broker    *pubsub.Broker
+	Allocator *pool.Allocator
+	Relay     *relay.FileRelay
+	Vault     *skillvault.Vault
+	Dispatch  *skillvault.Dispatcher
+	JWT       *auth.JWTManager
+	Hasher    *auth.PasswordHasher
+
+	// Stores
+	Users  *store.UserStore
+	Tokens *store.TokenStore
+	Devices *store.DeviceStore
+	Agents *store.AgentStore
+	Jobs   *store.JobStore
+	Files  *store.FileStore
+	Skills *store.SkillStore
+	Orgs   *store.OrgStore
+	Audit  *store.AuditStore
+}
+
+// NewRouter creates and configures the chi router with all routes.
+func NewRouter(deps *Dependencies) chi.Router {
+	r := chi.NewRouter()
+
+	// Middleware
+	r.Use(requestIDMiddleware)
+	r.Use(recoverMiddleware)
+	r.Use(corsMiddleware(deps.Config.CORSAllowedOrigins))
+	r.Use(rateLimitMiddleware(deps.Config.RateLimitAPIPerSec))
+	r.Use(loggerMiddleware)
+
+	// Public routes
+	r.Group(func(r chi.Router) {
+		r.Post("/api/v1/auth/register", deps.handleRegister())
+		r.Post("/api/v1/auth/login", deps.handleLogin())
+		r.Post("/api/v1/auth/refresh", deps.handleRefresh())
+	})
+
+	// Health & metrics
+	r.Get("/healthz", handleHealthz(deps.DB))
+	r.Get("/readyz", handleReadyz(deps.DB))
+
+	// Authenticated routes
+	r.Group(func(r chi.Router) {
+		r.Use(authMiddleware(deps.JWT))
+
+		// Auth
+		r.Post("/api/v1/auth/logout", deps.handleLogout())
+		r.Get("/api/v1/auth/me", deps.handleMe())
+
+		// Devices (admin only)
+		r.Group(func(r chi.Router) {
+			r.Use(requireAdminMiddleware)
+			r.Post("/api/v1/devices/enroll", deps.handleDeviceEnroll())
+			r.Get("/api/v1/devices", deps.handleListDevices())
+			r.Get("/api/v1/devices/{deviceID}", deps.handleGetDevice())
+			r.Delete("/api/v1/devices/{deviceID}", deps.handleDeleteDevice())
+			r.Post("/api/v1/admin/devices/{deviceID}/pool", deps.handleSetPoolSize())
+			r.Post("/api/v1/admin/devices/{deviceID}/rotate-token", deps.handleRotateDeviceToken())
+		})
+
+		// Agent pool (admin managed)
+		r.Get("/api/v1/agents", deps.handleListMyAgents())
+		r.Get("/api/v1/agents/{agentID}", deps.handleGetAgent())
+		r.Post("/api/v1/agents/{agentID}/skills", deps.handleEnableAgentSkill())
+		r.Delete("/api/v1/agents/{agentID}/skills/{skillID}", deps.handleDisableAgentSkill())
+
+		r.Group(func(r chi.Router) {
+			r.Use(requireAdminMiddleware)
+			r.Get("/api/v1/admin/agents", deps.handleAdminListAgents())
+			r.Post("/api/v1/admin/agents/{agentID}/drain", deps.handleDrainAgent())
+			r.Post("/api/v1/admin/agents/{agentID}/release", deps.handleForceReleaseAgent())
+		})
+
+		// Jobs
+		r.Post("/api/v1/jobs", deps.handleSubmitJob())
+		r.Get("/api/v1/jobs", deps.handleListJobs())
+		r.Get("/api/v1/jobs/{jobID}", deps.handleGetJob())
+		r.Post("/api/v1/jobs/{jobID}/cancel", deps.handleCancelJob())
+		r.Get("/api/v1/jobs/{jobID}/result", deps.handleGetJobResult())
+
+		// Files
+		r.Post("/api/v1/files", deps.handleUploadFile())
+		r.Get("/api/v1/files", deps.handleListFiles())
+		r.Get("/api/v1/files/{fileID}", deps.handleGetFile())
+		r.Delete("/api/v1/files/{fileID}", deps.handleDeleteFile())
+
+		// Skills
+		r.Get("/api/v1/skills", deps.handleListVisibleSkills())
+		r.Get("/api/v1/skills/{skillID}", deps.handleGetSkill())
+
+		r.Group(func(r chi.Router) {
+			r.Use(requireAdminMiddleware)
+			r.Post("/api/v1/admin/skills", deps.handleCreateSkill())
+			r.Put("/api/v1/admin/skills/{skillID}", deps.handleUpdateSkill())
+			r.Delete("/api/v1/admin/skills/{skillID}", deps.handleDeleteSkill())
+			r.Post("/api/v1/admin/skills/{skillID}/versions", deps.handlePublishSkillVersion())
+			r.Post("/api/v1/admin/skills/{skillID}/install", deps.handleInstallSkillFleet())
+			r.Post("/api/v1/admin/skills/{skillID}/disable", deps.handleDisableSkillFleet())
+			r.Post("/api/v1/admin/skills/{skillID}/update", deps.handleUpdateSkillFleet())
+			r.Post("/api/v1/admin/skills/{skillID}/delete-fleet", deps.handleDeleteSkillFleet())
+			r.Patch("/api/v1/admin/skills/{skillID}/visibility", deps.handleUpdateSkillVisibility())
+			r.Post("/api/v1/admin/skills/{skillID}/grants", deps.handleCreateSkillGrant())
+			r.Delete("/api/v1/admin/skills/{skillID}/grants", deps.handleDeleteSkillGrant())
+		})
+
+		// Organizations (admin)
+		r.Group(func(r chi.Router) {
+			r.Use(requireAdminMiddleware)
+			r.Post("/api/v1/admin/orgs", deps.handleCreateOrg())
+			r.Get("/api/v1/admin/orgs", deps.handleListOrgs())
+			r.Get("/api/v1/admin/orgs/{orgID}", deps.handleGetOrg())
+			r.Put("/api/v1/admin/orgs/{orgID}", deps.handleUpdateOrg())
+			r.Delete("/api/v1/admin/orgs/{orgID}", deps.handleDeleteOrg())
+			r.Post("/api/v1/admin/orgs/{orgID}/members", deps.handleAddOrgMember())
+			r.Delete("/api/v1/admin/orgs/{orgID}/members/{userID}", deps.handleRemoveOrgMember())
+		})
+
+		// User tier management (admin)
+		r.Group(func(r chi.Router) {
+			r.Use(requireAdminMiddleware)
+			r.Patch("/api/v1/admin/users/{userID}/tier", deps.handleUpdateUserTier())
+		})
+
+		// WebSocket realtime
+		r.Get("/ws", deps.handleWebSocket())
+	})
+
+	return r
+}
+
+// corsMiddleware returns a CORS middleware with the configured allowed origins.
+func corsMiddleware(allowedOrigins []string) func(http.Handler) http.Handler {
+	if len(allowedOrigins) == 0 {
+		allowedOrigins = []string{"*"}
+	}
+	return cors.Handler(cors.Options{
+		AllowedOrigins:   allowedOrigins,
+		AllowedMethods:   []string{"GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"},
+		AllowedHeaders:   []string{"Accept", "Authorization", "Content-Type", "X-Request-ID"},
+		ExposedHeaders:   []string{"Link", "X-Request-ID"},
+		AllowCredentials: true,
+		MaxAge:           300,
+	})
+}
