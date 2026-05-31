@@ -15,8 +15,8 @@ import (
 
 // Allocator handles agent pool lifecycle and job queue management.
 type Allocator struct {
-	agents   *store.AgentStore
-	jobs     *store.JobStore
+	agents   store.AgentStoreInterface
+	jobs     store.JobStoreInterface
 	hub      *tunnel.Hub
 	broker   *pubsub.Broker
 	queueTTL time.Duration
@@ -26,8 +26,8 @@ type Allocator struct {
 
 // NewAllocator creates a new agent pool allocator.
 func NewAllocator(
-	agents *store.AgentStore,
-	jobs *store.JobStore,
+	agents store.AgentStoreInterface,
+	jobs store.JobStoreInterface,
 	hub *tunnel.Hub,
 	broker *pubsub.Broker,
 	queueTTL time.Duration,

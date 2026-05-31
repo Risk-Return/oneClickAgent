@@ -9,6 +9,7 @@ import (
 	"github.com/go-chi/cors"
 	"github.com/oneClickAgent/gateway/internal/auth"
 	"github.com/oneClickAgent/gateway/internal/config"
+	"github.com/oneClickAgent/gateway/internal/obs"
 	"github.com/oneClickAgent/gateway/internal/pool"
 	"github.com/oneClickAgent/gateway/internal/pubsub"
 	"github.com/oneClickAgent/gateway/internal/relay"
@@ -31,14 +32,14 @@ type Dependencies struct {
 	Hasher    *auth.PasswordHasher
 
 	// Stores
-	Users  *store.UserStore
-	Tokens *store.TokenStore
-	Devices *store.DeviceStore
-	Agents *store.AgentStore
-	Jobs   *store.JobStore
-	Files  *store.FileStore
-	Skills *store.SkillStore
-	Orgs   *store.OrgStore
+	Users  store.UserStoreInterface
+	Tokens store.TokenStoreInterface
+	Devices store.DeviceStoreInterface
+	Agents store.AgentStoreInterface
+	Jobs   store.JobStoreInterface
+	Files  store.FileStoreInterface
+	Skills store.SkillStoreInterface
+	Orgs   store.OrgStoreInterface
 	Audit  *store.AuditStore
 }
 
@@ -63,6 +64,7 @@ func NewRouter(deps *Dependencies) chi.Router {
 	// Health & metrics
 	r.Get("/healthz", handleHealthz(deps.DB))
 	r.Get("/readyz", handleReadyz(deps.DB))
+	r.Get("/metrics", obs.MetricsHandler().ServeHTTP)
 
 	// Authenticated routes
 	r.Group(func(r chi.Router) {

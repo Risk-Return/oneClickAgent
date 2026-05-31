@@ -7,7 +7,7 @@
 | **Last Updated** | 2026-05-31 |
 | **Build** | `go build ./...` passes |
 | **Vet** | `go vet ./...` passes |
-| **Tests** | `go test ./...` — 8 packages, all passing (7 unit + 1 integration) |
+| **Tests** | `go test ./...` — 9 packages, all passing (7 unit + 1 integration + 1 handler) |
 
 ## Packages Implemented
 
@@ -63,10 +63,10 @@
 - [x] Database migrations (`gateway/migrations/` — up/down SQL created)
 - [x] Unit tests (model, config, auth, tunnel, pubsub, pool, channel — 7 packages)
 - [x] Integration tests (store layer against real PostgreSQL — 11 tests covering all tables)
-- [ ] Prometheus metrics wiring (obs package has placeholder)
-- [ ] OpenTelemetry tracing
+- [x] Prometheus metrics (/metrics endpoint, API latency, tunnel frames, job & agent gauges)
+- [x] OpenTelemetry tracing stub (InitTracing entry point, ready for OTLP wiring)
+- [x] HTTP API handler tests (15 tests: auth, jobs, health — with mock stores + real router)
 - [ ] Redis-backed tunnel registry for multi-instance (v1 is single-instance)
-- [ ] HTTP API handler tests (requires HTTP test server + mock stores)
 
 ## Git History
 

@@ -6,6 +6,7 @@ import (
 	"log/slog"
 	"net/http"
 	"runtime/debug"
+	"strconv"
 	"strings"
 	"sync"
 	"time"
@@ -13,6 +14,7 @@ import (
 	"github.com/go-chi/chi/v5/middleware"
 	"github.com/oneClickAgent/gateway/internal/auth"
 	"github.com/oneClickAgent/gateway/internal/model"
+	"github.com/oneClickAgent/gateway/internal/obs"
 )
 
 type contextKey string
@@ -100,12 +102,16 @@ func rateLimitMiddleware(perSec int) func(http.Handler) http.Handler {
 	}
 }
 
-// loggerMiddleware logs each request.
+// loggerMiddleware logs each request and records API metrics.
 func loggerMiddleware(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		start := time.Now()
 		ww := middleware.NewWrapResponseWriter(w, r.ProtoMajor)
 		next.ServeHTTP(ww, r)
+
+		duration := time.Since(start).Seconds()
+		status := strconv.Itoa(ww.Status())
+
 		slog.Info("request",
 			"method", r.Method,
 			"path", r.URL.Path,
@@ -113,6 +119,9 @@ func loggerMiddleware(next http.Handler) http.Handler {
 			"duration_ms", time.Since(start).Milliseconds(),
 			"request_id", middleware.GetReqID(r.Context()),
 		)
+
+		obs.APIRequests.WithLabelValues(r.Method, r.URL.Path, status).Inc()
+		obs.APILatency.WithLabelValues(r.Method, r.URL.Path).Observe(duration)
 	})
 }
 
