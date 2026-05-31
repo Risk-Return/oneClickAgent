@@ -14,6 +14,7 @@ import (
 
 	"github.com/oneClickAgent/gateway/internal/auth"
 	"github.com/oneClickAgent/gateway/internal/config"
+	"github.com/oneClickAgent/gateway/internal/credvault"
 	"github.com/oneClickAgent/gateway/internal/httpapi"
 	"github.com/oneClickAgent/gateway/internal/model"
 	"github.com/oneClickAgent/gateway/internal/obs"
@@ -23,6 +24,7 @@ import (
 	"github.com/oneClickAgent/gateway/internal/skillvault"
 	"github.com/oneClickAgent/gateway/internal/store"
 	"github.com/oneClickAgent/gateway/internal/tunnel"
+	"github.com/oneClickAgent/gateway/internal/vncrelay"
 )
 
 func main() {
@@ -97,6 +99,22 @@ func main() {
 	vault := skillvault.NewVault(skills, cfg.FileStore+"/skills")
 	skillDispatch := skillvault.NewDispatcher(vault, skills, tunnelHub)
 
+	// Credential Vault
+	credVault, err := credvault.NewVault(cfg.CredKey, cfg.CredKMS)
+	if err != nil {
+		logger.Error("failed to initialize credential vault", "error", err)
+		os.Exit(1)
+	}
+
+	// VNC Relay
+	vncStore := store.NewVNCSessionStore(db)
+	credStore := store.NewCredentialStore(db)
+	vncRelay := vncrelay.NewRelay(
+		tunnelHub.NodeID(),
+		int64(cfg.VNCSessionBufBytes),
+		cfg.VNCMaxSessionsPerUser,
+	)
+
 	// Wire tunnel hub handlers
 	tunnelHub.SetHandlers(tunnel.HubConfig{
 		OnJobProgress: func(ctx context.Context, deviceID model.UUID, payload model.JobProgressPayload) error {
@@ -158,6 +176,10 @@ func main() {
 		Skills:    skills,
 		Orgs:      orgs,
 		Audit:     audit,
+		VNCRelay:  vncRelay,
+		CredVault: credVault,
+		Creds:     credStore,
+		VNC:       vncStore,
 	}
 
 	// Create router
@@ -194,6 +216,7 @@ func main() {
 
 	go tunnelHub.StartLivenessChecker(bgCtx)
 	go allocator.StartExpiryTicker(bgCtx)
+	go vncRelay.StartReaper(bgCtx)
 
 	// Graceful shutdown
 	quit := make(chan os.Signal, 1)

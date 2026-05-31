@@ -9,6 +9,7 @@ import (
 	"github.com/go-chi/cors"
 	"github.com/oneClickAgent/gateway/internal/auth"
 	"github.com/oneClickAgent/gateway/internal/config"
+	"github.com/oneClickAgent/gateway/internal/credvault"
 	"github.com/oneClickAgent/gateway/internal/obs"
 	"github.com/oneClickAgent/gateway/internal/pool"
 	"github.com/oneClickAgent/gateway/internal/pubsub"
@@ -16,6 +17,7 @@ import (
 	"github.com/oneClickAgent/gateway/internal/skillvault"
 	"github.com/oneClickAgent/gateway/internal/store"
 	"github.com/oneClickAgent/gateway/internal/tunnel"
+	"github.com/oneClickAgent/gateway/internal/vncrelay"
 )
 
 // Dependencies holds all services needed by the HTTP API.
@@ -31,16 +33,22 @@ type Dependencies struct {
 	JWT       *auth.JWTManager
 	Hasher    *auth.PasswordHasher
 
+	// VNC & Credentials
+	VNCRelay  *vncrelay.Relay
+	CredVault *credvault.Vault
+
 	// Stores
-	Users  store.UserStoreInterface
-	Tokens store.TokenStoreInterface
+	Users   store.UserStoreInterface
+	Tokens  store.TokenStoreInterface
 	Devices store.DeviceStoreInterface
-	Agents store.AgentStoreInterface
-	Jobs   store.JobStoreInterface
-	Files  store.FileStoreInterface
-	Skills store.SkillStoreInterface
-	Orgs   store.OrgStoreInterface
-	Audit  *store.AuditStore
+	Agents  store.AgentStoreInterface
+	Jobs    store.JobStoreInterface
+	Files   store.FileStoreInterface
+	Skills  store.SkillStoreInterface
+	Orgs    store.OrgStoreInterface
+	Audit   *store.AuditStore
+	Creds   *store.CredentialStore
+	VNC     *store.VNCSessionStore
 }
 
 // NewRouter creates and configures the chi router with all routes.
@@ -64,7 +72,9 @@ func NewRouter(deps *Dependencies) chi.Router {
 	// Health & metrics
 	r.Get("/healthz", handleHealthz(deps.DB))
 	r.Get("/readyz", handleReadyz(deps.DB))
-	r.Get("/metrics", obs.MetricsHandler().ServeHTTP)
+	r.Get("/metrics", func(w http.ResponseWriter, r *http.Request) {
+		obs.MetricsHandler().ServeHTTP(w, r)
+	})
 
 	// Authenticated routes
 	r.Group(func(r chi.Router) {
@@ -104,6 +114,15 @@ func NewRouter(deps *Dependencies) chi.Router {
 		r.Get("/api/v1/jobs/{jobID}", deps.handleGetJob())
 		r.Post("/api/v1/jobs/{jobID}/cancel", deps.handleCancelJob())
 		r.Get("/api/v1/jobs/{jobID}/result", deps.handleGetJobResult())
+
+		// VNC sessions
+		r.Post("/api/v1/jobs/{jobID}/vnc", deps.handleOpenVNC())
+		r.Post("/api/v1/vnc/{sessionID}/save-login", deps.handleSaveLogin())
+		r.Delete("/api/v1/vnc/{sessionID}", deps.handleCloseVNC())
+
+		// Credentials
+		r.Get("/api/v1/credentials", deps.handleListCredentials())
+		r.Delete("/api/v1/credentials/{credentialID}", deps.handleDeleteCredential())
 
 		// Files
 		r.Post("/api/v1/files", deps.handleUploadFile())
@@ -147,10 +166,14 @@ func NewRouter(deps *Dependencies) chi.Router {
 			r.Use(requireAdminMiddleware)
 			r.Patch("/api/v1/admin/users/{userID}/tier", deps.handleUpdateUserTier())
 		})
-
-		// WebSocket realtime
-		r.Get("/ws", deps.handleWebSocket())
 	})
+
+	// WebSocket realtime
+	r.Get("/ws", deps.handleWebSocket())
+
+	// VNC WebSocket endpoints (custom auth)
+	r.Get("/ws/vnc/{sessionID}", deps.handleVNCBrowserSocket())
+	r.Get("/session/{sessionID}", deps.handleVNCDeviceSocket())
 
 	return r
 }

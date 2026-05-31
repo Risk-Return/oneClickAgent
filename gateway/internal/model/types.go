@@ -394,9 +394,10 @@ type RefreshRequest struct {
 }
 
 type SubmitJobRequest struct {
-	Command string  `json:"command" validate:"required"`
-	SkillID *UUID   `json:"skill_id,omitempty"`
-	FileIDs []UUID  `json:"file_ids,omitempty"`
+	Command       string `json:"command" validate:"required"`
+	SkillID       *UUID  `json:"skill_id,omitempty"`
+	FileIDs       []UUID `json:"file_ids,omitempty"`
+	CredentialIDs []UUID `json:"credential_ids,omitempty"`
 }
 
 type JobResponse struct {
@@ -732,4 +733,174 @@ type PoolStats struct {
 	IdleAgents    int `json:"idle_agents"`
 	BusyAgents    int `json:"busy_agents"`
 	OnlineDevices int `json:"online_devices"`
+}
+
+// ─── VNC / Docker Types ─────────────────────────────────────
+
+// VNCSessionStatus represents the lifecycle of a VNC relay session.
+type VNCSessionStatus string
+
+const (
+	VNCSessionPending VNCSessionStatus = "pending"
+	VNCSessionReady   VNCSessionStatus = "ready"
+	VNCSessionActive  VNCSessionStatus = "active"
+	VNCSessionClosed  VNCSessionStatus = "closed"
+)
+
+// VNCSession represents an interactive browser relay session.
+type VNCSession struct {
+	ID                UUID             `json:"id" db:"id"`
+	JobID             UUID             `json:"job_id" db:"job_id"`
+	UserID            UUID             `json:"user_id" db:"user_id"`
+	DeviceID          UUID             `json:"device_id" db:"device_id"`
+	AgentID           UUID             `json:"agent_id" db:"agent_id"`
+	SessionTokenHash  string           `json:"-" db:"session_token_hash"`
+	RFBPassword       *string          `json:"rfb_password,omitempty" db:"rfb_password"`
+	Status            VNCSessionStatus `json:"status" db:"status"`
+	GatewayNode       *string          `json:"gateway_node,omitempty" db:"gateway_node"`
+	IdleTTLSecs       int              `json:"idle_ttl_secs" db:"idle_ttl_secs"`
+	MaxTTLSecs        int              `json:"max_ttl_secs" db:"max_ttl_secs"`
+	LastActiveAt      *time.Time       `json:"last_active_at,omitempty" db:"last_active_at"`
+	CreatedAt         time.Time        `json:"created_at" db:"created_at"`
+	ClosedAt          *time.Time       `json:"closed_at,omitempty" db:"closed_at"`
+}
+
+// BrowserCredential stores an encrypted browser login cookie.
+type BrowserCredential struct {
+	ID         UUID       `json:"id" db:"id"`
+	UserID     UUID       `json:"user_id" db:"user_id"`
+	Label      string     `json:"label" db:"label"`
+	Origin     string     `json:"origin" db:"origin"`
+	Ciphertext []byte     `json:"-" db:"ciphertext"`
+	KeyID      string     `json:"key_id" db:"key_id"`
+	SHA256     string     `json:"sha256" db:"sha256"`
+	SizeBytes  int64      `json:"size_bytes" db:"size_bytes"`
+	LastUsedAt *time.Time `json:"last_used_at,omitempty" db:"last_used_at"`
+	CreatedAt  time.Time  `json:"created_at" db:"created_at"`
+	UpdatedAt  time.Time  `json:"updated_at" db:"updated_at"`
+}
+
+// JobCredential links a job to injected credentials.
+type JobCredential struct {
+	JobID        UUID `json:"job_id" db:"job_id"`
+	CredentialID UUID `json:"credential_id" db:"credential_id"`
+}
+
+// ─── New Frame Types ────────────────────────────────────────
+
+const (
+	// VNC frames
+	FrameVNCOpen    FrameType = "VNC_OPEN"
+	FrameVNCOpened  FrameType = "VNC_OPENED"
+	FrameVNCClose   FrameType = "VNC_CLOSE"
+
+	// Credential frames
+	FrameCredPush    FrameType = "CRED_PUSH"
+	FrameCredPushAck FrameType = "CRED_PUSH_ACK"
+	FrameCredCapture FrameType = "CRED_CAPTURE"
+	FrameCredCaptureAck FrameType = "CRED_CAPTURE_ACK"
+)
+
+// VNCOpenPayload is the payload for VNC_OPEN frame (gateway → device).
+type VNCOpenPayload struct {
+	SessionID    UUID   `json:"session_id"`
+	RelayURL     string `json:"relay_url"`
+	SessionToken string `json:"session_token"`
+	TTLSecs      int    `json:"ttl_secs"`
+}
+
+// VNCOpenedPayload is the payload for VNC_OPENED frame (device → gateway).
+type VNCOpenedPayload struct {
+	SessionID   UUID   `json:"session_id"`
+	Status      string `json:"status"` // ready | error
+	RFBPassword string `json:"rfb_password,omitempty"`
+	Error       string `json:"error,omitempty"`
+}
+
+// VNCClosePayload is the payload for VNC_CLOSE frame (gateway → device).
+type VNCClosePayload struct {
+	SessionID UUID   `json:"session_id"`
+	Reason    string `json:"reason"`
+}
+
+// CredPushPayload is the payload for CRED_PUSH frame (gateway → device).
+type CredPushPayload struct {
+	JobID        UUID   `json:"job_id"`
+	CredentialID UUID   `json:"credential_id"`
+	Origin       string `json:"origin"`
+	Data         string `json:"data"`  // base64-encoded plaintext
+	SHA256       string `json:"sha256"`
+}
+
+// CredPushAckPayload is the payload for CRED_PUSH_ACK frame (device → gateway).
+type CredPushAckPayload struct {
+	JobID        UUID   `json:"job_id"`
+	CredentialID UUID   `json:"credential_id"`
+	Status       string `json:"status"` // ok | error
+	Error        string `json:"error,omitempty"`
+}
+
+// CredCapturePayload is the payload for CRED_CAPTURE frame (device → gateway).
+type CredCapturePayload struct {
+	SessionID UUID   `json:"session_id"`
+	Origin    string `json:"origin"`
+	Data      string `json:"data"`  // base64-encoded browser storage state
+	SHA256    string `json:"sha256"`
+	Label     string `json:"label,omitempty"`
+}
+
+// CredCaptureAckPayload is the payload for CRED_CAPTURE_ACK frame (gateway → device).
+type CredCaptureAckPayload struct {
+	SessionID UUID   `json:"session_id"`
+	Status    string `json:"status"` // ok | error
+	Error     string `json:"error,omitempty"`
+}
+
+// ─── VNC + Credential DTOs ──────────────────────────────────
+
+// VNCOpenRequest is the payload for POST /jobs/{id}/vnc.
+type VNCOpenRequest struct{}
+
+// VNCOpenResponse is returned after opening a VNC session.
+type VNCOpenResponse struct {
+	SessionID   UUID   `json:"session_id"`
+	WSUrl       string `json:"ws_url"`       // /ws/vnc/{id}
+	RFBPassword string `json:"rfb_password,omitempty"`
+	TTLSecs     int    `json:"ttl_secs"`
+}
+
+// SaveLoginRequest is the payload for POST /vnc/{id}/save-login.
+type SaveLoginRequest struct {
+	Label string `json:"label"`
+}
+
+// CreateCredentialRequest is the payload for POST /credentials (admin push).
+type CreateCredentialRequest struct {
+	Label  string `json:"label" validate:"required"`
+	Origin string `json:"origin" validate:"required"`
+}
+
+// CredentialResponse is the API response for a credential (never contains cookie data).
+type CredentialResponse struct {
+	ID         UUID       `json:"id"`
+	Label      string     `json:"label"`
+	Origin     string     `json:"origin"`
+	SHA256     string     `json:"sha256"`
+	SizeBytes  int64      `json:"size_bytes"`
+	LastUsedAt *time.Time `json:"last_used_at,omitempty"`
+	CreatedAt  time.Time  `json:"created_at"`
+	UpdatedAt  time.Time  `json:"updated_at"`
+}
+
+func CredentialResponseFrom(bc *BrowserCredential) CredentialResponse {
+	return CredentialResponse{
+		ID:         bc.ID,
+		Label:      bc.Label,
+		Origin:     bc.Origin,
+		SHA256:     bc.SHA256,
+		SizeBytes:  bc.SizeBytes,
+		LastUsedAt: bc.LastUsedAt,
+		CreatedAt:  bc.CreatedAt,
+		UpdatedAt:  bc.UpdatedAt,
+	}
 }

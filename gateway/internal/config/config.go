@@ -36,8 +36,18 @@ type Config struct {
 	CORSAllowedOrigins  []string      `env:"IAGENT_CORS_ORIGINS" envSeparator:","`
 	RateLimitAuthPerMin int           `env:"IAGENT_RATE_LIMIT_AUTH_PER_MIN" envDefault:"10"`
 	RateLimitAPIPerSec  int           `env:"IAGENT_RATE_LIMIT_API_PER_SEC" envDefault:"100"`
-	FileRetentionHours  int           `env:"IAGENT_FILE_RETENTION_HOURS" envDefault:"24"`
-	JobResultRetentionDays int       `env:"IAGENT_JOB_RESULT_RETENTION_DAYS" envDefault:"90"`
+	FileRetentionHours     int           `env:"IAGENT_FILE_RETENTION_HOURS" envDefault:"24"`
+	JobResultRetentionDays int           `env:"IAGENT_JOB_RESULT_RETENTION_DAYS" envDefault:"90"`
+
+	// VNC session config
+	VNCIdleTTLSecs       int    `env:"IAGENT_VNC_IDLE_TTL" envDefault:"300"`
+	VNCMaxTTLSecs        int    `env:"IAGENT_VNC_MAX_TTL" envDefault:"1800"`
+	VNCMaxSessionsPerUser int   `env:"IAGENT_VNC_MAX_SESSIONS_PER_USER" envDefault:"2"`
+	VNCSessionBufBytes   int64  `env:"IAGENT_VNC_SESSION_BUF_BYTES" envDefault:"4194304"` // 4 MiB
+
+	// Credential vault config
+	CredKey string `env:"IAGENT_CRED_KEY"`   // base64 AES-256 data key
+	CredKMS string `env:"IAGENT_CRED_KMS"`   // KMS key id (envelope encryption)
 }
 
 // Load reads configuration from environment variables.
