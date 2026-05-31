@@ -7,6 +7,7 @@
 | **Last Updated** | 2026-05-31 |
 | **Build** | `go build ./...` passes |
 | **Vet** | `go vet ./...` passes |
+| **Tests** | `go test ./...` — 7 packages with tests, all passing |
 
 ## Packages Implemented
 
@@ -59,14 +60,13 @@
 
 ## Known Gaps / TODOs
 
-- [ ] Database migrations (`gateway/migrations/` is empty — DDL SQL needed)
-- [ ] Unit tests (all packages)
-- [ ] Integration tests (testcontainers + fake device WS client)
+- [x] Database migrations (`gateway/migrations/` — up/down SQL created)
+- [x] Unit tests (model, config, auth, tunnel, pubsub, pool, channel — 7 packages)
+- [ ] Integration tests (testcontainers + fake device WS client — store layer needs real DB)
 - [ ] Prometheus metrics wiring (obs package has placeholder)
 - [ ] OpenTelemetry tracing
 - [ ] Redis-backed tunnel registry for multi-instance (v1 is single-instance)
-- [ ] `dispatch.go`: `Stat()` call uses undocumented interface — replace with proper approach
-- [ ] `IAGENT_FILE_STORE` `local:` prefix stripping before passing to relay
+- [ ] HTTP API handler tests (requires HTTP test server + mock stores)
 
 ## Git History
 

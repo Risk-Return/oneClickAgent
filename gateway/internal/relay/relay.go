@@ -82,14 +82,14 @@ func (r *FileRelay) StageFile(ctx context.Context, userID model.UUID, fileName s
 	sha256Sum := hex.EncodeToString(hasher.Sum(nil))
 
 	file := &model.File{
-		ID:          fileID,
-		UserID:      userID,
-		FileName:    fileName,
-		SizeBytes:   written,
-		MimeType:    mimeType,
-		SHA256:      sha256Sum,
-		Status:      model.FileStagedCloud,
-		StoragePath: storagePath,
+		ID:         fileID,
+		UserID:     userID,
+		Name:       fileName,
+		Size:       written,
+		Mime:       mimeType,
+		SHA256:     sha256Sum,
+		Status:     model.FileStagedCloud,
+		StorageURI: storagePath,
 	}
 
 	if err := r.store.Create(ctx, file); err != nil {
@@ -114,20 +114,20 @@ func (r *FileRelay) PushFile(ctx context.Context, fileID model.UUID, deviceID mo
 	}
 
 	// Open the staged file
-	f, err := os.Open(file.StoragePath)
+	f, err := os.Open(file.StorageURI)
 	if err != nil {
 		return fmt.Errorf("open staged file: %w", err)
 	}
 	defer f.Close()
 
 	// Compute total chunks
-	totalChunks := int((file.SizeBytes + ChunkSize - 1) / ChunkSize)
+	totalChunks := int((file.Size + ChunkSize - 1) / ChunkSize)
 
 	// Send FILE_PUSH_BEGIN
 	beginPayload := model.FilePushBeginPayload{
 		FileID:      file.ID,
-		FileName:    file.FileName,
-		SizeBytes:   file.SizeBytes,
+		FileName:    file.Name,
+		SizeBytes:   file.Size,
 		TotalChunks: totalChunks,
 		SHA256:      file.SHA256,
 	}
@@ -223,7 +223,7 @@ func (r *FileRelay) CleanupStagedFiles(ctx context.Context) error {
 	}
 
 	for _, f := range files {
-		if err := os.Remove(f.StoragePath); err != nil && !os.IsNotExist(err) {
+		if err := os.Remove(f.StorageURI); err != nil && !os.IsNotExist(err) {
 			continue
 		}
 		_ = r.store.MarkPurged(ctx, f.ID)
@@ -241,8 +241,8 @@ func (r *FileRelay) CleanupJobFiles(ctx context.Context, jobID model.UUID) error
 
 	for _, f := range files {
 		_ = r.store.MarkPurged(ctx, f.ID)
-		if f.StoragePath != "" {
-			_ = os.Remove(f.StoragePath)
+		if f.StorageURI != "" {
+			_ = os.Remove(f.StorageURI)
 		}
 	}
 

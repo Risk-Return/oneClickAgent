@@ -103,8 +103,7 @@ func (deps *Dependencies) handleEnableAgentSkill() http.HandlerFunc {
 		as := &model.AgentSkill{
 			AgentID:        agentID,
 			SkillID:        req.SkillID,
-			SkillVersionID: ver.ID,
-			Status:         model.SkillInstalled,
+			Status:         model.AgentSkillEnabled,
 		}
 		if err := deps.Skills.SetAgentSkill(r.Context(), as); err != nil {
 			writeError(w, http.StatusInternalServerError, model.ErrCodeInternalError, "failed to enable skill")

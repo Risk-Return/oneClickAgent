@@ -11,7 +11,6 @@ import (
 	"log/slog"
 	"os"
 	"sync"
-	"time"
 
 	"github.com/oneClickAgent/gateway/internal/model"
 	"github.com/oneClickAgent/gateway/internal/obs"
@@ -50,13 +49,11 @@ func (d *Dispatcher) DispatchToDevice(ctx context.Context, deviceID model.UUID, 
 	}
 
 	// Record desired state
-	now := time.Now().UTC()
 	ds := &model.DeviceSkill{
-		DeviceID:       deviceID,
-		SkillID:        skillID,
-		SkillVersionID: versionID,
-		Status:         model.SkillInstalling,
-		InstalledAt:    &now,
+		DeviceID: deviceID,
+		SkillID:  skillID,
+		Version:  ver.Version,
+		Status:   model.SkillInstalling,
 	}
 	if err := d.skills.SetDeviceSkill(ctx, ds); err != nil {
 		return fmt.Errorf("set device skill: %w", err)
@@ -178,7 +175,7 @@ func (d *Dispatcher) DispatchToDevice(ctx context.Context, deviceID model.UUID, 
 }
 
 // SendSkillAction sends a SKILL_ACTION frame to a device.
-func (d *Dispatcher) SendSkillAction(ctx context.Context, deviceID model.UUID, scope model.SkillActionScope, action model.SkillAction, skillID model.UUID, version string, agentID *model.UUID) error {
+func (d *Dispatcher) SendSkillAction(ctx context.Context, deviceID model.UUID, scope model.SkillScope, action model.SkillAction, skillID model.UUID, version string, agentID *model.UUID) error {
 	payload := model.SkillActionPayload{
 		Scope:   scope,
 		Action:  action,
@@ -230,15 +227,14 @@ func (d *Dispatcher) UpdateDeviceSkillState(ctx context.Context, payload model.S
 
 	case model.SkillScopeAgent:
 		if payload.AgentID != nil {
-			as := &model.AgentSkill{
-				AgentID:        *payload.AgentID,
-				SkillID:        payload.SkillID,
-				SkillVersionID: payload.SkillVersionID,
-				Status:         payload.Status,
+			status := model.AgentSkillEnabled
+			if payload.Status == model.SkillDisabled {
+				status = model.AgentSkillDisabled
 			}
-			if payload.Status == model.SkillInstalled || payload.Status == model.SkillDisabled {
-				now := time.Now().UTC()
-				as.EnabledAt = &now
+			as := &model.AgentSkill{
+				AgentID: *payload.AgentID,
+				SkillID: payload.SkillID,
+				Status:  status,
 			}
 			return d.skills.SetAgentSkill(ctx, as)
 		}

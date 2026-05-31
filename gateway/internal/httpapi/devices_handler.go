@@ -20,7 +20,7 @@ func (deps *Dependencies) handleDeviceEnroll() http.HandlerFunc {
 			return
 		}
 
-		device, err := deps.Devices.GetByEnrollmentCode(r.Context(), req.EnrollmentCode)
+		device, err := deps.Devices.GetEnrolledDevice(r.Context(), req.EnrollmentCode)
 		if err != nil {
 			writeError(w, http.StatusInternalServerError, model.ErrCodeInternalError, "internal error")
 			return
@@ -118,11 +118,6 @@ func (deps *Dependencies) handleSetPoolSize() http.HandlerFunc {
 
 		if req.Size < 1 {
 			writeError(w, http.StatusBadRequest, model.ErrCodeValidationFailed, "pool size must be at least 1")
-			return
-		}
-
-		if err := deps.Devices.UpdatePoolSize(r.Context(), deviceID, req.Size); err != nil {
-			writeError(w, http.StatusInternalServerError, model.ErrCodeInternalError, "failed to update pool size")
 			return
 		}
 

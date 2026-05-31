@@ -96,11 +96,11 @@ func (v *Vault) PublishVersion(ctx context.Context, skillID model.UUID, version,
 	sha256Sum := hex.EncodeToString(hasher.Sum(nil))
 
 	ver := &model.SkillVersion{
-		SkillID:      skillID,
-		Version:      version,
-		Manifest:     manifest,
-		ArtifactPath: artifactPath,
-		SHA256:       sha256Sum,
+		SkillID:     skillID,
+		Version:     version,
+		Manifest:    manifest,
+		ArtifactURI: artifactPath,
+		SHA256:      sha256Sum,
 	}
 
 	if err := v.skills.CreateVersion(ctx, ver); err != nil {
@@ -133,7 +133,7 @@ func (v *Vault) ListVersions(ctx context.Context, skillID model.UUID) ([]model.S
 
 // OpenArtifact opens the artifact file for a version for reading/dispatch.
 func (v *Vault) OpenArtifact(version *model.SkillVersion) (io.ReadCloser, error) {
-	return os.Open(version.ArtifactPath)
+	return os.Open(version.ArtifactURI)
 }
 
 // --- Visibility Grants ---

@@ -1,5 +1,6 @@
 // Package model defines domain types, DTOs, enums, and shared value objects
 // for the oneClickAgent Cloud Gateway.
+// DB struct tags map to the PostgreSQL schema defined in gateway/migrations/.
 package model
 
 import (
@@ -9,10 +10,8 @@ import (
 	"github.com/google/uuid"
 )
 
-// UUID is an alias for google/uuid UUID.
 type UUID = uuid.UUID
 
-// NewUUID generates a UUIDv7 (time-ordered) for use as primary keys.
 func NewUUID() UUID {
 	id, err := uuid.NewV7()
 	if err != nil {
@@ -21,19 +20,12 @@ func NewUUID() UUID {
 	return id
 }
 
-// ParseUUID parses a UUID string.
-func ParseUUID(s string) (UUID, error) {
-	return uuid.Parse(s)
-}
+func ParseUUID(s string) (UUID, error) { return uuid.Parse(s) }
 
-// MustParseUUID parses a UUID string, panicking on error.
-func MustParseUUID(s string) UUID {
-	return uuid.MustParse(s)
-}
+func MustParseUUID(s string) UUID { return uuid.MustParse(s) }
 
 // ---------- Enums ----------
 
-// UserRole represents the role of a user in the system.
 type UserRole string
 
 const (
@@ -41,17 +33,15 @@ const (
 	RoleUser  UserRole = "user"
 )
 
-// ValidUserRoles returns all valid user roles.
-func ValidUserRoles() []UserRole {
-	return []UserRole{RoleAdmin, RoleUser}
-}
+func (r UserRole) IsValid() bool { return r == RoleAdmin || r == RoleUser }
 
-// IsValid checks if the role is valid.
-func (r UserRole) IsValid() bool {
-	return r == RoleAdmin || r == RoleUser
-}
+type UserStatus string
 
-// UserTier represents the subscription tier of a customer.
+const (
+	UserActive   UserStatus = "active"
+	UserDisabled UserStatus = "disabled"
+)
+
 type UserTier string
 
 const (
@@ -60,7 +50,6 @@ const (
 	TierEnterprise UserTier = "enterprise"
 )
 
-// TierPriority maps a tier to its queue priority (lower = higher priority).
 func (t UserTier) TierPriority() int {
 	switch t {
 	case TierEnterprise:
@@ -72,77 +61,76 @@ func (t UserTier) TierPriority() int {
 	}
 }
 
-// ValidUserTiers returns all valid user tiers.
 func ValidUserTiers() []UserTier {
 	return []UserTier{TierFree, TierPro, TierEnterprise}
 }
 
-// JobStatus represents the lifecycle status of a job.
 type JobStatus string
 
 const (
-	JobPending    JobStatus = "PENDING"
-	JobQueued     JobStatus = "QUEUED"
-	JobDispatched JobStatus = "DISPATCHED"
-	JobRunning    JobStatus = "RUNNING"
-	JobSucceeded  JobStatus = "SUCCEEDED"
-	JobFailed     JobStatus = "FAILED"
-	JobCancelled  JobStatus = "CANCELLED"
+	JobPending    JobStatus = "pending"
+	JobQueued     JobStatus = "queued"
+	JobDispatched JobStatus = "dispatched"
+	JobRunning    JobStatus = "running"
+	JobSucceeded  JobStatus = "succeeded"
+	JobFailed     JobStatus = "failed"
+	JobCancelled  JobStatus = "cancelled"
 )
 
-// IsTerminal returns true if the job status is a terminal state.
 func (s JobStatus) IsTerminal() bool {
 	return s == JobSucceeded || s == JobFailed || s == JobCancelled
 }
 
-// IsActive returns true if the job is still in progress.
 func (s JobStatus) IsActive() bool {
 	return s == JobPending || s == JobQueued || s == JobDispatched || s == JobRunning
 }
 
-// DeviceStatus represents the connection status of a local device.
 type DeviceStatus string
 
 const (
-	DeviceEnrolled DeviceStatus = "ENROLLED"
-	DeviceOnline   DeviceStatus = "ONLINE"
-	DeviceOffline  DeviceStatus = "OFFLINE"
+	DeviceEnrolled DeviceStatus = "enrolled"
+	DeviceOnline   DeviceStatus = "online"
+	DeviceOffline  DeviceStatus = "offline"
 )
 
-// AgentStatus represents the pool/health status of an agent container.
 type AgentStatus string
 
 const (
-	AgentCreating  AgentStatus = "CREATING"
-	AgentIdle      AgentStatus = "IDLE"
-	AgentBusy      AgentStatus = "BUSY"
-	AgentUnhealthy AgentStatus = "UNHEALTHY"
-	AgentFailed    AgentStatus = "FAILED"
-	AgentRemoved   AgentStatus = "REMOVED"
+	AgentCreating  AgentStatus = "creating"
+	AgentIdle      AgentStatus = "idle"
+	AgentBusy      AgentStatus = "busy"
+	AgentUnhealthy AgentStatus = "unhealthy"
+	AgentFailed    AgentStatus = "failed"
+	AgentRemoved   AgentStatus = "removed"
 )
 
-// SkillStatus represents the installation status of a skill on a device or agent.
-type SkillStatus string
+type SkillInstallStatus string
 
 const (
-	SkillInstalling SkillStatus = "INSTALLING"
-	SkillInstalled  SkillStatus = "INSTALLED"
-	SkillDisabled   SkillStatus = "DISABLED"
-	SkillUpdating   SkillStatus = "UPDATING"
-	SkillDeleting   SkillStatus = "DELETING"
-	SkillError      SkillStatus = "ERROR"
+	SkillInstalling SkillInstallStatus = "installing"
+	SkillInstalled  SkillInstallStatus = "installed"
+	SkillDisabled   SkillInstallStatus = "disabled"
+	SkillUpdating   SkillInstallStatus = "updating"
+	SkillDeleting   SkillInstallStatus = "deleting"
+	SkillError      SkillInstallStatus = "error"
 )
 
-// FileStatus represents the staging lifecycle of a file.
+type AgentSkillStatus string
+
+const (
+	AgentSkillEnabled  AgentSkillStatus = "enabled"
+	AgentSkillDisabled AgentSkillStatus = "disabled"
+)
+
 type FileStatus string
 
 const (
-	FileStagedCloud  FileStatus = "STAGED_CLOUD"
-	FileStagedDevice FileStatus = "STAGED_DEVICE"
-	FilePurged       FileStatus = "PURGED"
+	FileStagedCloud  FileStatus = "staged_cloud"
+	FileStagedDevice FileStatus = "staged_device"
+	FilePurged       FileStatus = "purged"
+	FileStatusError  FileStatus = "error"
 )
 
-// SkillVisibility controls who can see a skill.
 type SkillVisibility string
 
 const (
@@ -150,7 +138,13 @@ const (
 	VisibilityRestricted SkillVisibility = "restricted"
 )
 
-// PrincipalType identifies the target of a skill grant.
+type SkillCatalogStatus string
+
+const (
+	SkillActive      SkillCatalogStatus = "active"
+	SkillDeprecated  SkillCatalogStatus = "deprecated"
+)
+
 type PrincipalType string
 
 const (
@@ -158,15 +152,13 @@ const (
 	PrincipalOrg  PrincipalType = "org"
 )
 
-// SkillActionScope defines the scope for a skill action frame.
-type SkillActionScope string
+type SkillScope string
 
 const (
-	SkillScopeDevice SkillActionScope = "device"
-	SkillScopeAgent  SkillActionScope = "agent"
+	SkillScopeDevice SkillScope = "device"
+	SkillScopeAgent  SkillScope = "agent"
 )
 
-// SkillAction defines the type of skill operation.
 type SkillAction string
 
 const (
@@ -177,192 +169,219 @@ const (
 	SkillActionDelete  SkillAction = "delete"
 )
 
-// ErrorCode represents machine-readable error codes.
 type ErrorCode string
 
 const (
-	ErrCodeQueueTimeout      ErrorCode = "QUEUE_TIMEOUT"
-	ErrCodeQueueFull         ErrorCode = "QUEUE_FULL"
-	ErrCodeDeviceOffline     ErrorCode = "DEVICE_OFFLINE"
-	ErrCodeAgentUnavailable  ErrorCode = "AGENT_UNAVAILABLE"
-	ErrCodeLimitExceeded     ErrorCode = "LIMIT_EXCEEDED"
-	ErrCodeValidationFailed  ErrorCode = "VALIDATION_FAILED"
-	ErrCodeNotFound          ErrorCode = "NOT_FOUND"
-	ErrCodeUnauthorized      ErrorCode = "UNAUTHORIZED"
-	ErrCodeForbidden         ErrorCode = "FORBIDDEN"
-	ErrCodeConflict          ErrorCode = "CONFLICT"
-	ErrCodeInternalError     ErrorCode = "INTERNAL_ERROR"
+	ErrCodeQueueTimeout     ErrorCode = "QUEUE_TIMEOUT"
+	ErrCodeQueueFull        ErrorCode = "QUEUE_FULL"
+	ErrCodeDeviceOffline    ErrorCode = "DEVICE_OFFLINE"
+	ErrCodeAgentUnavailable ErrorCode = "AGENT_UNAVAILABLE"
+	ErrCodeSkillNotEnabled  ErrorCode = "SKILL_NOT_ENABLED"
+	ErrCodeLimitExceeded    ErrorCode = "LIMIT_EXCEEDED"
+	ErrCodeValidationFailed ErrorCode = "VALIDATION_FAILED"
+	ErrCodeNotFound         ErrorCode = "NOT_FOUND"
+	ErrCodeUnauthorized     ErrorCode = "UNAUTHORIZED"
+	ErrCodeForbidden        ErrorCode = "FORBIDDEN"
+	ErrCodeConflict         ErrorCode = "CONFLICT"
+	ErrCodeInternalError    ErrorCode = "INTERNAL_ERROR"
 )
 
-// ---------- Domain Types ----------
+// ---------- Domain Types (db tags match migration SQL columns) ----------
 
-// User represents a registered user (admin or customer).
 type User struct {
-	ID           UUID      `json:"id" db:"id"`
-	Email        string    `json:"email" db:"email"`
-	PasswordHash string    `json:"-" db:"password_hash"`
-	Name         string    `json:"name" db:"name"`
-	Role         UserRole  `json:"role" db:"role"`
-	Tier         UserTier  `json:"tier" db:"tier"`
-	OrgID        *UUID     `json:"org_id,omitempty" db:"org_id"`
-	CreatedAt    time.Time `json:"created_at" db:"created_at"`
-	UpdatedAt    time.Time `json:"updated_at" db:"updated_at"`
+	ID           UUID       `json:"id" db:"id"`
+	Email        string     `json:"email" db:"email"`
+	Username     string     `json:"username" db:"username"`
+	PasswordHash string     `json:"-" db:"password_hash"`
+	Status       UserStatus `json:"status" db:"status"`
+	Role         UserRole   `json:"role" db:"role"`
+	Tier         UserTier   `json:"tier" db:"tier"`
+	OrgID        *UUID      `json:"org_id,omitempty" db:"org_id"`
+	CreatedAt    time.Time  `json:"created_at" db:"created_at"`
+	UpdatedAt    time.Time  `json:"updated_at" db:"updated_at"`
 }
 
-// Device represents a local device registered with the gateway.
+type Organization struct {
+	ID          UUID      `json:"id" db:"id"`
+	Name        string    `json:"name" db:"name"`
+	Description string    `json:"description,omitempty" db:"description"`
+	CreatedBy   UUID      `json:"created_by" db:"created_by"`
+	CreatedAt   time.Time `json:"created_at" db:"created_at"`
+	UpdatedAt   time.Time `json:"updated_at" db:"updated_at"`
+}
+
 type Device struct {
-	ID               UUID         `json:"id" db:"id"`
-	DeviceName       string       `json:"device_name" db:"device_name"`
-	DeviceTokenHash  string       `json:"-" db:"device_token_hash"`
-	Status           DeviceStatus `json:"status" db:"status"`
-	HostInfo         string       `json:"host_info,omitempty" db:"host_info"`
-	AgentPoolSize    int          `json:"agent_pool_size" db:"agent_pool_size"`
-	EnrollmentCode   string       `json:"-" db:"enrollment_code"`
-	EnrollmentCodeAt time.Time    `json:"-" db:"enrollment_code_at"`
-	CreatedAt        time.Time    `json:"created_at" db:"created_at"`
-	LastSeenAt       *time.Time   `json:"last_seen_at,omitempty" db:"last_seen_at"`
+	ID              UUID         `json:"id" db:"id"`
+	OperatorID      UUID         `json:"operator_id" db:"operator_id"`
+	Name            string       `json:"name" db:"name"`
+	Description     string       `json:"description,omitempty" db:"description"`
+	Platform        string       `json:"platform,omitempty" db:"platform"`
+	Status          DeviceStatus `json:"status" db:"status"`
+	TokenHash       string       `json:"-" db:"token_hash"`
+	TokenRotatedAt  *time.Time   `json:"token_rotated_at,omitempty" db:"token_rotated_at"`
+	LastSeenAt      *time.Time   `json:"last_seen_at,omitempty" db:"last_seen_at"`
+	Resources       *DeviceResources `json:"resources,omitempty" db:"resources"`
+	CreatedAt       time.Time    `json:"created_at" db:"created_at"`
+	UpdatedAt       time.Time    `json:"updated_at" db:"updated_at"`
 }
 
-// Agent represents a pooled agent container on a device.
+type DeviceResources struct {
+	CPUCount int   `json:"cpu_count"`
+	MemoryMB int64 `json:"mem_mb"`
+	DiskMB   int64 `json:"disk_mb"`
+}
+
 type Agent struct {
 	ID          UUID        `json:"id" db:"id"`
 	DeviceID    UUID        `json:"device_id" db:"device_id"`
-	ContainerID string      `json:"container_id,omitempty" db:"container_id"`
-	Status      AgentStatus `json:"status" db:"status"`
 	UserID      *UUID       `json:"user_id,omitempty" db:"user_id"`
+	Name        string      `json:"name" db:"name"`
+	Description string      `json:"description,omitempty" db:"description"`
+	Image       string      `json:"image" db:"image"`
+	Port        int         `json:"port" db:"port"`
+	Tags        []string    `json:"tags,omitempty" db:"tags"`
+	Status      AgentStatus `json:"status" db:"status"`
 	JobID       *UUID       `json:"job_id,omitempty" db:"job_id"`
-	AgentName   string      `json:"agent_name" db:"agent_name"`
+	Limits      *AgentLimits `json:"limits" db:"limits"`
+	AllocatedAt *time.Time  `json:"allocated_at,omitempty" db:"allocated_at"`
 	CreatedAt   time.Time   `json:"created_at" db:"created_at"`
 	UpdatedAt   time.Time   `json:"updated_at" db:"updated_at"`
 }
 
-// Job represents a unit of work submitted by a customer.
+type AgentLimits struct {
+	CPU     int   `json:"cpu"`
+	MemMB   int64 `json:"mem_mb"`
+	DiskMB  int64 `json:"disk_mb"`
+}
+
 type Job struct {
 	ID              UUID      `json:"id" db:"id"`
 	UserID          UUID      `json:"user_id" db:"user_id"`
+	UserTier        UserTier  `json:"user_tier" db:"user_tier"`
 	AgentID         *UUID     `json:"agent_id,omitempty" db:"agent_id"`
 	DeviceID        *UUID     `json:"device_id,omitempty" db:"device_id"`
+	Channel         string    `json:"channel" db:"channel"`
 	Command         string    `json:"command" db:"command"`
+	Params          *string   `json:"params,omitempty" db:"params"`
 	SkillID         *UUID     `json:"skill_id,omitempty" db:"skill_id"`
 	Status          JobStatus `json:"status" db:"status"`
+	Percent         *int      `json:"percent,omitempty" db:"percent"`
+	ProgressMessage *string   `json:"progress_message,omitempty" db:"progress_message"`
+	Result          *string   `json:"result,omitempty" db:"result"`
 	ErrorCode       *string   `json:"error_code,omitempty" db:"error_code"`
-	QueuePosition   *int      `json:"queue_position,omitempty" db:"-"`
+	ErrorMessage    *string   `json:"error_message,omitempty" db:"error_message"`
 	QueuedAt        *time.Time `json:"queued_at,omitempty" db:"queued_at"`
 	QueueExpiresAt  *time.Time `json:"queue_expires_at,omitempty" db:"queue_expires_at"`
-	Result          *string    `json:"result,omitempty" db:"result"`
-	ProgressPercent *int       `json:"progress_percent,omitempty" db:"progress_percent"`
-	ProgressMessage *string    `json:"progress_message,omitempty" db:"progress_message"`
-	CreatedAt       time.Time  `json:"created_at" db:"created_at"`
+	SubmittedAt     time.Time  `json:"submitted_at" db:"submitted_at"`
 	StartedAt       *time.Time `json:"started_at,omitempty" db:"started_at"`
-	CompletedAt     *time.Time `json:"completed_at,omitempty" db:"completed_at"`
+	FinishedAt      *time.Time `json:"finished_at,omitempty" db:"finished_at"`
+	CreatedAt       time.Time  `json:"created_at" db:"created_at"`
+	UpdatedAt       time.Time  `json:"updated_at" db:"updated_at"`
+
+	// Computed fields (not from DB)
+	QueuePosition        *int `json:"queue_position,omitempty" db:"-"`
+	EstimatedWaitSeconds *int `json:"estimated_wait_seconds,omitempty" db:"-"`
 }
 
-// File represents an uploaded file tracked by the gateway.
 type File struct {
-	ID          UUID       `json:"id" db:"id"`
-	UserID      UUID       `json:"user_id" db:"user_id"`
-	FileName    string     `json:"file_name" db:"file_name"`
-	SizeBytes   int64      `json:"size_bytes" db:"size_bytes"`
-	MimeType    string     `json:"mime_type" db:"mime_type"`
-	SHA256      string     `json:"sha256,omitempty" db:"sha256"`
-	Status      FileStatus `json:"status" db:"status"`
-	StoragePath string     `json:"-" db:"storage_path"`
-	CreatedAt   time.Time  `json:"created_at" db:"created_at"`
-	PurgedAt    *time.Time `json:"purged_at,omitempty" db:"purged_at"`
+	ID         UUID       `json:"id" db:"id"`
+	UserID     UUID       `json:"user_id" db:"user_id"`
+	Name       string     `json:"name" db:"name"`
+	Size       int64      `json:"size" db:"size"`
+	Mime       string     `json:"mime,omitempty" db:"mime"`
+	SHA256     string     `json:"sha256" db:"sha256"`
+	StorageURI string     `json:"-" db:"storage_uri"`
+	Status     FileStatus `json:"status" db:"status"`
+	CreatedAt  time.Time  `json:"created_at" db:"created_at"`
+	PurgedAt   *time.Time `json:"purged_at,omitempty" db:"purged_at"`
 }
 
-// Skill represents a skill in the cloud vault catalog.
 type Skill struct {
-	ID          UUID            `json:"id" db:"id"`
-	Name        string          `json:"name" db:"name"`
-	Description string          `json:"description" db:"description"`
-	Visibility  SkillVisibility `json:"visibility" db:"visibility"`
-	CreatedAt   time.Time       `json:"created_at" db:"created_at"`
-	UpdatedAt   time.Time       `json:"updated_at" db:"updated_at"`
+	ID            UUID               `json:"id" db:"id"`
+	Key           string             `json:"key" db:"key"`
+	Name          string             `json:"name" db:"name"`
+	Description   string             `json:"description,omitempty" db:"description"`
+	Visibility    SkillVisibility    `json:"visibility" db:"visibility"`
+	LatestVersion string             `json:"latest_version,omitempty" db:"latest_version"`
+	Status        SkillCatalogStatus `json:"status" db:"status"`
+	CreatedAt     time.Time          `json:"created_at" db:"created_at"`
+	UpdatedAt     time.Time          `json:"updated_at" db:"updated_at"`
 }
 
-// SkillVersion represents a published version of a skill.
 type SkillVersion struct {
-	ID           UUID      `json:"id" db:"id"`
-	SkillID      UUID      `json:"skill_id" db:"skill_id"`
-	Version      string    `json:"version" db:"version"`
-	Manifest     string    `json:"manifest" db:"manifest"`
-	ArtifactPath string    `json:"-" db:"artifact_path"`
-	SHA256       string    `json:"sha256" db:"sha256"`
-	CreatedAt    time.Time `json:"created_at" db:"created_at"`
+	ID          UUID      `json:"id" db:"id"`
+	SkillID     UUID      `json:"skill_id" db:"skill_id"`
+	Version     string    `json:"version" db:"version"`
+	Manifest    string    `json:"manifest" db:"manifest"`
+	ArtifactURI string    `json:"-" db:"artifact_uri"`
+	SHA256      string    `json:"sha256" db:"sha256"`
+	Size        *int64    `json:"size,omitempty" db:"size"`
+	CreatedAt   time.Time `json:"created_at" db:"created_at"`
 }
 
-// DeviceSkill tracks the fleet installation state of a skill on a device.
 type DeviceSkill struct {
-	DeviceID       UUID        `json:"device_id" db:"device_id"`
-	SkillID        UUID        `json:"skill_id" db:"skill_id"`
-	SkillVersionID UUID        `json:"skill_version_id" db:"skill_version_id"`
-	Status         SkillStatus `json:"status" db:"status"`
-	InstalledAt    *time.Time  `json:"installed_at,omitempty" db:"installed_at"`
+	DeviceID     UUID               `json:"device_id" db:"device_id"`
+	SkillID      UUID               `json:"skill_id" db:"skill_id"`
+	Version      string             `json:"version" db:"version"`
+	Status       SkillInstallStatus `json:"status" db:"status"`
+	InstalledBy  *UUID              `json:"installed_by,omitempty" db:"installed_by"`
+	ErrorMessage *string            `json:"error_message,omitempty" db:"error_message"`
+	UpdatedAt    time.Time          `json:"updated_at" db:"updated_at"`
 }
 
-// AgentSkill tracks per-agent enable/disable state for a skill.
 type AgentSkill struct {
-	AgentID        UUID        `json:"agent_id" db:"agent_id"`
-	SkillID        UUID        `json:"skill_id" db:"skill_id"`
-	SkillVersionID UUID        `json:"skill_version_id" db:"skill_version_id"`
-	Status         SkillStatus `json:"status" db:"status"`
-	EnabledAt      *time.Time  `json:"enabled_at,omitempty" db:"enabled_at"`
+	AgentID    UUID             `json:"agent_id" db:"agent_id"`
+	SkillID    UUID             `json:"skill_id" db:"skill_id"`
+	Status     AgentSkillStatus `json:"status" db:"status"`
+	SelectedBy *UUID            `json:"selected_by,omitempty" db:"selected_by"`
+	UpdatedAt  time.Time        `json:"updated_at" db:"updated_at"`
 }
 
-// Organization represents a group of customers.
-type Organization struct {
-	ID        UUID      `json:"id" db:"id"`
-	Name      string    `json:"name" db:"name"`
-	CreatedAt time.Time `json:"created_at" db:"created_at"`
-}
-
-// SkillGrant represents a visibility grant for a skill.
 type SkillGrant struct {
 	SkillID       UUID          `json:"skill_id" db:"skill_id"`
 	PrincipalType PrincipalType `json:"principal_type" db:"principal_type"`
 	PrincipalID   UUID          `json:"principal_id" db:"principal_id"`
-	GrantedAt     time.Time     `json:"granted_at" db:"granted_at"`
+	GrantedBy     UUID          `json:"granted_by" db:"granted_by"`
+	CreatedAt     time.Time     `json:"created_at" db:"created_at"`
 }
 
-// RefreshToken represents a stored refresh token.
 type RefreshToken struct {
-	ID        UUID       `json:"id" db:"id"`
-	UserID    UUID       `json:"user_id" db:"user_id"`
-	TokenHash string     `json:"-" db:"token_hash"`
-	Family    string     `json:"-" db:"family"`
-	ExpiresAt time.Time  `json:"expires_at" db:"expires_at"`
-	CreatedAt time.Time  `json:"created_at" db:"created_at"`
-	RevokedAt *time.Time `json:"revoked_at,omitempty" db:"revoked_at"`
+	ID         UUID       `json:"id" db:"id"`
+	UserID     UUID       `json:"user_id" db:"user_id"`
+	TokenHash  string     `json:"-" db:"token_hash"`
+	ExpiresAt  time.Time  `json:"expires_at" db:"expires_at"`
+	RevokedAt  *time.Time `json:"revoked_at,omitempty" db:"revoked_at"`
+	UserAgent  string     `json:"-" db:"user_agent"`
+	IP         string     `json:"-" db:"ip"`
+	CreatedAt  time.Time  `json:"created_at" db:"created_at"`
+	Family     string     `json:"-" db:"-"` // theft detection (not in DB)
 }
 
-// AuditLog represents an audit entry for sensitive admin actions.
 type AuditLog struct {
-	ID           UUID      `json:"id" db:"id"`
-	ActorID      UUID      `json:"actor_id" db:"actor_id"`
-	Action       string    `json:"action" db:"action"`
-	ResourceType string    `json:"resource_type" db:"resource_type"`
-	ResourceID   *UUID     `json:"resource_id,omitempty" db:"resource_id"`
-	Detail       string    `json:"detail,omitempty" db:"detail"`
-	CreatedAt    time.Time `json:"created_at" db:"created_at"`
+	ID         UUID      `json:"id" db:"id"`
+	UserID     *UUID     `json:"user_id,omitempty" db:"user_id"`
+	Actor      string    `json:"actor,omitempty" db:"actor"`
+	Action     string    `json:"action" db:"action"`
+	TargetType string    `json:"target_type,omitempty" db:"target_type"`
+	TargetID   *UUID     `json:"target_id,omitempty" db:"target_id"`
+	Meta       *string   `json:"meta,omitempty" db:"meta"`
+	CreatedAt  time.Time `json:"created_at" db:"created_at"`
 }
 
 // ---------- DTOs ----------
 
-// RegisterRequest is the payload for POST /auth/register.
 type RegisterRequest struct {
 	Email    string `json:"email" validate:"required,email"`
+	Username string `json:"username" validate:"required"`
 	Password string `json:"password" validate:"required,min=12"`
-	Name     string `json:"name" validate:"required"`
+	Name     string `json:"-"` // deprecated, use Username
 }
 
-// LoginRequest is the payload for POST /auth/login.
 type LoginRequest struct {
 	Email    string `json:"email" validate:"required,email"`
 	Password string `json:"password" validate:"required"`
 }
 
-// AuthResponse is returned after login/register/refresh.
 type AuthResponse struct {
 	AccessToken  string `json:"access_token"`
 	RefreshToken string `json:"refresh_token"`
@@ -370,122 +389,119 @@ type AuthResponse struct {
 	User         User   `json:"user"`
 }
 
-// RefreshRequest is the payload for POST /auth/refresh.
 type RefreshRequest struct {
 	RefreshToken string `json:"refresh_token" validate:"required"`
 }
 
-// SubmitJobRequest is the payload for POST /jobs.
 type SubmitJobRequest struct {
-	Command  string  `json:"command" validate:"required"`
-	SkillID  *UUID   `json:"skill_id,omitempty"`
-	FileIDs  []UUID  `json:"file_ids,omitempty"`
+	Command string  `json:"command" validate:"required"`
+	SkillID *UUID   `json:"skill_id,omitempty"`
+	FileIDs []UUID  `json:"file_ids,omitempty"`
 }
 
-// JobResponse is the response for job operations.
 type JobResponse struct {
-	Job                  Job    `json:"job"`
-	QueuePosition        *int   `json:"queue_position,omitempty"`
-	EstimatedWaitSeconds *int   `json:"estimated_wait_seconds,omitempty"`
-	AgentID              *UUID  `json:"agent_id,omitempty"`
+	Job                  Job   `json:"job"`
+	QueuePosition        *int  `json:"queue_position,omitempty"`
+	EstimatedWaitSeconds *int  `json:"estimated_wait_seconds,omitempty"`
+	AgentID              *UUID `json:"agent_id,omitempty"`
 }
 
-// CreateSkillRequest is the payload for admin skill creation.
 type CreateSkillRequest struct {
+	Key         string          `json:"key" validate:"required"`
 	Name        string          `json:"name" validate:"required"`
 	Description string          `json:"description"`
 	Visibility  SkillVisibility `json:"visibility" validate:"required,oneof=public restricted"`
 }
 
-// PublishSkillVersionRequest is the payload for admin skill version publishing.
 type PublishSkillVersionRequest struct {
 	Version  string `json:"version" validate:"required"`
 	Manifest string `json:"manifest" validate:"required"`
 }
 
-// FleetSkillRequest is the payload for admin fleet skill management.
 type FleetSkillRequest struct {
 	Version string `json:"version" validate:"required"`
 }
 
-// SkillVisibilityUpdate is the payload for updating skill visibility.
 type SkillVisibilityUpdate struct {
 	Visibility SkillVisibility `json:"visibility" validate:"required,oneof=public restricted"`
 }
 
-// SkillGrantRequest is the payload for creating/removing skill grants.
 type SkillGrantRequest struct {
 	PrincipalType PrincipalType `json:"principal_type" validate:"required,oneof=user org"`
 	PrincipalID   UUID          `json:"principal_id" validate:"required"`
 }
 
-// CreateOrgRequest is the payload for creating an organization.
 type CreateOrgRequest struct {
-	Name string `json:"name" validate:"required"`
+	Name        string `json:"name" validate:"required"`
+	Description string `json:"description"`
 }
 
-// UpdateOrgMemberRequest is the payload for adding/removing org members.
 type UpdateOrgMemberRequest struct {
 	UserID UUID `json:"user_id" validate:"required"`
 }
 
-// UpdateUserTierRequest is the payload for changing a user's tier.
 type UpdateUserTierRequest struct {
 	Tier UserTier `json:"tier" validate:"required,oneof=free pro enterprise"`
 }
 
-// SetPoolSizeRequest is the payload for setting agent pool size on a device.
 type SetPoolSizeRequest struct {
 	Size int `json:"size" validate:"required,min=1"`
 }
 
-// UpdateUserRequest is the payload for updating user profile.
-type UpdateUserRequest struct {
-	Name *string `json:"name,omitempty"`
-}
-
-// PaginationParams holds cursor-based pagination parameters.
 type PaginationParams struct {
 	Cursor *UUID `json:"cursor,omitempty"`
 	Limit  int   `json:"limit"`
 }
 
-// PaginatedResponse wraps a paginated list response.
 type PaginatedResponse[T any] struct {
 	Data       []T    `json:"data"`
 	NextCursor *UUID  `json:"next_cursor,omitempty"`
 	HasMore    bool   `json:"has_more"`
 }
 
-// APIError represents a structured API error response.
 type APIError struct {
-	Code    ErrorCode  `json:"code"`
-	Message string     `json:"message"`
-	Details *string    `json:"details,omitempty"`
+	Code    ErrorCode `json:"code"`
+	Message string    `json:"message"`
+	Details *string   `json:"details,omitempty"`
 }
 
-// APIErrorResponse wraps an API error for JSON responses.
 type APIErrorResponse struct {
 	Error APIError `json:"error"`
 }
 
-// EnrollmentRequest is the payload for POST /devices/enroll.
 type EnrollmentRequest struct {
 	EnrollmentCode string `json:"enrollment_code" validate:"required"`
 }
 
-// EnrollmentResponse is returned after successful device enrollment.
 type EnrollmentResponse struct {
 	DeviceID    UUID   `json:"device_id"`
 	DeviceToken string `json:"device_token"`
 }
 
+type EnableSkillRequest struct {
+	SkillID UUID `json:"skill_id" validate:"required"`
+}
+
+type DrainAgentResponse struct {
+	AgentID UUID        `json:"agent_id"`
+	Status  AgentStatus `json:"status"`
+}
+
+type SkillWithLatestVersion struct {
+	Skill
+	LatestVersion *SkillVersion `json:"latest_version,omitempty"`
+}
+
+type SkillVisible struct {
+	Skill
+	LatestVersion *SkillVersion `json:"latest_version,omitempty"`
+	Enabled       *bool         `json:"enabled,omitempty"`
+}
+
 // ---------- Tunnel Frame Types ----------
 
-// FrameVersion is the current tunnel protocol version.
 const FrameVersion = 1
 
-// Frame represents a single tunnel message between gateway and device.
 type Frame struct {
 	Version int             `json:"v"`
 	Type    FrameType       `json:"type"`
@@ -495,11 +511,9 @@ type Frame struct {
 	Payload json.RawMessage `json:"payload"`
 }
 
-// FrameType enumerates all tunnel message types.
 type FrameType string
 
 const (
-	// Control
 	FrameHello     FrameType = "HELLO"
 	FrameHelloAck  FrameType = "HELLO_ACK"
 	FramePing      FrameType = "PING"
@@ -508,24 +522,20 @@ const (
 	FrameError     FrameType = "ERROR"
 	FrameStateSync FrameType = "STATE_SYNC"
 
-	// Job control
 	FrameJobDispatch FrameType = "JOB_DISPATCH"
 	FrameJobCancel   FrameType = "JOB_CANCEL"
 	FrameJobQuery    FrameType = "JOB_QUERY"
 
-	// Job events
 	FrameJobAccepted FrameType = "JOB_ACCEPTED"
 	FrameJobProgress FrameType = "JOB_PROGRESS"
 	FrameJobResult   FrameType = "JOB_RESULT"
 	FrameJobRejected FrameType = "JOB_REJECTED"
 
-	// Agent management
 	FrameAgentCreate    FrameType = "AGENT_CREATE"
 	FrameAgentAction    FrameType = "AGENT_ACTION"
 	FrameAgentStatusReq FrameType = "AGENT_STATUS_REQ"
 	FrameAgentStatus    FrameType = "AGENT_STATUS"
 
-	// Skill dispatch
 	FrameSkillDispatchBegin FrameType = "SKILL_DISPATCH_BEGIN"
 	FrameSkillChunk         FrameType = "SKILL_CHUNK"
 	FrameSkillDispatchEnd   FrameType = "SKILL_DISPATCH_END"
@@ -533,67 +543,56 @@ const (
 	FrameSkillState         FrameType = "SKILL_STATE"
 	FrameSkillSync          FrameType = "SKILL_SYNC"
 
-	// File transfer
 	FrameFilePushBegin FrameType = "FILE_PUSH_BEGIN"
 	FrameFileChunk     FrameType = "FILE_CHUNK"
 	FrameFilePushEnd   FrameType = "FILE_PUSH_END"
 	FrameFileAck       FrameType = "FILE_ACK"
 )
 
-// FrameMaxSize is the maximum allowed frame size in bytes.
-const FrameMaxSize = 1 << 20 // 1 MiB
+const FrameMaxSize = 1 << 20
 
-// ---------- Hello Payload ----------
+// ---------- Frame Payloads ----------
 
-// HelloPayload is the payload for a HELLO frame sent by a device on connect.
 type HelloPayload struct {
-	DeviceID    UUID     `json:"device_id"`
-	AgentCount  int      `json:"agent_count"`
-	Agents      []HelloAgent `json:"agents"`
-	Capabilities []string `json:"capabilities,omitempty"`
-	Resources   HelloResources `json:"resources,omitempty"`
+	DeviceID     UUID           `json:"device_id"`
+	AgentCount   int            `json:"agent_count"`
+	Agents       []HelloAgent   `json:"agents"`
+	Capabilities []string       `json:"capabilities,omitempty"`
+	Resources    HelloResources `json:"resources,omitempty"`
 }
 
-// HelloAgent describes an agent known to the device on connect.
 type HelloAgent struct {
 	AgentID     UUID        `json:"agent_id"`
 	ContainerID string      `json:"container_id,omitempty"`
 	Status      AgentStatus `json:"status"`
 }
 
-// HelloResources describes device resource info on connect.
 type HelloResources struct {
-	CPUCount   int   `json:"cpu_count"`
-	MemoryMB   int64 `json:"memory_mb"`
-	DiskMB     int64 `json:"disk_mb"`
+	CPUCount int   `json:"cpu_count"`
+	MemoryMB int64 `json:"memory_mb"`
+	DiskMB   int64 `json:"disk_mb"`
 }
 
-// HelloAckPayload is the payload for a HELLO_ACK frame from the gateway.
 type HelloAckPayload struct {
 	SessionID string `json:"session_id"`
 }
 
-// ---------- Job Frame Payloads ----------
-
-// JobDispatchPayload is the payload for JOB_DISPATCH frame.
 type JobDispatchPayload struct {
-	JobID    UUID   `json:"job_id"`
-	UserID   UUID   `json:"user_id"`
-	AgentID  UUID   `json:"agent_id"`
-	Command  string `json:"command"`
-	SkillID  *UUID  `json:"skill_id,omitempty"`
-	FileIDs  []UUID `json:"file_ids,omitempty"`
+	JobID   UUID   `json:"job_id"`
+	UserID  UUID   `json:"user_id"`
+	AgentID UUID   `json:"agent_id"`
+	Command string `json:"command"`
+	SkillID *UUID  `json:"skill_id,omitempty"`
+	FileIDs []UUID `json:"file_ids,omitempty"`
 }
 
-// JobProgressPayload is the payload for JOB_PROGRESS frame.
 type JobProgressPayload struct {
-	JobID          UUID   `json:"job_id"`
-	Status         JobStatus `json:"status"`
-	Percent        int    `json:"percent"`
-	Message        string `json:"message"`
+	JobID   UUID      `json:"job_id"`
+	Status  JobStatus `json:"status"`
+	Percent int       `json:"percent"`
+	Message string    `json:"message"`
 }
 
-// JobResultPayload is the payload for JOB_RESULT frame.
 type JobResultPayload struct {
 	JobID    UUID      `json:"job_id"`
 	Status   JobStatus `json:"status"`
@@ -601,21 +600,16 @@ type JobResultPayload struct {
 	ErrorMsg *string   `json:"error_msg,omitempty"`
 }
 
-// JobRejectedPayload is the payload for JOB_REJECTED frame.
 type JobRejectedPayload struct {
 	JobID  UUID   `json:"job_id"`
 	Reason string `json:"reason"`
 }
 
-// ---------- Agent Frame Payloads ----------
-
-// AgentCreatePayload is the payload for AGENT_CREATE frame.
 type AgentCreatePayload struct {
 	AgentID   UUID   `json:"agent_id"`
 	AgentName string `json:"agent_name"`
 }
 
-// AgentStatusPayload is the payload for AGENT_STATUS frame.
 type AgentStatusPayload struct {
 	AgentID     UUID        `json:"agent_id"`
 	Status      AgentStatus `json:"status"`
@@ -624,9 +618,6 @@ type AgentStatusPayload struct {
 	MemoryMB    *int64      `json:"memory_mb,omitempty"`
 }
 
-// ---------- Skill Frame Payloads ----------
-
-// SkillDispatchBeginPayload is the payload for SKILL_DISPATCH_BEGIN frame.
 type SkillDispatchBeginPayload struct {
 	SkillID        UUID   `json:"skill_id"`
 	SkillVersionID UUID   `json:"skill_version_id"`
@@ -636,48 +627,40 @@ type SkillDispatchBeginPayload struct {
 	SHA256         string `json:"sha256"`
 }
 
-// SkillChunkPayload is the payload for SKILL_CHUNK frame.
 type SkillChunkPayload struct {
 	SkillID        UUID   `json:"skill_id"`
 	SkillVersionID UUID   `json:"skill_version_id"`
 	ChunkIndex     int    `json:"chunk_index"`
-	Data           string `json:"data"` // base64-encoded
+	Data           string `json:"data"`
 }
 
-// SkillDispatchEndPayload is the payload for SKILL_DISPATCH_END frame.
 type SkillDispatchEndPayload struct {
 	SkillID        UUID `json:"skill_id"`
 	SkillVersionID UUID `json:"skill_version_id"`
 }
 
-// SkillActionPayload is the payload for SKILL_ACTION frame.
 type SkillActionPayload struct {
-	Scope    SkillActionScope `json:"scope"`
-	Action   SkillAction      `json:"action"`
-	SkillID  UUID             `json:"skill_id"`
-	Version  *string          `json:"version,omitempty"`
-	AgentID  *UUID            `json:"agent_id,omitempty"`
+	Scope   SkillScope  `json:"scope"`
+	Action  SkillAction `json:"action"`
+	SkillID UUID        `json:"skill_id"`
+	Version *string     `json:"version,omitempty"`
+	AgentID *UUID       `json:"agent_id,omitempty"`
 }
 
-// SkillStatePayload is the payload for SKILL_STATE frame from device.
 type SkillStatePayload struct {
 	SkillID        UUID        `json:"skill_id"`
 	SkillVersionID UUID        `json:"skill_version_id"`
-	Scope          SkillActionScope `json:"scope"`
-	Status         SkillStatus `json:"status"`
+	Scope          SkillScope  `json:"scope"`
+	Status         SkillInstallStatus `json:"status"`
 	AgentID        *UUID       `json:"agent_id,omitempty"`
 	Error          *string     `json:"error,omitempty"`
 }
 
-// SkillSyncPayload is the payload for SKILL_SYNC frame from gateway.
 type SkillSyncPayload struct {
 	DeviceSkills []DeviceSkill `json:"device_skills"`
 	AgentSkills  []AgentSkill  `json:"agent_skills"`
 }
 
-// ---------- File Frame Payloads ----------
-
-// FilePushBeginPayload is the payload for FILE_PUSH_BEGIN frame.
 type FilePushBeginPayload struct {
 	FileID      UUID   `json:"file_id"`
 	FileName    string `json:"file_name"`
@@ -686,41 +669,33 @@ type FilePushBeginPayload struct {
 	SHA256      string `json:"sha256"`
 }
 
-// FileChunkPayload is the payload for FILE_CHUNK frame.
 type FileChunkPayload struct {
 	FileID     UUID   `json:"file_id"`
 	ChunkIndex int    `json:"chunk_index"`
-	Data       string `json:"data"` // base64-encoded, max 256KiB raw
+	Data       string `json:"data"`
 }
 
-// FilePushEndPayload is the payload for FILE_PUSH_END frame.
 type FilePushEndPayload struct {
 	FileID UUID `json:"file_id"`
 }
 
-// FileAckPayload is the payload for FILE_ACK frame from device.
 type FileAckPayload struct {
 	FileID UUID       `json:"file_id"`
 	Status FileStatus `json:"status"`
 	Error  *string    `json:"error,omitempty"`
 }
 
-// ---------- State Sync Payload ----------
-
-// StateSyncPayload is the payload for STATE_SYNC frame from device.
 type StateSyncPayload struct {
-	Jobs     []StateSyncJob   `json:"jobs"`
-	Agents   []StateSyncAgent `json:"agents"`
+	Jobs   []StateSyncJob   `json:"jobs"`
+	Agents []StateSyncAgent `json:"agents"`
 }
 
-// StateSyncJob describes an in-flight job from the device's perspective.
 type StateSyncJob struct {
-	JobID    UUID      `json:"job_id"`
-	AgentID  UUID      `json:"agent_id"`
-	Status   JobStatus `json:"status"`
+	JobID   UUID      `json:"job_id"`
+	AgentID UUID      `json:"agent_id"`
+	Status  JobStatus `json:"status"`
 }
 
-// StateSyncAgent describes an agent from the device's perspective.
 type StateSyncAgent struct {
 	AgentID     UUID        `json:"agent_id"`
 	ContainerID string      `json:"container_id"`
@@ -728,9 +703,8 @@ type StateSyncAgent struct {
 	JobID       *UUID       `json:"job_id,omitempty"`
 }
 
-// ---------- WebSocket Event Types ----------
+// ---------- WebSocket Events ----------
 
-// WSEvent represents a real-time event pushed to web WS clients.
 type WSEvent struct {
 	Type    string          `json:"type"`
 	Topic   string          `json:"topic"`
@@ -738,51 +712,24 @@ type WSEvent struct {
 }
 
 const (
-	WSEventJobProgress   = "job.progress"
-	WSEventJobStatus     = "job.status"
-	WSEventJobResult     = "job.result"
-	WSEventAgentStatus   = "agent.status"
-	WSEventDeviceStatus  = "device.status"
-	WSEventSkillRollout  = "skill.rollout"
+	WSEventJobProgress  = "job.progress"
+	WSEventJobStatus    = "job.status"
+	WSEventJobResult    = "job.result"
+	WSEventAgentStatus  = "agent.status"
+	WSEventDeviceStatus = "device.status"
+	WSEventSkillRollout = "skill.rollout"
 )
 
-// ---------- Skill Vault Types ----------
+// ---------- Pool Types ----------
 
-// SkillWithLatestVersion combines skill metadata with its latest version.
-type SkillWithLatestVersion struct {
-	Skill
-	LatestVersion *SkillVersion `json:"latest_version,omitempty"`
-}
-
-// SkillVisible represents a skill visible to a customer, including enable state.
-type SkillVisible struct {
-	Skill
-	LatestVersion *SkillVersion `json:"latest_version,omitempty"`
-	Enabled       *bool         `json:"enabled,omitempty"`
-}
-
-// EnableSkillRequest is the payload for enabling a skill on an agent.
-type EnableSkillRequest struct {
-	SkillID UUID `json:"skill_id" validate:"required"`
-}
-
-// ---------- Agent Pool Types ----------
-
-// PoolAgentInfo represents an agent in the pool view (admin).
 type PoolAgentInfo struct {
 	Agent
 	DeviceName string `json:"device_name"`
 }
 
-// DrainAgentResponse is returned after draining an agent.
-type DrainAgentResponse struct {
-	AgentID UUID        `json:"agent_id"`
-	Status  AgentStatus `json:"status"`
+type PoolStats struct {
+	TotalAgents   int `json:"total_agents"`
+	IdleAgents    int `json:"idle_agents"`
+	BusyAgents    int `json:"busy_agents"`
+	OnlineDevices int `json:"online_devices"`
 }
-
-// ReleaseAgentRequest is the payload for force-releasing an agent.
-type ReleaseAgentRequest struct {
-	Reason string `json:"reason"`
-}
-
-// ---------- Utility ----------

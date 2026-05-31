@@ -19,7 +19,7 @@ func (deps *Dependencies) handleRegister() http.HandlerFunc {
 		}
 		defer r.Body.Close()
 
-		if req.Email == "" || req.Password == "" || req.Name == "" {
+		if req.Email == "" || req.Password == "" || req.Username == "" {
 			writeError(w, http.StatusBadRequest, model.ErrCodeValidationFailed, "email, password, and name are required")
 			return
 		}
@@ -48,7 +48,7 @@ func (deps *Dependencies) handleRegister() http.HandlerFunc {
 		user := &model.User{
 			Email:        req.Email,
 			PasswordHash: hashedPassword,
-			Name:         req.Name,
+			Username:    req.Username,
 			Role:         model.RoleUser,
 			Tier:         model.TierFree,
 		}
