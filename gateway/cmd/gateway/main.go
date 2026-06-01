@@ -6,6 +6,7 @@ package main
 import (
 	"context"
 	"fmt"
+	"log/slog"
 	"net/http"
 	"os"
 	"os/signal"
@@ -98,6 +99,9 @@ func main() {
 	// Skill Vault
 	vault := skillvault.NewVault(skills, cfg.FileStore+"/skills")
 	skillDispatch := skillvault.NewDispatcher(vault, skills, tunnelHub)
+	skillDispatch.SetDeviceLister(func(ctx context.Context) ([]model.Device, error) {
+		return devices.ListAll(ctx)
+	})
 
 	// Credential Vault
 	credVault, err := credvault.NewVault(cfg.CredKey, cfg.CredKMS)
@@ -152,6 +156,26 @@ func main() {
 		},
 		OnFileAck: func(ctx context.Context, deviceID model.UUID, payload model.FileAckPayload) error {
 			return fileRelay.OnFileAck(ctx, payload)
+		},
+		OnVNCOpened: func(ctx context.Context, deviceID model.UUID, payload model.VNCOpenedPayload) error {
+			if payload.Status == "ready" {
+				return vncRelay.MarkReady(payload.SessionID, payload.RFBPassword)
+			}
+			vncRelay.CloseSession(payload.SessionID, "device reported error: "+payload.Error)
+			return nil
+		},
+		OnCredPushAck: func(ctx context.Context, deviceID model.UUID, payload model.CredPushAckPayload) error {
+			if payload.Status == "ok" {
+				return credStore.Touch(ctx, payload.CredentialID)
+			}
+			slog.Error("credential push failed", "job_id", payload.JobID, "cred_id", payload.CredentialID, "error", payload.Error)
+			return nil
+		},
+		OnCredCaptureAck: func(ctx context.Context, deviceID model.UUID, payload model.CredCaptureAckPayload) error {
+			if payload.Status != "ok" {
+				slog.Error("credential capture failed", "session_id", payload.SessionID, "error", payload.Error)
+			}
+			return nil
 		},
 	})
 

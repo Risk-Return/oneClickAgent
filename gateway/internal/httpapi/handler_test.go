@@ -73,7 +73,7 @@ func execHandler(deps *httpapi.Dependencies, method, path, body string, token st
 
 func TestRegister(t *testing.T) {
 	deps := setupTestDeps()
-	body := `{"email":"test@example.com","username":"testuser","password":"password12345"}`
+	body := `{"email":"test@example.com","username":"testuser","password":"TestPass!12345"}`
 	w := execHandler(deps, http.MethodPost, "/api/v1/auth/register", body, "")
 
 	if w.Code != http.StatusCreated {
@@ -97,7 +97,7 @@ func TestRegister(t *testing.T) {
 
 func TestRegisterDuplicateEmail(t *testing.T) {
 	deps := setupTestDeps()
-	body := `{"email":"dup@example.com","username":"dupuser","password":"password12345"}`
+	body := `{"email":"dup@example.com","username":"dupuser","password":"TestPass!12345"}`
 	// First register
 	execHandler(deps, http.MethodPost, "/api/v1/auth/register", body, "")
 	// Second register with same email
@@ -117,7 +117,7 @@ func TestRegisterMissingFields(t *testing.T) {
 	}{
 		{"empty", `{}`},
 		{"no password", `{"email":"a@b.com","username":"a"}`},
-		{"no email", `{"username":"a","password":"password12345"}`},
+		{"no email", `{"username":"a","password":"TestPass!12345"}`},
 	}
 
 	for _, tt := range tests {
@@ -134,11 +134,11 @@ func TestLogin(t *testing.T) {
 	deps := setupTestDeps()
 	// Register first
 	execHandler(deps, http.MethodPost, "/api/v1/auth/register",
-		`{"email":"login@example.com","username":"loginuser","password":"password12345"}`, "")
+		`{"email":"login@example.com","username":"loginuser","password":"TestPass!12345"}`, "")
 
 	// Login
 	w := execHandler(deps, http.MethodPost, "/api/v1/auth/login",
-		`{"email":"login@example.com","password":"password12345"}`, "")
+		`{"email":"login@example.com","password":"TestPass!12345"}`, "")
 
 	if w.Code != http.StatusOK {
 		t.Fatalf("login: status = %d, want %d, body = %s", w.Code, http.StatusOK, w.Body.String())
@@ -154,10 +154,10 @@ func TestLogin(t *testing.T) {
 func TestLoginInvalidCredentials(t *testing.T) {
 	deps := setupTestDeps()
 	execHandler(deps, http.MethodPost, "/api/v1/auth/register",
-		`{"email":"bad@example.com","username":"baduser","password":"password12345"}`, "")
+		`{"email":"bad@example.com","username":"baduser","password":"TestPass!12345"}`, "")
 
 	w := execHandler(deps, http.MethodPost, "/api/v1/auth/login",
-		`{"email":"bad@example.com","password":"wrongpassword"}`, "")
+		`{"email":"bad@example.com","password":"WrongPass!99999"}`, "")
 
 	if w.Code != http.StatusUnauthorized {
 		t.Errorf("invalid login: status = %d, want %d", w.Code, http.StatusUnauthorized)
@@ -168,7 +168,7 @@ func TestMeEndpoint(t *testing.T) {
 	deps := setupTestDeps()
 	// Register and get token
 	w := execHandler(deps, http.MethodPost, "/api/v1/auth/register",
-		`{"email":"me@example.com","username":"meuser","password":"password12345"}`, "")
+		`{"email":"me@example.com","username":"meuser","password":"TestPass!12345"}`, "")
 
 	var resp model.AuthResponse
 	json.Unmarshal(w.Body.Bytes(), &resp)
@@ -200,7 +200,7 @@ func TestSubmitJob(t *testing.T) {
 	deps := setupTestDeps()
 	// Register and login to get token
 	w := execHandler(deps, http.MethodPost, "/api/v1/auth/register",
-		`{"email":"jobuser@example.com","username":"jobuser","password":"password12345"}`, "")
+		`{"email":"jobuser@example.com","username":"jobuser","password":"TestPass!12345"}`, "")
 	var resp model.AuthResponse
 	json.Unmarshal(w.Body.Bytes(), &resp)
 	token := resp.AccessToken
@@ -237,7 +237,7 @@ func TestSubmitJob(t *testing.T) {
 func TestSubmitJobNoAgent(t *testing.T) {
 	deps := setupTestDeps()
 	w := execHandler(deps, http.MethodPost, "/api/v1/auth/register",
-		`{"email":"noagent@example.com","username":"noagent","password":"password12345"}`, "")
+		`{"email":"noagent@example.com","username":"noagent","password":"TestPass!12345"}`, "")
 	var resp model.AuthResponse
 	json.Unmarshal(w.Body.Bytes(), &resp)
 
@@ -262,7 +262,7 @@ func TestSubmitJobWithoutToken(t *testing.T) {
 func TestListJobs(t *testing.T) {
 	deps := setupTestDeps()
 	w := execHandler(deps, http.MethodPost, "/api/v1/auth/register",
-		`{"email":"listjobs@example.com","username":"listjobs","password":"password12345"}`, "")
+		`{"email":"listjobs@example.com","username":"listjobs","password":"TestPass!12345"}`, "")
 	var resp model.AuthResponse
 	json.Unmarshal(w.Body.Bytes(), &resp)
 
@@ -292,7 +292,7 @@ func TestListJobs(t *testing.T) {
 func TestGetJob(t *testing.T) {
 	deps := setupTestDeps()
 	w := execHandler(deps, http.MethodPost, "/api/v1/auth/register",
-		`{"email":"getjob@example.com","username":"getjob","password":"password12345"}`, "")
+		`{"email":"getjob@example.com","username":"getjob","password":"TestPass!12345"}`, "")
 	var resp model.AuthResponse
 	json.Unmarshal(w.Body.Bytes(), &resp)
 
@@ -319,7 +319,7 @@ func TestGetJobForbidden(t *testing.T) {
 	deps := setupTestDeps()
 	// User 1
 	w := execHandler(deps, http.MethodPost, "/api/v1/auth/register",
-		`{"email":"user1@example.com","username":"user1get","password":"password12345"}`, "")
+		`{"email":"user1@example.com","username":"user1get","password":"TestPass!12345"}`, "")
 	var resp1 model.AuthResponse
 	json.Unmarshal(w.Body.Bytes(), &resp1)
 
@@ -332,7 +332,7 @@ func TestGetJobForbidden(t *testing.T) {
 
 	// User 2
 	w2 := execHandler(deps, http.MethodPost, "/api/v1/auth/register",
-		`{"email":"user2@example.com","username":"user2get","password":"password12345"}`, "")
+		`{"email":"user2@example.com","username":"user2get","password":"TestPass!12345"}`, "")
 	var resp2 model.AuthResponse
 	json.Unmarshal(w2.Body.Bytes(), &resp2)
 
@@ -346,7 +346,7 @@ func TestGetJobForbidden(t *testing.T) {
 func TestCancelJob(t *testing.T) {
 	deps := setupTestDeps()
 	w := execHandler(deps, http.MethodPost, "/api/v1/auth/register",
-		`{"email":"cancel@example.com","username":"canceluser","password":"password12345"}`, "")
+		`{"email":"cancel@example.com","username":"canceluser","password":"TestPass!12345"}`, "")
 	var resp model.AuthResponse
 	json.Unmarshal(w.Body.Bytes(), &resp)
 

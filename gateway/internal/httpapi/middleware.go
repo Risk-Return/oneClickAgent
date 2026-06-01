@@ -15,6 +15,7 @@ import (
 	"github.com/oneClickAgent/gateway/internal/auth"
 	"github.com/oneClickAgent/gateway/internal/model"
 	"github.com/oneClickAgent/gateway/internal/obs"
+	"github.com/oneClickAgent/gateway/internal/store"
 )
 
 type contextKey string
@@ -171,6 +172,78 @@ func requireAdminMiddleware(next http.Handler) http.Handler {
 		}
 		next.ServeHTTP(w, r)
 	})
+}
+
+// tenantScopeMiddleware checks ownership for resource-scoped routes.
+// It extracts the resource ID from the URL pattern (first path param) and validates
+// that the authenticated user owns the resource. For job routes, it checks job.user_id.
+// For file routes, it checks file.user_id.
+func tenantScopeMiddleware(jobStore store.JobStoreInterface, fileStore store.FileStoreInterface) func(http.Handler) http.Handler {
+	return func(next http.Handler) http.Handler {
+		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			claims := getClaims(r)
+			if claims == nil {
+				next.ServeHTTP(w, r)
+				return
+			}
+
+			// Admins bypass tenant scope
+			if claims.Role == model.RoleAdmin {
+				next.ServeHTTP(w, r)
+				return
+			}
+
+			userID := getUserID(r)
+			path := r.URL.Path
+
+			// Check job resources
+			if strings.Contains(path, "/jobs/") {
+				parts := extractUUIDFromPath(path, "jobs")
+				if parts != "" {
+					if id, err := model.ParseUUID(parts); err == nil && jobStore != nil {
+						if job, err := jobStore.GetByID(r.Context(), id); err == nil && job != nil {
+							if job.UserID != userID {
+								writeError(w, http.StatusForbidden, model.ErrCodeForbidden, "access denied")
+								return
+							}
+						}
+					}
+				}
+			}
+
+			// Check file resources
+			if strings.Contains(path, "/files/") {
+				parts := extractUUIDFromPath(path, "files")
+				if parts != "" {
+					if id, err := model.ParseUUID(parts); err == nil && fileStore != nil {
+						if file, err := fileStore.GetByID(r.Context(), id); err == nil && file != nil {
+							if file.UserID != userID {
+								writeError(w, http.StatusForbidden, model.ErrCodeForbidden, "access denied")
+								return
+							}
+						}
+					}
+				}
+			}
+
+			next.ServeHTTP(w, r)
+		})
+	}
+}
+
+// extractUUIDFromPath extracts a UUID segment after a given prefix in a path.
+// e.g., extractUUIDFromPath("/api/v1/jobs/abc-123/cancel", "jobs") returns "abc-123".
+func extractUUIDFromPath(path, prefix string) string {
+	idx := strings.Index(path, "/"+prefix+"/")
+	if idx < 0 {
+		return ""
+	}
+	rest := path[idx+len(prefix)+2:]
+	slashIdx := strings.Index(rest, "/")
+	if slashIdx > 0 {
+		return rest[:slashIdx]
+	}
+	return rest
 }
 
 // Helpers to extract info from context

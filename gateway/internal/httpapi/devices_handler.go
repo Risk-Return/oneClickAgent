@@ -4,6 +4,7 @@ import (
 	"net/http"
 
 	"github.com/go-chi/chi/v5"
+	"github.com/oneClickAgent/gateway/internal/auth"
 	"github.com/oneClickAgent/gateway/internal/model"
 )
 
@@ -153,7 +154,7 @@ func (deps *Dependencies) handleRotateDeviceToken() http.HandlerFunc {
 }
 
 func hashTokenForStorage(token string) string {
-	return model.NewUUID().String() // Placeholder - actual hashing would use auth.HashToken
+	return auth.HashToken(token)
 }
 
 func parseCursor(r *http.Request) *model.UUID {

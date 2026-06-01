@@ -22,10 +22,16 @@ const skillChunkSize = 256 * 1024
 
 // Dispatcher handles fleet-wide skill dispatch.
 type Dispatcher struct {
-	vault  *Vault
-	skills *store.SkillStore
-	hub    *tunnel.Hub
-	logger *slog.Logger
+	vault    *Vault
+	skills   *store.SkillStore
+	hub      *tunnel.Hub
+	logger   *slog.Logger
+	listDevices func(ctx context.Context) ([]model.Device, error)
+}
+
+// SetDeviceLister sets the function used to list all devices for fleet dispatch.
+func (d *Dispatcher) SetDeviceLister(fn func(ctx context.Context) ([]model.Device, error)) {
+	d.listDevices = fn
 }
 
 // NewDispatcher creates a new skill dispatcher.
@@ -248,13 +254,42 @@ func (d *Dispatcher) IsSkillInstalledOnDevice(ctx context.Context, deviceID, ski
 	return d.skills.IsSkillInstalledOnDevice(ctx, deviceID, skillID)
 }
 
-// DispatchToAllDevices dispatches a skill to all online devices (admin fleet install).
+// DispatchToAllDevices dispatches a skill to all devices (admin fleet install).
 func (d *Dispatcher) DispatchToAllDevices(ctx context.Context, skillID, versionID model.UUID) error {
-	// This would iterate over all devices from the store.
-	// For now, it's a placeholder that dispatches to devices the hub knows about.
-	d.logger.Info("fleet dispatch initiated",
+	if d.listDevices == nil {
+		return fmt.Errorf("device lister not configured")
+	}
+
+	devices, err := d.listDevices(ctx)
+	if err != nil {
+		return fmt.Errorf("list devices: %w", err)
+	}
+
+	d.logger.Info("fleet dispatch started",
 		"skill_id", skillID,
 		"version_id", versionID,
+		"device_count", len(devices),
 	)
-	return nil
+
+	var lastErr error
+	dispatched := 0
+	for _, device := range devices {
+		if err := d.DispatchToDevice(ctx, device.ID, skillID, versionID); err != nil {
+			d.logger.Error("fleet dispatch to device failed",
+				"device_id", device.ID,
+				"error", err,
+			)
+			lastErr = err
+			continue
+		}
+		dispatched++
+	}
+
+	d.logger.Info("fleet dispatch completed",
+		"skill_id", skillID,
+		"dispatched", dispatched,
+		"total", len(devices),
+	)
+
+	return lastErr
 }

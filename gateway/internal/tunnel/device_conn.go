@@ -218,6 +218,36 @@ func (c *DeviceConn) handleFrame(ctx context.Context, frame model.Frame) error {
 		}
 		return nil
 
+	case model.FrameVNCOpened:
+		var payload model.VNCOpenedPayload
+		if err := json.Unmarshal(frame.Payload, &payload); err != nil {
+			return err
+		}
+		if c.hub != nil {
+			return c.hub.HandleVNCOpened(ctx, c.deviceID, payload)
+		}
+		return nil
+
+	case model.FrameCredPushAck:
+		var payload model.CredPushAckPayload
+		if err := json.Unmarshal(frame.Payload, &payload); err != nil {
+			return err
+		}
+		if c.hub != nil {
+			return c.hub.HandleCredPushAck(ctx, c.deviceID, payload)
+		}
+		return nil
+
+	case model.FrameCredCaptureAck:
+		var payload model.CredCaptureAckPayload
+		if err := json.Unmarshal(frame.Payload, &payload); err != nil {
+			return err
+		}
+		if c.hub != nil {
+			return c.hub.HandleCredCaptureAck(ctx, c.deviceID, payload)
+		}
+		return nil
+
 	default:
 		c.logger.Debug("unhandled frame type", "type", frame.Type)
 		return nil

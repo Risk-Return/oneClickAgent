@@ -7,6 +7,7 @@ import (
 	"crypto/sha256"
 	"encoding/hex"
 	"fmt"
+	"sync"
 	"time"
 
 	"github.com/golang-jwt/jwt/v5"
@@ -23,20 +24,47 @@ type Claims struct {
 
 // JWTManager handles token issuance and verification.
 type JWTManager struct {
-	secret    []byte
+	mu        sync.RWMutex
+	keys      map[string][]byte // kid → secret
+	activeKID string
 	accessTTL time.Duration
 }
 
 // NewJWTManager creates a new JWT manager.
 func NewJWTManager(secret string, accessTTL time.Duration) *JWTManager {
-	return &JWTManager{
-		secret:    []byte(secret),
+	kid := "key-" + model.NewUUID().String()[:8]
+	m := &JWTManager{
+		keys:      map[string][]byte{kid: []byte(secret)},
+		activeKID: kid,
 		accessTTL: accessTTL,
 	}
+	return m
+}
+
+// AddKey registers a new signing key and optionally makes it active.
+func (m *JWTManager) AddKey(kid string, secret []byte, makeActive bool) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	m.keys[kid] = secret
+	if makeActive {
+		m.activeKID = kid
+	}
+}
+
+// RotateKey generates a new active key from a secret string, keeping the old key for verification.
+func (m *JWTManager) RotateKey(newSecret string) string {
+	kid := "key-" + model.NewUUID().String()[:8]
+	m.AddKey(kid, []byte(newSecret), true)
+	return kid
 }
 
 // IssueAccessToken creates an access token for a user.
 func (m *JWTManager) IssueAccessToken(user *model.User) (string, error) {
+	m.mu.RLock()
+	kid := m.activeKID
+	secret := m.keys[kid]
+	m.mu.RUnlock()
+
 	now := time.Now().UTC()
 	claims := &Claims{
 		RegisteredClaims: jwt.RegisteredClaims{
@@ -51,16 +79,46 @@ func (m *JWTManager) IssueAccessToken(user *model.User) (string, error) {
 	}
 
 	token := jwt.NewWithClaims(jwt.SigningMethodHS256, claims)
-	return token.SignedString(m.secret)
+	token.Header["kid"] = kid
+	return token.SignedString(secret)
 }
 
 // VerifyToken parses and validates an access token.
 func (m *JWTManager) VerifyToken(tokenString string) (*Claims, error) {
+	parser := jwt.NewParser()
+	parsed, _, err := parser.ParseUnverified(tokenString, &Claims{})
+	if err != nil {
+		return nil, fmt.Errorf("invalid token: %w", err)
+	}
+
+	kid, _ := parsed.Header["kid"].(string)
+
 	token, err := jwt.ParseWithClaims(tokenString, &Claims{}, func(t *jwt.Token) (interface{}, error) {
 		if _, ok := t.Method.(*jwt.SigningMethodHMAC); !ok {
 			return nil, fmt.Errorf("unexpected signing method: %v", t.Header["alg"])
 		}
-		return m.secret, nil
+
+		m.mu.RLock()
+		defer m.mu.RUnlock()
+
+		// Try the kid from the header first
+		if kid != "" {
+			if secret, ok := m.keys[kid]; ok {
+				return secret, nil
+			}
+		}
+
+		// Fallback: try the active key
+		if secret, ok := m.keys[m.activeKID]; ok {
+			return secret, nil
+		}
+
+		// Try all known keys
+		for _, secret := range m.keys {
+			return secret, nil
+		}
+
+		return nil, fmt.Errorf("no valid signing key found")
 	})
 	if err != nil {
 		return nil, fmt.Errorf("invalid token: %w", err)

@@ -73,6 +73,7 @@
 - [x] HTTP API handler tests (15 tests: auth, jobs, health — with mock stores + real router)
 - [x] Redis-backed tunnel registry (Registry interface + InMemory/SimulatedRedis impls with tests)
 - [x] Docker/VNC/credential-vault: vncrelay (session pairing + byte relay + reaper), credvault (AES-256-GCM encrypt/decrypt + capture + inject), new DB tables, new tunnel frames, new HTTP routes + handlers, 13 new tests
+- [x] Audit fixes (2026-06-01): device token hashing with SHA-256, VNC_OPENED/CRED_CAPTURE_ACK/CRED_PUSH_ACK inbound handlers, CRED_PUSH at job dispatch, VNC_CLOSE outbound, DispatchToAllDevices + fleet handlers, tenant_scope middleware, password complexity (uppercase/lowercase/digit/special), JWT key rotation with kid
 
 ## Git History
 

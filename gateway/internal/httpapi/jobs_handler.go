@@ -1,12 +1,14 @@
 package httpapi
 
 import (
+	"encoding/base64"
 	"encoding/json"
 	"net/http"
 
 	"github.com/go-chi/chi/v5"
 	"github.com/oneClickAgent/gateway/internal/model"
 	"github.com/oneClickAgent/gateway/internal/pubsub"
+	"github.com/oneClickAgent/gateway/internal/tunnel"
 )
 
 func (deps *Dependencies) handleSubmitJob() http.HandlerFunc {
@@ -90,6 +92,32 @@ func (deps *Dependencies) handleSubmitJob() http.HandlerFunc {
 		// Agent allocated - update job
 		_ = deps.Jobs.SetAgent(r.Context(), job.ID, agent.ID, agent.DeviceID)
 		_ = deps.PushFilesToDevice(r.Context(), job, agent.DeviceID)
+
+		// Push credentials if requested
+		for _, credID := range req.CredentialIDs {
+			cred, err := deps.Creds.GetByID(r.Context(), credID)
+			if err != nil || cred == nil || cred.UserID != userID {
+				continue // skip invalid/unowned credentials
+			}
+			if !deps.CredVault.IsConfigured() {
+				continue
+			}
+			plaintext, err := deps.CredVault.Decrypt(cred.Ciphertext, cred.SHA256)
+			if err != nil {
+				continue
+			}
+			// Send CRED_PUSH over tunnel
+			frame, _ := tunnel.NewFrame(model.FrameCredPush, model.CredPushPayload{
+				JobID:        job.ID,
+				CredentialID: cred.ID,
+				Origin:       cred.Origin,
+				Data:         base64.StdEncoding.EncodeToString(plaintext),
+				SHA256:       cred.SHA256,
+			})
+			_ = deps.Hub.SendFrame(agent.DeviceID, frame)
+			_ = deps.Creds.LinkToJob(r.Context(), job.ID, cred.ID)
+			_ = deps.Creds.Touch(r.Context(), cred.ID)
+		}
 
 		// Publish event
 		deps.Broker.PublishScoped(pubsub.JobTopic(job.ID), userID, model.WSEvent{

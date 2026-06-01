@@ -71,6 +71,17 @@ func (deps *Dependencies) handleCloseVNC() http.HandlerFunc {
 			writeError(w, http.StatusBadRequest, model.ErrCodeValidationFailed, "invalid session_id")
 			return
 		}
+
+		sess := deps.VNCRelay.GetSession(sessionID)
+		if sess != nil {
+			// Send VNC_CLOSE over tunnel
+			frame, _ := tunnel.NewFrame(model.FrameVNCClose, model.VNCClosePayload{
+				SessionID: sessionID,
+				Reason:    "user requested",
+			})
+			_ = deps.Hub.SendFrame(sess.DeviceID, frame)
+		}
+
 		deps.VNCRelay.CloseSession(sessionID, "user requested")
 		writeJSON(w, http.StatusOK, map[string]string{"message": "session closed"})
 	}

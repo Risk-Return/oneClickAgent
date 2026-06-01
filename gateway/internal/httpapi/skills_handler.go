@@ -206,19 +206,54 @@ func (deps *Dependencies) handleInstallSkillFleet() http.HandlerFunc {
 
 func (deps *Dependencies) handleDisableSkillFleet() http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
-		writeJSON(w, http.StatusOK, map[string]string{"message": "not yet implemented"})
+		skillID, err := model.ParseUUID(chi.URLParam(r, "skillID"))
+		if err != nil {
+			writeError(w, http.StatusBadRequest, model.ErrCodeValidationFailed, "invalid skill_id")
+			return
+		}
+		// Send SKILL_ACTION to all devices
+		devices, _ := deps.Devices.ListAll(r.Context())
+		for _, d := range devices {
+			_ = deps.Dispatch.SendSkillAction(r.Context(), d.ID, model.SkillScopeDevice, model.SkillActionDisable, skillID, "", nil)
+		}
+		writeJSON(w, http.StatusAccepted, map[string]string{"message": "skill disable initiated"})
 	}
 }
 
 func (deps *Dependencies) handleUpdateSkillFleet() http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
-		writeJSON(w, http.StatusOK, map[string]string{"message": "not yet implemented"})
+		skillID, err := model.ParseUUID(chi.URLParam(r, "skillID"))
+		if err != nil {
+			writeError(w, http.StatusBadRequest, model.ErrCodeValidationFailed, "invalid skill_id")
+			return
+		}
+		var req model.FleetSkillRequest
+		if err := decodeJSON(r, &req); err != nil {
+			writeError(w, http.StatusBadRequest, model.ErrCodeValidationFailed, "invalid request body")
+			return
+		}
+		ver, err := deps.Vault.GetVersionByTag(r.Context(), skillID, req.Version)
+		if err != nil || ver == nil {
+			writeError(w, http.StatusNotFound, model.ErrCodeNotFound, "version not found")
+			return
+		}
+		_ = deps.Dispatch.DispatchToAllDevices(r.Context(), skillID, ver.ID)
+		writeJSON(w, http.StatusAccepted, map[string]string{"message": "skill update initiated"})
 	}
 }
 
 func (deps *Dependencies) handleDeleteSkillFleet() http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
-		writeJSON(w, http.StatusOK, map[string]string{"message": "not yet implemented"})
+		skillID, err := model.ParseUUID(chi.URLParam(r, "skillID"))
+		if err != nil {
+			writeError(w, http.StatusBadRequest, model.ErrCodeValidationFailed, "invalid skill_id")
+			return
+		}
+		devices, _ := deps.Devices.ListAll(r.Context())
+		for _, d := range devices {
+			_ = deps.Dispatch.SendSkillAction(r.Context(), d.ID, model.SkillScopeDevice, model.SkillActionDelete, skillID, "", nil)
+		}
+		writeJSON(w, http.StatusAccepted, map[string]string{"message": "skill deletion initiated"})
 	}
 }
 

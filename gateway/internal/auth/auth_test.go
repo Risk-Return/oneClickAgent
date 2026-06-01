@@ -35,7 +35,7 @@ func TestValidatePassword(t *testing.T) {
 	if ValidatePassword("short") == nil {
 		t.Error("short password should fail")
 	}
-	if ValidatePassword("this-is-long-enough") != nil {
+	if ValidatePassword("This-Is-Long-Enough1!") != nil {
 		t.Error("long password should pass")
 	}
 }

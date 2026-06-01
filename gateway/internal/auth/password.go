@@ -31,10 +31,38 @@ func (h *PasswordHasher) Verify(password, hash string) (bool, error) {
 	return match, nil
 }
 
-// ValidatePassword performs basic password strength validation.
+// ValidatePassword performs password strength validation.
+// Requires: 12+ chars, at least 1 uppercase, 1 lowercase, 1 digit, 1 special character.
 func ValidatePassword(password string) error {
 	if len(password) < 12 {
 		return errPasswordTooShort
+	}
+
+	var hasUpper, hasLower, hasDigit, hasSpecial bool
+	for _, c := range password {
+		switch {
+		case c >= 'A' && c <= 'Z':
+			hasUpper = true
+		case c >= 'a' && c <= 'z':
+			hasLower = true
+		case c >= '0' && c <= '9':
+			hasDigit = true
+		default:
+			hasSpecial = true
+		}
+	}
+
+	if !hasUpper {
+		return &passwordError{"password must contain at least one uppercase letter"}
+	}
+	if !hasLower {
+		return &passwordError{"password must contain at least one lowercase letter"}
+	}
+	if !hasDigit {
+		return &passwordError{"password must contain at least one digit"}
+	}
+	if !hasSpecial {
+		return &passwordError{"password must contain at least one special character"}
 	}
 	return nil
 }

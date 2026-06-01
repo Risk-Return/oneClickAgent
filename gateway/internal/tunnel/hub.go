@@ -68,6 +68,9 @@ type Hub struct {
 	onStateSync   func(ctx context.Context, deviceID model.UUID, payload model.StateSyncPayload) error
 	onSkillState  func(ctx context.Context, deviceID model.UUID, payload model.SkillStatePayload) error
 	onFileAck     func(ctx context.Context, deviceID model.UUID, payload model.FileAckPayload) error
+	onVNCOpened   func(ctx context.Context, deviceID model.UUID, payload model.VNCOpenedPayload) error
+	onCredPushAck    func(ctx context.Context, deviceID model.UUID, payload model.CredPushAckPayload) error
+	onCredCaptureAck func(ctx context.Context, deviceID model.UUID, payload model.CredCaptureAckPayload) error
 
 	heartbeatInterval      time.Duration
 	heartbeatMissThreshold time.Duration
@@ -88,6 +91,9 @@ type HubConfig struct {
 	OnStateSync             func(ctx context.Context, deviceID model.UUID, payload model.StateSyncPayload) error
 	OnSkillState            func(ctx context.Context, deviceID model.UUID, payload model.SkillStatePayload) error
 	OnFileAck               func(ctx context.Context, deviceID model.UUID, payload model.FileAckPayload) error
+	OnVNCOpened             func(ctx context.Context, deviceID model.UUID, payload model.VNCOpenedPayload) error
+	OnCredPushAck           func(ctx context.Context, deviceID model.UUID, payload model.CredPushAckPayload) error
+	OnCredCaptureAck        func(ctx context.Context, deviceID model.UUID, payload model.CredCaptureAckPayload) error
 }
 
 // NewHub creates a new tunnel Hub.
@@ -114,6 +120,9 @@ func NewHub(cfg HubConfig) *Hub {
 		onStateSync:            cfg.OnStateSync,
 		onSkillState:           cfg.OnSkillState,
 		onFileAck:              cfg.OnFileAck,
+		onVNCOpened:            cfg.OnVNCOpened,
+		onCredPushAck:          cfg.OnCredPushAck,
+		onCredCaptureAck:       cfg.OnCredCaptureAck,
 		heartbeatInterval:      cfg.HeartbeatInterval,
 		heartbeatMissThreshold: cfg.HeartbeatMissThreshold,
 		logger:                 obs.Logger("tunnel"),
@@ -133,6 +142,9 @@ func (h *Hub) SetHandlers(cfg HubConfig) {
 	h.onStateSync = cfg.OnStateSync
 	h.onSkillState = cfg.OnSkillState
 	h.onFileAck = cfg.OnFileAck
+	h.onVNCOpened = cfg.OnVNCOpened
+	h.onCredPushAck = cfg.OnCredPushAck
+	h.onCredCaptureAck = cfg.OnCredCaptureAck
 }
 
 // Register adds a new device connection, superseding any existing one.
@@ -260,6 +272,27 @@ func (h *Hub) HandleSkillState(ctx context.Context, deviceID model.UUID, payload
 func (h *Hub) HandleFileAck(ctx context.Context, deviceID model.UUID, payload model.FileAckPayload) error {
 	if h.onFileAck != nil {
 		return h.onFileAck(ctx, deviceID, payload)
+	}
+	return nil
+}
+
+func (h *Hub) HandleVNCOpened(ctx context.Context, deviceID model.UUID, payload model.VNCOpenedPayload) error {
+	if h.onVNCOpened != nil {
+		return h.onVNCOpened(ctx, deviceID, payload)
+	}
+	return nil
+}
+
+func (h *Hub) HandleCredPushAck(ctx context.Context, deviceID model.UUID, payload model.CredPushAckPayload) error {
+	if h.onCredPushAck != nil {
+		return h.onCredPushAck(ctx, deviceID, payload)
+	}
+	return nil
+}
+
+func (h *Hub) HandleCredCaptureAck(ctx context.Context, deviceID model.UUID, payload model.CredCaptureAckPayload) error {
+	if h.onCredCaptureAck != nil {
+		return h.onCredCaptureAck(ctx, deviceID, payload)
 	}
 	return nil
 }

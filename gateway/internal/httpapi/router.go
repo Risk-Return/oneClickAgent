@@ -79,6 +79,7 @@ func NewRouter(deps *Dependencies) chi.Router {
 	// Authenticated routes
 	r.Group(func(r chi.Router) {
 		r.Use(authMiddleware(deps.JWT))
+		r.Use(tenantScopeMiddleware(deps.Jobs, deps.Files))
 
 		// Auth
 		r.Post("/api/v1/auth/logout", deps.handleLogout())
