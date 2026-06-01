@@ -2,3 +2,83 @@
 Reads IAGENT_GATEWAY_URL, IAGENT_DEVICE_DATA_DIR, IAGENT_DOCKER_HOST,
 IAGENT_MAX_RESTARTS, IAGENT_HEARTBEAT_S, IAGENT_AGENT_IMAGE, IAGENT_PORT_RANGE, etc.
 """
+
+import os
+import sys
+from pathlib import Path
+from dataclasses import dataclass, field
+
+import platformdirs
+
+
+def _default_data_dir() -> Path:
+    return Path(platformdirs.user_data_dir("iagent-device", "oneClickAgent"))
+
+
+def _default_docker_host() -> str:
+    if sys.platform == "win32":
+        return "npipe:////./pipe/docker_engine"
+    return "unix:///var/run/docker.sock"
+
+
+@dataclass
+class Config:
+    gateway_url: str = ""
+    device_data_dir: Path = field(default_factory=_default_data_dir)
+    docker_host: str = field(default_factory=_default_docker_host)
+    max_restarts: int = 3
+    heartbeat_s: int = 15
+    agent_image: str = "iagent/agent:latest"
+    prepull_image: bool = True
+    port_range_start: int = 42000
+    port_range_end: int = 42999
+    session_dial_timeout_s: int = 15
+    pool_size: int = 4
+
+    _device_id: str | None = None
+    _device_token: str | None = None
+    _enrollment_code: str | None = None
+
+    @property
+    def db_path(self) -> Path:
+        return self.device_data_dir / "device.db"
+
+    @property
+    def workspace_dir(self) -> Path:
+        return self.device_data_dir / "workspaces"
+
+    @property
+    def skills_dir(self) -> Path:
+        return self.device_data_dir / "skills"
+
+    @property
+    def token_path(self) -> Path:
+        return self.device_data_dir / "token"
+
+
+def load() -> Config:
+    cfg = Config()
+
+    cfg.gateway_url = os.getenv("IAGENT_GATEWAY_URL", cfg.gateway_url)
+    if data_dir := os.getenv("IAGENT_DEVICE_DATA_DIR"):
+        cfg.device_data_dir = Path(data_dir)
+    cfg.docker_host = os.getenv("IAGENT_DOCKER_HOST", cfg.docker_host)
+    cfg.max_restarts = int(os.getenv("IAGENT_MAX_RESTARTS", str(cfg.max_restarts)))
+    cfg.heartbeat_s = int(os.getenv("IAGENT_HEARTBEAT_S", str(cfg.heartbeat_s)))
+    cfg.agent_image = os.getenv("IAGENT_AGENT_IMAGE", cfg.agent_image)
+    cfg.prepull_image = os.getenv("IAGENT_PREPULL_IMAGE", str(cfg.prepull_image)).lower() != "false"
+    cfg.session_dial_timeout_s = int(os.getenv("IAGENT_SESSION_DIAL_TIMEOUT_S", str(cfg.session_dial_timeout_s)))
+    cfg.pool_size = int(os.getenv("IAGENT_POOL_SIZE", str(cfg.pool_size)))
+
+    if port_range := os.getenv("IAGENT_PORT_RANGE"):
+        parts = port_range.split("-")
+        if len(parts) == 2:
+            cfg.port_range_start = int(parts[0])
+            cfg.port_range_end = int(parts[1])
+
+    # Ensure directories exist
+    cfg.device_data_dir.mkdir(parents=True, exist_ok=True)
+    cfg.workspace_dir.mkdir(parents=True, exist_ok=True)
+    cfg.skills_dir.mkdir(parents=True, exist_ok=True)
+
+    return cfg
