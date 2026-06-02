@@ -176,7 +176,8 @@ class TestTunnelClient:
         ack_frame = _make_frame_str(FrameType.ACK, ack_id=msg_id)
         await tunnel._handle_frame(json.loads(ack_frame))
 
-        assert tunnel._pending_acks[msg_id].done()
+        assert future.done()
+        assert msg_id not in tunnel._pending_acks
 
     async def test_reconnect_attempts_capped(self, outbox_repo):
         Outbox(outbox_repo, _noop_send)

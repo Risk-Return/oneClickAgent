@@ -1,5 +1,6 @@
 """Reverse WSS tunnel client: dial-out to gateway, authenticate with device_token,
-send HELLO/STATE_SYNC, maintain heartbeat loop, reconnect with exponential backoff + jitter.
+send HELLO/STATE_SYNC, maintain heartbeat loop, reconnect with exponential backoff + jitter,
+retransmit unacked frames with backoff.
 """
 
 import asyncio
@@ -20,6 +21,18 @@ logger = logging.getLogger(__name__)
 RECONNECT_BASE_S = 1.0
 RECONNECT_MAX_S = 30.0
 RECONNECT_JITTER = 0.2
+
+ACK_RETRANSMIT_BASE_S = 1.0
+ACK_RETRANSMIT_MAX_RETRIES = 3
+
+
+class _PendingSend:
+    __slots__ = ("msg_id", "frame_json", "sent_at", "retries", "future")
+    msg_id: str
+    frame_json: str
+    sent_at: float
+    retries: int
+    future: asyncio.Future
 
 
 class TunnelClient:
@@ -48,8 +61,10 @@ class TunnelClient:
         self.hello_builder = hello_builder
         self._ws = None
         self._running = False
-        self._pending_acks: dict[str, asyncio.Future] = {}
+        self._pending_acks: dict[str, _PendingSend] = {}
         self._reconnect_attempt = 0
+        self._processed_msg_ids: set[str] = set()
+        self._retransmit_task: asyncio.Task | None = None
 
     async def run(self):
         self._running = True
@@ -79,14 +94,16 @@ class TunnelClient:
         async with ws_connect(
             self.gateway_url,
             additional_headers={"Authorization": f"Bearer {self.device_token}"},
-            subprotocols=["oneClickAgent.tunnel.v1"],
+            subprotocols=["iagent.tunnel.v1"],
             max_size=FRAME_MAX_SIZE,
         ) as ws:
             self._ws = ws
+            self._pending_acks.clear()
             await self._send_hello_and_sync()
             if self.outbox:
                 await self.outbox.flush()
                 logger.info("outbox flushed after reconnect")
+            self._retransmit_task = asyncio.create_task(self._retransmit_loop())
             await asyncio.gather(
                 self._read_loop(ws),
                 self._heartbeat_loop(),
@@ -127,10 +144,19 @@ class TunnelClient:
         if frame_type != FrameType.ACK:
             await self._send_ack(msg_id)
 
+        # Idempotency: skip already-processed msg_ids
+        if frame_type not in (FrameType.ACK, FrameType.PING, FrameType.PONG):
+            if msg_id in self._processed_msg_ids:
+                logger.debug("duplicate frame, already processed: %s", msg_id)
+                return
+            self._processed_msg_ids.add(msg_id)
+
         if frame_type == FrameType.ACK:
             ack_id = frame.get("ack_id", "")
-            if ack_id in self._pending_acks:
-                self._pending_acks[ack_id].set_result(True)
+            entry = self._pending_acks.pop(ack_id, None)
+            if entry is not None:
+                if not entry.future.done():
+                    entry.future.set_result(True)
                 if self.outbox:
                     self.outbox.ack(ack_id)
             return
@@ -143,7 +169,13 @@ class TunnelClient:
             return
 
         if frame_type == FrameType.HELLO_ACK:
-            logger.info("received HELLO_ACK from gateway")
+            payload = decode_payload(frame)
+            config = payload.get("config", {})
+            if config.get("heartbeat_s"):
+                self.heartbeat_s = config["heartbeat_s"]
+            server_time = payload.get("server_time", 0)
+            logger.info("received HELLO_ACK from gateway (server_time=%s, session_id=%s, heartbeat_s=%s)",
+                        server_time, payload.get("session_id", ""), self.heartbeat_s)
             return
 
         if frame_type == FrameType.ERROR:
@@ -183,13 +215,49 @@ class TunnelClient:
         if payload:
             frame["payload"] = payload
         frame_json = json.dumps(frame)
-        future = asyncio.get_event_loop().create_future()
-        self._pending_acks[msg_id_val] = future
+        future: asyncio.Future = asyncio.get_event_loop().create_future()
+        self._pending_acks[msg_id_val] = _PendingSend()
+        self._pending_acks[msg_id_val].msg_id = msg_id_val
+        self._pending_acks[msg_id_val].frame_json = frame_json
+        self._pending_acks[msg_id_val].sent_at = time.monotonic()
+        self._pending_acks[msg_id_val].retries = 0
+        self._pending_acks[msg_id_val].future = future
         asyncio.create_task(self._ws.send(frame_json))
         return future
 
     async def _send_ack(self, msg_id: str):
         await self._send(FrameType.ACK, {}, ack_id=msg_id)
+
+    async def _retransmit_loop(self):
+        """Retransmit unacked frames with exponential backoff (1s/2s/4s, max 3 retries)."""
+        while self._ws and self._running:
+            await asyncio.sleep(1.0)
+            now = time.monotonic()
+            to_retry: list[_PendingSend] = []
+            to_fail: list[str] = []
+
+            for msg_id, entry in list(self._pending_acks.items()):
+                if entry.retries >= ACK_RETRANSMIT_MAX_RETRIES:
+                    to_fail.append(msg_id)
+                    continue
+                backoff = ACK_RETRANSMIT_BASE_S * (1 << entry.retries)
+                if now - entry.sent_at >= backoff:
+                    entry.retries += 1
+                    entry.sent_at = now
+                    to_retry.append(entry)
+
+            for entry in to_retry:
+                logger.debug("retransmitting unacked frame %s (retry %d)", entry.msg_id, entry.retries)
+                try:
+                    await self._ws.send(entry.frame_json)
+                except Exception:
+                    logger.exception("retransmit send failed for %s", entry.msg_id)
+
+            for msg_id in to_fail:
+                entry = self._pending_acks.pop(msg_id, None)
+                if entry is not None and not entry.future.done():
+                    logger.error("frame exceeded max retransmit retries: %s", msg_id)
+                    entry.future.set_exception(TimeoutError(f"max retransmit retries exceeded for {msg_id}"))
 
     async def close(self):
         self._running = False

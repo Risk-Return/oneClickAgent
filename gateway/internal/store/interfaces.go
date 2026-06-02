@@ -2,10 +2,14 @@ package store
 
 import (
 	"context"
+	"errors"
 	"time"
 
 	"github.com/oneClickAgent/gateway/internal/model"
 )
+
+// ErrNotFound is returned when a store lookup yields no result.
+var ErrNotFound = errors.New("store: not found")
 
 // Store interfaces allow mocking for HTTP handler tests.
 
@@ -21,6 +25,7 @@ type UserStoreInterface interface {
 type DeviceStoreInterface interface {
 	Create(ctx context.Context, d *model.Device) error
 	GetByID(ctx context.Context, id model.UUID) (*model.Device, error)
+	GetByTokenHash(ctx context.Context, tokenHash string) (*model.Device, error)
 	UpdateToken(ctx context.Context, id model.UUID, tokenHash string) error
 	UpdateStatus(ctx context.Context, id model.UUID, status model.DeviceStatus) error
 	List(ctx context.Context, cursor *model.UUID, limit int) ([]model.Device, *model.UUID, error)

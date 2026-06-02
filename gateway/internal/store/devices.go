@@ -126,6 +126,21 @@ func (s *DeviceStore) GetEnrolledDevice(ctx context.Context, code string) (*mode
 	return d, err
 }
 
+// GetByTokenHash retrieves a device by its token hash.
+func (s *DeviceStore) GetByTokenHash(ctx context.Context, tokenHash string) (*model.Device, error) {
+	d := &model.Device{}
+	err := s.db.Pool.QueryRow(ctx,
+		`SELECT id, operator_id, name, description, platform, status, token_hash, token_rotated_at, last_seen_at, resources, created_at, updated_at
+		 FROM devices WHERE token_hash=$1`,
+		tokenHash,
+	).Scan(&d.ID, &d.OperatorID, &d.Name, &d.Description, &d.Platform, &d.Status,
+		&d.TokenHash, &d.TokenRotatedAt, &d.LastSeenAt, &d.Resources, &d.CreatedAt, &d.UpdatedAt)
+	if err == pgx.ErrNoRows {
+		return nil, ErrNotFound
+	}
+	return d, err
+}
+
 func (s *DeviceStore) Delete(ctx context.Context, id model.UUID) error {
 	_, err := s.db.Pool.Exec(ctx, `DELETE FROM devices WHERE id=$1`, id)
 	return err

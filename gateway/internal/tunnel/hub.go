@@ -149,27 +149,36 @@ func (h *Hub) SetHandlers(cfg HubConfig) {
 
 // Register adds a new device connection, superseding any existing one.
 func (h *Hub) Register(conn *DeviceConn) {
+	var supersede *DeviceConn
+
 	h.mu.Lock()
-
 	if existing, ok := h.devices[conn.DeviceID()]; ok {
-		h.logger.Warn("superseding existing device connection",
-			"device_id", conn.DeviceID(),
-		)
-		existing.Close(4002, "superseded")
+		supersede = existing
 	}
-
 	conn.SetHub(h)
 	h.devices[conn.DeviceID()] = conn
 	h.mu.Unlock()
 
+	if supersede != nil {
+		h.logger.Warn("superseding existing device connection",
+			"device_id", conn.DeviceID(),
+		)
+		supersede.Close(4002, "superseded")
+	}
+
 	_ = h.registry.Register(context.Background(), conn.DeviceID(), h.nodeID)
+
+	go conn.StartRetransmitter(context.Background())
+
 	h.logger.Info("device registered", "device_id", conn.DeviceID(), "node", h.nodeID)
 }
 
-// Unregister removes a device connection.
-func (h *Hub) Unregister(deviceID model.UUID) {
+// Unregister removes a device connection only if it matches the given conn.
+func (h *Hub) Unregister(deviceID model.UUID, conn *DeviceConn) {
 	h.mu.Lock()
-	delete(h.devices, deviceID)
+	if existing, ok := h.devices[deviceID]; ok && existing == conn {
+		delete(h.devices, deviceID)
+	}
 	h.mu.Unlock()
 
 	_ = h.registry.Unregister(context.Background(), deviceID)

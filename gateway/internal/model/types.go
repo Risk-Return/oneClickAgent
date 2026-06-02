@@ -503,6 +503,17 @@ type SkillVisible struct {
 
 const FrameVersion = 1
 
+const (
+	SubprotocolTunnel = "iagent.tunnel.v1"
+	SubprotocolSession = "iagent.session.v1"
+	SubprotocolWeb     = "iagent.web.v1"
+)
+
+const HelloTimeout = 10 * time.Second
+const AckRetransmitBase = 1 * time.Second
+const AckRetransmitMaxRetries = 3
+const ChunkSizeBytes = 256 * 1024
+
 type Frame struct {
 	Version int             `json:"v"`
 	Type    FrameType       `json:"type"`
@@ -548,6 +559,9 @@ const (
 	FrameFileChunk     FrameType = "FILE_CHUNK"
 	FrameFilePushEnd   FrameType = "FILE_PUSH_END"
 	FrameFileAck       FrameType = "FILE_ACK"
+
+	FrameSkillDispatchAck FrameType = "SKILL_DISPATCH_ACK"
+	FrameFilePurged       FrameType = "FILE_PURGED"
 )
 
 const FrameMaxSize = 1 << 20
@@ -556,6 +570,8 @@ const FrameMaxSize = 1 << 20
 
 type HelloPayload struct {
 	DeviceID     UUID           `json:"device_id"`
+	AgentVersion string         `json:"agent_version,omitempty"`
+	Platform     string         `json:"platform,omitempty"`
 	AgentCount   int            `json:"agent_count"`
 	Agents       []HelloAgent   `json:"agents"`
 	Capabilities []string       `json:"capabilities,omitempty"`
@@ -566,6 +582,8 @@ type HelloAgent struct {
 	AgentID     UUID        `json:"agent_id"`
 	ContainerID string      `json:"container_id,omitempty"`
 	Status      AgentStatus `json:"status"`
+	Port        int         `json:"port,omitempty"`
+	Tags        []string    `json:"tags,omitempty"`
 }
 
 type HelloResources struct {
@@ -574,24 +592,35 @@ type HelloResources struct {
 	DiskMB   int64 `json:"disk_mb"`
 }
 
+type HelloAckConfig struct {
+	HeartbeatS    int `json:"heartbeat_s"`
+	MaxFrameBytes int `json:"max_frame_bytes"`
+}
+
 type HelloAckPayload struct {
-	SessionID string `json:"session_id"`
+	ServerTime int64           `json:"server_time"`
+	SessionID  string          `json:"session_id"`
+	Config     HelloAckConfig  `json:"config"`
 }
 
 type JobDispatchPayload struct {
-	JobID   UUID   `json:"job_id"`
-	UserID  UUID   `json:"user_id"`
-	AgentID UUID   `json:"agent_id"`
-	Command string `json:"command"`
-	SkillID *UUID  `json:"skill_id,omitempty"`
-	FileIDs []UUID `json:"file_ids,omitempty"`
+	JobID         UUID              `json:"job_id"`
+	UserID        UUID              `json:"user_id"`
+	AgentID       UUID              `json:"agent_id"`
+	Command       string            `json:"command"`
+	Params        json.RawMessage   `json:"params,omitempty"`
+	SkillID       *UUID             `json:"skill_id,omitempty"`
+	FileIDs       []UUID            `json:"file_ids,omitempty"`
+	CredentialIDs []UUID            `json:"credential_ids,omitempty"`
+	SubmittedAt   int64             `json:"submitted_at"`
 }
 
 type JobProgressPayload struct {
-	JobID   UUID      `json:"job_id"`
-	Status  JobStatus `json:"status"`
-	Percent int       `json:"percent"`
-	Message string    `json:"message"`
+	JobID     UUID      `json:"job_id"`
+	EventSeq  int       `json:"event_seq"`
+	Status    JobStatus `json:"status"`
+	Percent   int       `json:"percent"`
+	Message   string    `json:"message"`
 }
 
 type JobResultPayload struct {
@@ -804,6 +833,8 @@ const (
 // VNCOpenPayload is the payload for VNC_OPEN frame (gateway → device).
 type VNCOpenPayload struct {
 	SessionID    UUID   `json:"session_id"`
+	AgentID      UUID   `json:"agent_id"`
+	JobID        UUID   `json:"job_id"`
 	RelayURL     string `json:"relay_url"`
 	SessionToken string `json:"session_token"`
 	TTLSecs      int    `json:"ttl_secs"`

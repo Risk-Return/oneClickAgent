@@ -104,4 +104,28 @@ func (r *Router) RegisterAll(hub *Hub) {
 		}
 		return hub.HandleFileAck(ctx, deviceID, p)
 	})
+
+	r.Register(model.FrameVNCOpened, func(ctx context.Context, deviceID model.UUID, payload json.RawMessage) error {
+		var p model.VNCOpenedPayload
+		if err := json.Unmarshal(payload, &p); err != nil {
+			return err
+		}
+		return hub.HandleVNCOpened(ctx, deviceID, p)
+	})
+
+	r.Register(model.FrameCredPushAck, func(ctx context.Context, deviceID model.UUID, payload json.RawMessage) error {
+		var p model.CredPushAckPayload
+		if err := json.Unmarshal(payload, &p); err != nil {
+			return err
+		}
+		return hub.HandleCredPushAck(ctx, deviceID, p)
+	})
+
+	r.Register(model.FrameCredCaptureAck, func(ctx context.Context, deviceID model.UUID, payload json.RawMessage) error {
+		var p model.CredCaptureAckPayload
+		if err := json.Unmarshal(payload, &p); err != nil {
+			return err
+		}
+		return hub.HandleCredCaptureAck(ctx, deviceID, p)
+	})
 }

@@ -172,6 +172,9 @@ func NewRouter(deps *Dependencies) chi.Router {
 	// WebSocket realtime
 	r.Get("/ws", deps.handleWebSocket())
 
+	// Tunnel WebSocket (device → gateway)
+	r.Get("/tunnel", deps.handleTunnel())
+
 	// VNC WebSocket endpoints (custom auth)
 	r.Get("/ws/vnc/{sessionID}", deps.handleVNCBrowserSocket())
 	r.Get("/session/{sessionID}", deps.handleVNCDeviceSocket())

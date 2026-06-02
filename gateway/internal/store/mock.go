@@ -496,6 +496,7 @@ func NewMockDeviceStore() *MockDeviceStore { return &MockDeviceStore{} }
 
 func (m *MockDeviceStore) Create(ctx context.Context, d *model.Device) error                                   { return nil }
 func (m *MockDeviceStore) GetByID(ctx context.Context, id model.UUID) (*model.Device, error)                    { return nil, nil }
+func (m *MockDeviceStore) GetByTokenHash(ctx context.Context, tokenHash string) (*model.Device, error)          { return nil, ErrNotFound }
 func (m *MockDeviceStore) UpdateToken(ctx context.Context, id model.UUID, hash string) error                    { return nil }
 func (m *MockDeviceStore) UpdateStatus(ctx context.Context, id model.UUID, status model.DeviceStatus) error      { return nil }
 func (m *MockDeviceStore) List(ctx context.Context, cursor *model.UUID, limit int) ([]model.Device, *model.UUID, error) {
