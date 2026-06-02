@@ -41,10 +41,11 @@ logging.basicConfig(level=logging.INFO, format="%(asctime)s [%(name)s] %(levelna
 
 
 def _make_brain() -> AgentBrain:
-    brain_type = os.getenv("IAGENT_BRAIN", "stub")
-    if brain_type == "stub":
-        return StubBrain(delay=float(os.getenv("IAGENT_STUB_DELAY", "0.1")))
-    return StubBrain(delay=float(os.getenv("IAGENT_STUB_DELAY", "0.1")))
+    brain_key = os.getenv("IAGENT_BRAIN", "opencode")
+    delay = float(os.getenv("IAGENT_STUB_DELAY", "0.1"))
+    if brain_key != "stub":
+        logger.warning("brain adapter '%s' not implemented; falling back to stub", brain_key)
+    return StubBrain(delay=delay)
 
 
 def _get_state(request: Request):
@@ -64,6 +65,7 @@ def create_app() -> FastAPI:
 
         state = application.state
         state.vnc_enabled = os.getenv("IAGENT_VNC_ENABLED", "true").lower() == "true"
+        state.agent_id = os.getenv("IAGENT_AGENT_ID", "")
         state.workspace = Workspace(work_dir)
         state.skills = SkillManager(skills_dir)
         state.browser = BrowserManager(browser_cmd=browser_cmd, display=display, profile_dir=profile_dir)
@@ -73,6 +75,7 @@ def create_app() -> FastAPI:
             workspace=state.workspace,
             skills=state.skills,
             browser_manager=state.browser,
+            vnc_stack=state.vnc,
         )
         yield
 
@@ -98,6 +101,7 @@ def create_app() -> FastAPI:
         }
 
         return {
+            "agent_id": state.agent_id,
             "current_job": current_job,
             "usage": usage,
             "skills": state.skills.list_skills(),
@@ -224,12 +228,13 @@ def create_app() -> FastAPI:
         if storage_state:
             state.browser.set_profile_dir(state.workspace.profile)
             state.browser.inject_state(storage_state)
+            state.executor.mark_credentials_injected()
 
     @app.get("/browser/state")
     async def export_browser_state(request: Request, origin: str = Query("")):
         state = request.app.state
         state.browser.set_profile_dir(state.workspace.profile)
-        browser_state = state.browser.export_state()
+        browser_state = state.browser.export_state(origin=origin)
         return {"storage_state": browser_state}
 
     return app

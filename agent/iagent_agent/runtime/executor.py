@@ -2,10 +2,12 @@ from __future__ import annotations
 
 import asyncio
 import logging
+import time as _time
 
 import httpx
 
 from iagent_agent.adapter.protocol import AgentBrain, BrowserContext
+from iagent_agent.browser.manager import BrowserManager, VNCStack
 from iagent_agent.runtime.context import (
     CallbackClient,
     JobRecord,
@@ -24,14 +26,17 @@ class JobExecutor:
         brain: AgentBrain,
         workspace: Workspace,
         skills: SkillManager,
-        browser_manager: object | None = None,
+        browser_manager: BrowserManager | None = None,
+        vnc_stack: VNCStack | None = None,
     ):
         self._brain = brain
         self._workspace = workspace
         self._skills = skills
         self._browser = browser_manager
+        self._vnc = vnc_stack
         self._current: JobRecord | None = None
         self._task: asyncio.Task[None] | None = None
+        self._credentials_pending: bool = False
 
     @property
     def busy(self) -> bool:
@@ -44,6 +49,9 @@ class JobExecutor:
 
     def get_job_record(self) -> JobRecord | None:
         return self._current
+
+    def mark_credentials_injected(self) -> None:
+        self._credentials_pending = True
 
     async def submit(
         self,
@@ -85,8 +93,16 @@ class JobExecutor:
         if self._current is not None:
             self._current.status = JobState.CANCELLED
             self._current.message = "cancelled"
-            self._workspace.wipe()
+            self._teardown()
             self._current = None
+
+    def _teardown(self) -> None:
+        if self._browser:
+            self._browser.kill()
+        if self._vnc:
+            self._vnc.stop()
+        self._workspace.wipe()
+        self._credentials_pending = False
 
     async def _run(
         self,
@@ -99,6 +115,9 @@ class JobExecutor:
         browser_display: str,
         browser_profile: str,
     ) -> None:
+        credentials_injected = self._credentials_pending
+        self._credentials_pending = False
+
         try:
             async with httpx.AsyncClient() as client:
                 callback = None
@@ -116,7 +135,7 @@ class JobExecutor:
                     inputs_dir=self._workspace.inputs,
                     output_dir=self._workspace.output,
                     skill_id=skill_id,
-                    credentials_injected=False,
+                    credentials_injected=credentials_injected,
                     browser=BrowserContext(
                         display=browser_display,
                         profile_dir=browser_profile or self._workspace.profile,
@@ -135,6 +154,7 @@ class JobExecutor:
                 record.result = result
                 record.percent = 100
                 record.message = result.summary
+                record.finished_at = _time.time()
                 record.event_seq += 1
                 if callback:
                     await callback.post_event(record)
@@ -142,6 +162,7 @@ class JobExecutor:
         except asyncio.CancelledError:
             record.status = JobState.CANCELLED
             record.message = "cancelled"
+            record.finished_at = _time.time()
             record.event_seq += 1
             try:
                 if callback_url:
@@ -156,6 +177,7 @@ class JobExecutor:
             record.status = JobState.FAILED
             record.error = str(exc)
             record.message = str(exc)
+            record.finished_at = _time.time()
             record.event_seq += 1
             try:
                 if callback_url:
@@ -167,5 +189,5 @@ class JobExecutor:
             logger.exception("job %s failed", record.job_id)
 
         finally:
-            self._workspace.wipe()
+            self._teardown()
             self._current = None

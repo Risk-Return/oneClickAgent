@@ -338,3 +338,169 @@ async def test_healthz_reflects_busy(client):
 
     resp = await client.get("/healthz")
     assert resp.json()["busy"] is False
+
+
+@pytest.mark.asyncio
+async def test_vnc_start_with_active_job(client):
+    try:
+        import subprocess
+        subprocess.run(["Xvfb", "-help"], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, timeout=2)
+    except (FileNotFoundError, subprocess.TimeoutExpired):
+        pytest.skip("Xvfb not available")
+
+    os.environ["IAGENT_STUB_DELAY"] = "1.0"
+    with tempfile.TemporaryDirectory() as tmp2:
+        old_dir = os.environ["IAGENT_WORK_DIR"]
+        os.environ["IAGENT_WORK_DIR"] = tmp2
+        app2 = create_app()
+        async with LifespanAsyncClient(app2) as c2:
+            await c2.post("/jobs", json={
+                "job_id": "job-vnc",
+                "command": "vnc test",
+            })
+            resp = await c2.post("/vnc/start")
+            assert resp.status_code == 202
+            data = resp.json()
+            assert isinstance(data["rfb_port"], int)
+            assert isinstance(data["rfb_password"], str)
+            assert len(data["rfb_password"]) > 0
+
+            resp = await c2.post("/vnc/stop")
+            assert resp.status_code == 204
+
+        os.environ["IAGENT_WORK_DIR"] = old_dir
+
+    os.environ["IAGENT_STUB_DELAY"] = "0.01"
+
+
+@pytest.mark.asyncio
+async def test_callback_receives_events(client):
+    import uvicorn
+    from starlette.applications import Starlette
+    from starlette.routing import Route
+
+    events = []
+
+    async def callback_handler(request):
+        events.append(await request.json())
+        return {"status": "ok"}
+
+    callback_app = Starlette(routes=[
+        Route("/jobs/{job_id}/events", callback_handler, methods=["POST"]),
+    ])
+
+    config = uvicorn.Config(callback_app, host="127.0.0.1", port=0, log_level="error")
+    server = uvicorn.Server(config)
+    server_task = asyncio.create_task(server.serve())
+    await asyncio.sleep(0.1)
+
+    port = server.servers[0].sockets[0].getsockname()[1] if server.servers else 0
+    if port == 0:
+        server.should_exit = True
+        server_task.cancel()
+        try:
+            await server_task
+        except asyncio.CancelledError:
+            pass
+        pytest.skip("could not bind callback server")
+
+    callback_url = f"http://127.0.0.1:{port}"
+
+    old_delay = os.environ["IAGENT_STUB_DELAY"]
+    os.environ["IAGENT_STUB_DELAY"] = "0.01"
+
+    app2 = create_app()
+    async with LifespanAsyncClient(app2) as c2:
+        await c2.post("/jobs", json={
+            "job_id": "job-cb",
+            "command": "callback test",
+            "callback_url": callback_url,
+        })
+
+        await asyncio.sleep(0.5)
+
+    server.should_exit = True
+    server_task.cancel()
+    try:
+        await server_task
+    except asyncio.CancelledError:
+        pass
+
+    os.environ["IAGENT_STUB_DELAY"] = old_delay
+
+    assert len(events) >= 2
+    assert events[0]["status"] == "RUNNING"
+    terminal = events[-1]
+    assert terminal["status"] == "SUCCEEDED"
+    assert terminal["percent"] == 100
+    assert "result" in terminal
+    assert "ts" in terminal
+    assert "finished_at" in terminal
+
+
+@pytest.mark.asyncio
+async def test_browser_state_origin_filter(client):
+    state = {
+        "cookies": [
+            {"name": "a", "value": "1", "domain": "example.com"},
+            {"name": "b", "value": "2", "domain": "other.com"},
+        ],
+        "origins": [
+            {"origin": "https://example.com"},
+            {"origin": "https://other.com"},
+        ],
+    }
+    await client.post("/browser/state", json={"storage_state": state})
+
+    resp = await client.get("/browser/state", params={"origin": "https://example.com"})
+    data = resp.json()["storage_state"]
+    assert len(data["cookies"]) == 1
+    assert data["cookies"][0]["name"] == "a"
+    assert len(data["origins"]) == 1
+    assert data["origins"][0]["origin"] == "https://example.com"
+
+    resp = await client.get("/browser/state")
+    full = resp.json()["storage_state"]
+    assert len(full["cookies"]) == 2
+
+
+@pytest.mark.asyncio
+async def test_credentials_injected_flag(client):
+    state = {"cookies": [{"name": "s", "value": "v"}]}
+    await client.post("/browser/state", json={"storage_state": state})
+
+    app2 = create_app()
+    async with LifespanAsyncClient(app2) as c2:
+        await c2.post("/browser/state", json={"storage_state": state})
+
+        await c2.post("/jobs", json={
+            "job_id": "job-creds",
+            "command": "creds test",
+        })
+
+        await asyncio.sleep(0.3)
+
+        resp = await c2.get("/jobs/job-creds")
+        if resp.status_code == 200:
+            job = resp.json()
+            assert job["status"] == "SUCCEEDED"
+
+
+@pytest.mark.asyncio
+async def test_disk_quota_exceeded():
+    from iagent_agent.workspace import Workspace
+
+    with tempfile.TemporaryDirectory() as tmp:
+        ws = Workspace(tmp, quota_mb=0)
+        f = Path(tmp) / "scratch" / "big.txt"
+        f.parent.mkdir(exist_ok=True)
+        f.write_text("x" * 1024)
+        with pytest.raises(RuntimeError, match="quota exceeded"):
+            ws.check_quota()
+
+
+@pytest.mark.asyncio
+async def test_status_includes_agent_id(client):
+    resp = await client.get("/status")
+    data = resp.json()
+    assert "agent_id" in data

@@ -122,12 +122,15 @@ ENV IAGENT_VNC_DISPLAY=:99
 ENV IAGENT_VNC_PORT=5901
 ENV IAGENT_VNC_ENABLED=true
 ENV IAGENT_BROWSER_CMD=camoufox
-ENV IAGENT_BRAIN=stub
+ENV IAGENT_BRAIN=opencode
 
 VOLUME ["/work"]
 WORKDIR /home/app
 EXPOSE 8090 5901
 
+# Security hardening flags (applied at docker run time by the device manager):
+#   --cap-drop=ALL --security-opt=no-new-privileges --pids-limit=256
+# No host network; only container port 8090 is published.
 USER app
 
 HEALTHCHECK --interval=15s --timeout=5s --start-period=10s --retries=3 \

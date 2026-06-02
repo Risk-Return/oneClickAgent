@@ -38,15 +38,29 @@ class BrowserManager:
         state_file.write_text(json.dumps(storage_state, indent=2))
         logger.info("storage-state injected into %s", state_file)
 
-    def export_state(self) -> dict:
+    def export_state(self, origin: str = "") -> dict:
         profile = Path(self._profile_dir)
         state_file = profile / "storage_state.json"
         if not state_file.exists():
             return {}
         try:
-            return json.loads(state_file.read_text())
+            full_state = json.loads(state_file.read_text())
         except (json.JSONDecodeError, OSError):
             return {}
+
+        if not origin:
+            return full_state
+
+        origin = origin.rstrip("/")
+        filtered_cookies = [
+            c for c in full_state.get("cookies", [])
+            if c.get("domain", "") in origin or origin.endswith(c.get("domain", ""))
+        ]
+        filtered_origins = [
+            o for o in full_state.get("origins", [])
+            if o.get("origin", "").rstrip("/") == origin
+        ]
+        return {"cookies": filtered_cookies, "origins": filtered_origins}
 
     def launch_headless(self) -> None:
         env = os.environ.copy()

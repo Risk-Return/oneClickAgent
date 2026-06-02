@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import asyncio
 import logging
+import time as _time
 from dataclasses import dataclass, field
 from typing import Optional
 
@@ -31,6 +32,7 @@ class JobRecord:
     error: Optional[str] = None
     event_seq: int = 0
     cancel_event: asyncio.Event = field(default_factory=asyncio.Event)
+    finished_at: Optional[float] = None
 
     def to_dict(self) -> dict:
         d: dict = {
@@ -53,16 +55,19 @@ class CallbackClient:
         self._job_id = job_id
 
     async def post_event(self, record: JobRecord) -> None:
-        payload = {
+        payload: dict = {
             "event_seq": record.event_seq,
             "status": record.status,
             "percent": record.percent,
             "message": record.message,
+            "ts": _time.time(),
         }
         if record.result is not None:
             payload["result"] = record.result.model_dump()
         if record.error is not None:
             payload["error"] = record.error
+        if record.finished_at is not None:
+            payload["finished_at"] = record.finished_at
 
         url = f"{self._callback_url}/jobs/{self._job_id}/events"
         try:
