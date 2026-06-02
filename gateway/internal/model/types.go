@@ -262,12 +262,12 @@ type Job struct {
 	DeviceID        *UUID     `json:"device_id,omitempty" db:"device_id"`
 	Channel         string    `json:"channel" db:"channel"`
 	Command         string    `json:"command" db:"command"`
-	Params          *string   `json:"params,omitempty" db:"params"`
+	Params          *json.RawMessage   `json:"params,omitempty" db:"params"`
 	SkillID         *UUID     `json:"skill_id,omitempty" db:"skill_id"`
 	Status          JobStatus `json:"status" db:"status"`
 	Percent         *int      `json:"percent,omitempty" db:"percent"`
 	ProgressMessage *string   `json:"progress_message,omitempty" db:"progress_message"`
-	Result          *string   `json:"result,omitempty" db:"result"`
+	Result          *json.RawMessage `json:"result,omitempty" db:"result"`
 	ErrorCode       *string   `json:"error_code,omitempty" db:"error_code"`
 	ErrorMessage    *string   `json:"error_message,omitempty" db:"error_message"`
 	QueuedAt        *time.Time `json:"queued_at,omitempty" db:"queued_at"`
@@ -312,7 +312,7 @@ type SkillVersion struct {
 	ID          UUID      `json:"id" db:"id"`
 	SkillID     UUID      `json:"skill_id" db:"skill_id"`
 	Version     string    `json:"version" db:"version"`
-	Manifest    string    `json:"manifest" db:"manifest"`
+	Manifest    json.RawMessage `json:"manifest" db:"manifest"`
 	ArtifactURI string    `json:"-" db:"artifact_uri"`
 	SHA256      string    `json:"sha256" db:"sha256"`
 	Size        *int64    `json:"size,omitempty" db:"size"`
@@ -364,7 +364,7 @@ type AuditLog struct {
 	Action     string    `json:"action" db:"action"`
 	TargetType string    `json:"target_type,omitempty" db:"target_type"`
 	TargetID   *UUID     `json:"target_id,omitempty" db:"target_id"`
-	Meta       *string   `json:"meta,omitempty" db:"meta"`
+	Meta       *json.RawMessage `json:"meta,omitempty" db:"meta"`
 	CreatedAt  time.Time `json:"created_at" db:"created_at"`
 }
 
@@ -777,39 +777,44 @@ const (
 	VNCSessionReady   VNCSessionStatus = "ready"
 	VNCSessionActive  VNCSessionStatus = "active"
 	VNCSessionClosed  VNCSessionStatus = "closed"
+	VNCSessionError   VNCSessionStatus = "error"
 )
 
 // VNCSession represents an interactive browser relay session.
 type VNCSession struct {
-	ID                UUID             `json:"id" db:"id"`
-	JobID             UUID             `json:"job_id" db:"job_id"`
-	UserID            UUID             `json:"user_id" db:"user_id"`
-	DeviceID          UUID             `json:"device_id" db:"device_id"`
-	AgentID           UUID             `json:"agent_id" db:"agent_id"`
-	SessionTokenHash  string           `json:"-" db:"session_token_hash"`
-	RFBPassword       *string          `json:"rfb_password,omitempty" db:"rfb_password"`
-	Status            VNCSessionStatus `json:"status" db:"status"`
-	GatewayNode       *string          `json:"gateway_node,omitempty" db:"gateway_node"`
-	IdleTTLSecs       int              `json:"idle_ttl_secs" db:"idle_ttl_secs"`
-	MaxTTLSecs        int              `json:"max_ttl_secs" db:"max_ttl_secs"`
-	LastActiveAt      *time.Time       `json:"last_active_at,omitempty" db:"last_active_at"`
-	CreatedAt         time.Time        `json:"created_at" db:"created_at"`
-	ClosedAt          *time.Time       `json:"closed_at,omitempty" db:"closed_at"`
+	ID               UUID             `json:"id" db:"id"`
+	JobID            UUID             `json:"job_id" db:"job_id"`
+	UserID           UUID             `json:"user_id" db:"user_id"`
+	DeviceID         UUID             `json:"device_id" db:"device_id"`
+	AgentID          UUID             `json:"agent_id" db:"agent_id"`
+	SessionTokenHash string           `json:"-" db:"session_token_hash"`
+	RFBPassword      *string          `json:"rfb_password,omitempty" db:"rfb_password"`
+	Status           VNCSessionStatus `json:"status" db:"status"`
+	GatewayNode      *string          `json:"gateway_node,omitempty" db:"gateway_node"`
+	IdleTTLSecs      int              `json:"idle_ttl_secs" db:"idle_ttl_secs"`
+	MaxTTLSecs       int              `json:"max_ttl_secs" db:"max_ttl_secs"`
+	LastActiveAt     *time.Time       `json:"last_active_at,omitempty" db:"last_active_at"`
+	TokenExpiresAt   *time.Time       `json:"token_expires_at,omitempty" db:"token_expires_at"`
+	StartedAt        *time.Time       `json:"started_at,omitempty" db:"started_at"`
+	CloseReason      *string          `json:"close_reason,omitempty" db:"close_reason"`
+	CreatedAt        time.Time        `json:"created_at" db:"created_at"`
+	EndedAt          *time.Time       `json:"ended_at,omitempty" db:"ended_at"`
 }
 
 // BrowserCredential stores an encrypted browser login cookie.
 type BrowserCredential struct {
-	ID         UUID       `json:"id" db:"id"`
-	UserID     UUID       `json:"user_id" db:"user_id"`
-	Label      string     `json:"label" db:"label"`
-	Origin     string     `json:"origin" db:"origin"`
-	Ciphertext []byte     `json:"-" db:"ciphertext"`
-	KeyID      string     `json:"key_id" db:"key_id"`
-	SHA256     string     `json:"sha256" db:"sha256"`
-	SizeBytes  int64      `json:"size_bytes" db:"size_bytes"`
-	LastUsedAt *time.Time `json:"last_used_at,omitempty" db:"last_used_at"`
-	CreatedAt  time.Time  `json:"created_at" db:"created_at"`
-	UpdatedAt  time.Time  `json:"updated_at" db:"updated_at"`
+	ID              UUID       `json:"id" db:"id"`
+	UserID          UUID       `json:"user_id" db:"user_id"`
+	Label           string     `json:"label" db:"label"`
+	Origin          string     `json:"origin" db:"origin"`
+	StorageStateEnc []byte     `json:"-" db:"storage_state_enc"`
+	Nonce           []byte     `json:"-" db:"nonce"`
+	AuthTag         []byte     `json:"-" db:"auth_tag"`
+	KeyID           string     `json:"key_id" db:"key_id"`
+	SHA256          string     `json:"sha256" db:"sha256"`
+	LastUsedAt      *time.Time `json:"last_used_at,omitempty" db:"last_used_at"`
+	CreatedAt       time.Time  `json:"created_at" db:"created_at"`
+	UpdatedAt       time.Time  `json:"updated_at" db:"updated_at"`
 }
 
 // JobCredential links a job to injected credentials.
@@ -923,7 +928,6 @@ type CredentialResponse struct {
 	Label      string     `json:"label"`
 	Origin     string     `json:"origin"`
 	SHA256     string     `json:"sha256"`
-	SizeBytes  int64      `json:"size_bytes"`
 	LastUsedAt *time.Time `json:"last_used_at,omitempty"`
 	CreatedAt  time.Time  `json:"created_at"`
 	UpdatedAt  time.Time  `json:"updated_at"`
@@ -935,7 +939,6 @@ func CredentialResponseFrom(bc *BrowserCredential) CredentialResponse {
 		Label:      bc.Label,
 		Origin:     bc.Origin,
 		SHA256:     bc.SHA256,
-		SizeBytes:  bc.SizeBytes,
 		LastUsedAt: bc.LastUsedAt,
 		CreatedAt:  bc.CreatedAt,
 		UpdatedAt:  bc.UpdatedAt,

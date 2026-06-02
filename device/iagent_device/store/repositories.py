@@ -173,7 +173,7 @@ class FileRepo:
         now = time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime())
         self.conn.execute(
             "INSERT INTO files (file_id, job_id, name, size, sha256, local_path, status, created_at) VALUES (?,?,?,?,?,?,?,?)",
-            (file_id, job_id, name, size, sha256, local_path, "staged", now),
+            (file_id, job_id, name, size, sha256, local_path, "staged_device", now),
         )
         self.conn.commit()
 
@@ -246,5 +246,5 @@ class VNCSessionRepo:
 
     def close(self, session_id: str):
         now = time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime())
-        self.conn.execute("UPDATE vnc_sessions SET status='closed', closed_at=? WHERE session_id=?", (now, session_id))
+        self.conn.execute("UPDATE vnc_sessions SET status='closed', ended_at=? WHERE session_id=?", (now, session_id))
         self.conn.commit()

@@ -188,7 +188,7 @@ func (a *Allocator) dispatchJob(ctx context.Context, job *model.Job, agent *mode
 	}
 
 	if job.Params != nil {
-		payload.Params = json.RawMessage(*job.Params)
+		payload.Params = *job.Params
 	}
 
 	frame, err := tunnel.NewFrame(model.FrameJobDispatch, payload)

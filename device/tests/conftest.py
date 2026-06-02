@@ -57,7 +57,7 @@ def db_conn():
     CREATE TABLE IF NOT EXISTS vnc_sessions (
         session_id TEXT PRIMARY KEY, job_id TEXT, agent_id TEXT,
         rfb_port INTEGER, rfb_password TEXT, relay_url TEXT,
-        session_token TEXT, status TEXT, created_at TEXT, closed_at TEXT
+        session_token TEXT, status TEXT, created_at TEXT, ended_at TEXT
     );
     """)
     conn.commit()

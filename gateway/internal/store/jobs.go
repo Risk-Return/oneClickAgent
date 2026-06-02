@@ -2,6 +2,7 @@ package store
 
 import (
 	"context"
+	"encoding/json"
 	"time"
 
 	"github.com/oneClickAgent/gateway/internal/model"
@@ -63,7 +64,7 @@ func (s *JobStore) UpdateProgress(ctx context.Context, id model.UUID, percent in
 	return err
 }
 
-func (s *JobStore) UpdateResult(ctx context.Context, id model.UUID, status model.JobStatus, result *string) error {
+func (s *JobStore) UpdateResult(ctx context.Context, id model.UUID, status model.JobStatus, result *json.RawMessage) error {
 	now := time.Now().UTC()
 	var resultVal interface{}
 	if result != nil {

@@ -32,6 +32,7 @@ class JobRecord:
     error: Optional[str] = None
     event_seq: int = 0
     cancel_event: asyncio.Event = field(default_factory=asyncio.Event)
+    started_at: Optional[float] = None
     finished_at: Optional[float] = None
 
     def to_dict(self) -> dict:

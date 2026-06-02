@@ -5,6 +5,7 @@ package main
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"log/slog"
 	"net/http"
@@ -132,7 +133,12 @@ func main() {
 			return nil
 		},
 		OnJobResult: func(ctx context.Context, deviceID model.UUID, payload model.JobResultPayload) error {
-			if err := jobs.UpdateResult(ctx, payload.JobID, payload.Status, payload.Result); err != nil {
+			var result *json.RawMessage
+			if payload.Result != nil {
+				r := json.RawMessage(*payload.Result)
+				result = &r
+			}
+			if err := jobs.UpdateResult(ctx, payload.JobID, payload.Status, result); err != nil {
 				return err
 			}
 			broker.Publish(pubsub.JobTopic(payload.JobID), model.WSEvent{

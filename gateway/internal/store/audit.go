@@ -23,7 +23,7 @@ func (s *AuditStore) Log(ctx context.Context, actorID model.UUID, action, target
 	}
 	if detail != nil {
 		b, _ := json.Marshal(detail)
-		meta := string(b)
+		meta := json.RawMessage(b)
 		entry.Meta = &meta
 	}
 

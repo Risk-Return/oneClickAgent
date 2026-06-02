@@ -102,7 +102,7 @@ func (deps *Dependencies) handleSubmitJob() http.HandlerFunc {
 			if !deps.CredVault.IsConfigured() {
 				continue
 			}
-			plaintext, err := deps.CredVault.Decrypt(cred.Ciphertext, cred.SHA256)
+			plaintext, err := deps.CredVault.Decrypt(cred.StorageStateEnc, cred.Nonce, cred.AuthTag, cred.SHA256)
 			if err != nil {
 				continue
 			}

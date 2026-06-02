@@ -6,6 +6,7 @@ import (
 	"context"
 	"crypto/sha256"
 	"encoding/hex"
+	"encoding/json"
 	"fmt"
 	"io"
 	"os"
@@ -98,7 +99,7 @@ func (v *Vault) PublishVersion(ctx context.Context, skillID model.UUID, version,
 	ver := &model.SkillVersion{
 		SkillID:     skillID,
 		Version:     version,
-		Manifest:    manifest,
+		Manifest:    json.RawMessage(manifest),
 		ArtifactURI: artifactPath,
 		SHA256:      sha256Sum,
 	}

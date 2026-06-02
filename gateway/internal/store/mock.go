@@ -2,6 +2,7 @@ package store
 
 import (
 	"context"
+	"encoding/json"
 	"sync"
 	"time"
 
@@ -141,7 +142,7 @@ func (m *MockJobStore) UpdateProgress(ctx context.Context, id model.UUID, percen
 	return nil
 }
 
-func (m *MockJobStore) UpdateResult(ctx context.Context, id model.UUID, status model.JobStatus, result *string) error {
+func (m *MockJobStore) UpdateResult(ctx context.Context, id model.UUID, status model.JobStatus, result *json.RawMessage) error {
 	m.mu.Lock()
 	defer m.mu.Unlock()
 	if j, ok := m.jobs[id]; ok {

@@ -21,19 +21,24 @@ func TestEncryptDecrypt(t *testing.T) {
 
 	plaintext := []byte(`{"cookies":[{"name":"session","value":"abc123"}],"origins":["https://example.com"]}`)
 
-	ciphertext, sha256sum, err := v.Encrypt(plaintext)
+	result, err := v.Encrypt(plaintext)
 	if err != nil {
 		t.Fatalf("encrypt: %v", err)
 	}
-	if len(ciphertext) == 0 {
-		t.Fatal("ciphertext should not be empty")
+	if len(result.StorageStateEnc) == 0 {
+		t.Fatal("storage_state_enc should not be empty")
 	}
-	if sha256sum == "" {
+	if len(result.Nonce) == 0 {
+		t.Fatal("nonce should not be empty")
+	}
+	if len(result.AuthTag) == 0 {
+		t.Fatal("auth_tag should not be empty")
+	}
+	if result.SHA256 == "" {
 		t.Fatal("sha256 should not be empty")
 	}
 
-	// Decrypt
-	decrypted, err := v.Decrypt(ciphertext, sha256sum)
+	decrypted, err := v.Decrypt(result.StorageStateEnc, result.Nonce, result.AuthTag, result.SHA256)
 	if err != nil {
 		t.Fatalf("decrypt: %v", err)
 	}
@@ -50,9 +55,9 @@ func TestDecryptWrongKey(t *testing.T) {
 	v2, _ := NewVault(key2, "")
 
 	plaintext := []byte("secret data")
-	ct, sha, _ := v1.Encrypt(plaintext)
+	result, _ := v1.Encrypt(plaintext)
 
-	_, err := v2.Decrypt(ct, sha)
+	_, err := v2.Decrypt(result.StorageStateEnc, result.Nonce, result.AuthTag, result.SHA256)
 	if err == nil {
 		t.Error("decryption with wrong key should fail")
 	}
@@ -63,11 +68,10 @@ func TestDecryptTamperedData(t *testing.T) {
 	v, _ := NewVault(key, "")
 
 	plaintext := []byte("secret data")
-	ct, sha, _ := v.Encrypt(plaintext)
+	result, _ := v.Encrypt(plaintext)
 
-	// Tamper with ciphertext
-	ct[15] ^= 0xFF
-	_, err := v.Decrypt(ct, sha)
+	result.StorageStateEnc[0] ^= 0xFF
+	_, err := v.Decrypt(result.StorageStateEnc, result.Nonce, result.AuthTag, result.SHA256)
 	if err == nil {
 		t.Error("decryption of tampered data should fail")
 	}
@@ -78,9 +82,9 @@ func TestDecryptWrongSHA256(t *testing.T) {
 	v, _ := NewVault(key, "")
 
 	plaintext := []byte("secret data")
-	ct, _, _ := v.Encrypt(plaintext)
+	result, _ := v.Encrypt(plaintext)
 
-	_, err := v.Decrypt(ct, "deadbeef")
+	_, err := v.Decrypt(result.StorageStateEnc, result.Nonce, result.AuthTag, "deadbeef")
 	if err == nil {
 		t.Error("decryption with wrong SHA-256 should fail")
 	}
@@ -91,11 +95,11 @@ func TestNotConfigured(t *testing.T) {
 	if v.IsConfigured() {
 		t.Error("vault without key should not be configured")
 	}
-	_, _, err := v.Encrypt([]byte("test"))
+	_, err := v.Encrypt([]byte("test"))
 	if err != ErrKeyNotConfigured {
 		t.Errorf("expected ErrKeyNotConfigured, got %v", err)
 	}
-	_, err = v.Decrypt([]byte("test"), "")
+	_, err = v.Decrypt([]byte("test"), []byte("test"), []byte("test"), "")
 	if err != ErrKeyNotConfigured {
 		t.Errorf("expected ErrKeyNotConfigured, got %v", err)
 	}

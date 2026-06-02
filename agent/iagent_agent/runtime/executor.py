@@ -144,6 +144,7 @@ class JobExecutor:
                 )
 
                 record.status = JobState.RUNNING
+                record.started_at = _time.time()
                 record.event_seq += 1
                 if callback:
                     await callback.post_event(record)

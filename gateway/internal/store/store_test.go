@@ -2,6 +2,7 @@ package store_test
 
 import (
 	"context"
+	"encoding/json"
 	"os"
 	"testing"
 	"time"
@@ -493,7 +494,7 @@ func TestJobLifecycle(t *testing.T) {
 	}
 
 	// Update result (jsonb column — use json.RawMessage)
-	result := `"hello world"`
+	result := json.RawMessage(`"hello world"`)
 	if err := js.UpdateResult(ctx, job.ID, model.JobSucceeded, &result); err != nil {
 		t.Fatalf("update result: %v", err)
 	}
@@ -501,7 +502,7 @@ func TestJobLifecycle(t *testing.T) {
 	if done.Status != model.JobSucceeded {
 		t.Errorf("status = %s, want succeeded", done.Status)
 	}
-	if done.Result == nil || *done.Result != result {
+	if done.Result == nil || string(*done.Result) != string(result) {
 		t.Error("result mismatch")
 	}
 
@@ -742,7 +743,7 @@ func TestSkillVaultCRUD(t *testing.T) {
 	ver := &model.SkillVersion{
 		SkillID:     skill.ID,
 		Version:     "1.0.0",
-		Manifest:    `{"entrypoint":"main.py"}`,
+		Manifest:    json.RawMessage(`{"entrypoint":"main.py"}`),
 		ArtifactURI: "/tmp/test-skill.tar.gz",
 		SHA256:      "sha256-test",
 	}

@@ -17,16 +17,18 @@ def connect(db_path: Path) -> sqlite3.Connection:
 
 def migrate(conn: sqlite3.Connection) -> None:
     conn.execute("""
-        CREATE TABLE IF NOT EXISTS schema_version (
-            version INTEGER PRIMARY KEY
+        CREATE TABLE IF NOT EXISTS meta (
+            key   TEXT PRIMARY KEY,
+            value TEXT
         )
     """)
-    cur = conn.execute("SELECT MAX(version) FROM schema_version")
-    current = (cur.fetchone()[0] or 0)
+    cur = conn.execute("SELECT value FROM meta WHERE key='schema_version'")
+    row = cur.fetchone()
+    current = int(row[0]) if row else 0
 
     if current < 1:
         conn.executescript(SCHEMA_V1)
-        conn.execute("INSERT INTO schema_version VALUES (1)")
+        conn.execute("INSERT INTO meta (key, value) VALUES ('schema_version', '1')")
 
     conn.commit()
 
@@ -124,6 +126,6 @@ CREATE TABLE IF NOT EXISTS vnc_sessions (
     session_token TEXT,
     status      TEXT,
     created_at  TEXT,
-    closed_at   TEXT
+    ended_at   TEXT
 );
 """

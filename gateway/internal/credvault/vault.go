@@ -2,11 +2,13 @@
 // browser login credentials. Supports data-key mode (IAGENT_CRED_KEY) and
 // KMS envelope mode (IAGENT_CRED_KMS, stub).
 //
-// Wire format (stored in browser_credentials.ciphertext):
+// Storage format (aligned with 06-data-model §1.16):
 //
-//	nonce (12 bytes) || tag (16 bytes, appended by GCM) || ciphertext
+//	storage_state_enc  — ciphertext (no nonce, no tag)
+//	nonce              — 12-byte GCM nonce/IV
+//	auth_tag           — 16-byte GCM authentication tag
 //
-// key_id identifies the key version, stored alongside ciphertext.
+// key_id identifies the key version, stored alongside the encrypted data.
 package credvault
 
 import (
@@ -67,45 +69,60 @@ func (v *Vault) IsConfigured() bool {
 	return len(v.dataKey) > 0 || v.kmsID != ""
 }
 
-// Encrypt encrypts plaintext with AES-256-GCM and returns the wire format.
-func (v *Vault) Encrypt(plaintext []byte) (ciphertext []byte, sha256sum string, err error) {
+// EncryptResult holds the separated AES-256-GCM output fields.
+type EncryptResult struct {
+	StorageStateEnc []byte
+	Nonce           []byte
+	AuthTag         []byte
+	SHA256          string
+}
+
+// Encrypt encrypts plaintext with AES-256-GCM and returns separated fields.
+func (v *Vault) Encrypt(plaintext []byte) (EncryptResult, error) {
 	v.mu.RLock()
 	defer v.mu.RUnlock()
 
 	if len(v.dataKey) == 0 {
-		return nil, "", ErrKeyNotConfigured
+		return EncryptResult{}, ErrKeyNotConfigured
 	}
 	if len(plaintext) > MaxCredentialSize {
-		return nil, "", ErrDataTooLarge
+		return EncryptResult{}, ErrDataTooLarge
 	}
 
 	block, err := aes.NewCipher(v.dataKey)
 	if err != nil {
-		return nil, "", fmt.Errorf("create cipher: %w", err)
+		return EncryptResult{}, fmt.Errorf("create cipher: %w", err)
 	}
 
 	gcm, err := cipher.NewGCM(block)
 	if err != nil {
-		return nil, "", fmt.Errorf("create GCM: %w", err)
+		return EncryptResult{}, fmt.Errorf("create GCM: %w", err)
 	}
 
 	nonce := make([]byte, gcm.NonceSize())
 	if _, err := io.ReadFull(rand.Reader, nonce); err != nil {
-		return nil, "", fmt.Errorf("generate nonce: %w", err)
+		return EncryptResult{}, fmt.Errorf("generate nonce: %w", err)
 	}
 
-	// GCM seal: nonce || ciphertext+tag
-	result := gcm.Seal(nonce, nonce, plaintext, nil)
+	// GCM seal (without prepended nonce): ciphertext || tag
+	sealed := gcm.Seal(nil, nonce, plaintext, nil)
+	tagSize := gcm.Overhead()
+	storageStateEnc := sealed[:len(sealed)-tagSize]
+	authTag := sealed[len(sealed)-tagSize:]
 
-	// Compute plaintext SHA-256 for integrity
 	h := sha256.Sum256(plaintext)
-	sha256sum = hex.EncodeToString(h[:])
+	sha256sum := hex.EncodeToString(h[:])
 
-	return result, sha256sum, nil
+	return EncryptResult{
+		StorageStateEnc: storageStateEnc,
+		Nonce:           nonce,
+		AuthTag:         authTag,
+		SHA256:          sha256sum,
+	}, nil
 }
 
-// Decrypt decrypts ciphertext and verifies the SHA-256 hash.
-func (v *Vault) Decrypt(ciphertext []byte, expectedSHA256 string) ([]byte, error) {
+// Decrypt decrypts using separate storage_state_enc, nonce, auth_tag and verifies SHA-256.
+func (v *Vault) Decrypt(storageStateEnc, nonce, authTag []byte, expectedSHA256 string) ([]byte, error) {
 	v.mu.RLock()
 	defer v.mu.RUnlock()
 
@@ -123,20 +140,16 @@ func (v *Vault) Decrypt(ciphertext []byte, expectedSHA256 string) ([]byte, error
 		return nil, fmt.Errorf("create GCM: %w", err)
 	}
 
-	nonceSize := gcm.NonceSize()
-	if len(ciphertext) < nonceSize {
+	if len(nonce) != gcm.NonceSize() {
 		return nil, ErrDecryptFailed
 	}
 
-	nonce := ciphertext[:nonceSize]
-	encrypted := ciphertext[nonceSize:]
-
-	plaintext, err := gcm.Open(nil, nonce, encrypted, nil)
+	sealed := append(storageStateEnc, authTag...)
+	plaintext, err := gcm.Open(nil, nonce, sealed, nil)
 	if err != nil {
 		return nil, ErrDecryptFailed
 	}
 
-	// Verify SHA-256
 	h := sha256.Sum256(plaintext)
 	actual := hex.EncodeToString(h[:])
 	if expectedSHA256 != "" && actual != expectedSHA256 {
