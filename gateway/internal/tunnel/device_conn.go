@@ -246,6 +246,10 @@ func (c *DeviceConn) handleFrame(ctx context.Context, frame model.Frame) error {
 	}
 
 	switch frame.Type {
+	case model.FrameHello:
+		c.sendAck(frame.MsgID)
+		return nil
+
 	case model.FramePing:
 		return c.sendPong()
 
@@ -361,6 +365,34 @@ func (c *DeviceConn) handleFrame(ctx context.Context, frame model.Frame) error {
 		}
 		if c.hub != nil {
 			return c.hub.HandleCredPushAck(ctx, c.deviceID, payload)
+		}
+		return nil
+
+	case model.FrameCredCapture:
+		var payload model.CredCapturePayload
+		if err := json.Unmarshal(frame.Payload, &payload); err != nil {
+			return err
+		}
+		if c.hub != nil {
+			return c.hub.HandleCredCapture(ctx, c.deviceID, payload)
+		}
+		return nil
+
+	case model.FrameVNCClose:
+		if c.hub != nil {
+			return c.hub.HandleVNCClose(ctx, c.deviceID, frame.Payload)
+		}
+		return nil
+
+	case model.FrameSkillDispatchAck:
+		if c.hub != nil {
+			return c.hub.HandleSkillDispatchAck(ctx, c.deviceID, frame.Payload)
+		}
+		return nil
+
+	case model.FrameFilePurged:
+		if c.hub != nil {
+			return c.hub.HandleFilePurged(ctx, c.deviceID, frame.Payload)
 		}
 		return nil
 

@@ -3,6 +3,7 @@ package httpapi
 import (
 	"log/slog"
 	"net/http"
+	"strings"
 	"time"
 
 	"github.com/go-chi/chi/v5"
@@ -50,6 +51,8 @@ func (deps *Dependencies) handleOpenVNC() http.HandlerFunc {
 		// Send VNC_OPEN over tunnel
 		frame, _ := tunnel.NewFrame(model.FrameVNCOpen, model.VNCOpenPayload{
 			SessionID:    sess.ID,
+			AgentID:      *job.AgentID,
+			JobID:        jobID,
 			RelayURL:     "wss://" + r.Host + "/session/" + sess.ID.String(),
 			SessionToken: token,
 			TTLSecs:      maxTTL,
@@ -110,6 +113,8 @@ func (deps *Dependencies) handleSaveLogin() http.HandlerFunc {
 		// Send CRED_CAPTURE to device
 		frame, _ := tunnel.NewFrame(model.FrameCredCapture, model.CredCapturePayload{
 			SessionID: sessionID,
+			JobID:     sess.JobID,
+			AgentID:   sess.AgentID,
 			Origin:    "",
 			Label:     req.Label,
 		})
@@ -223,6 +228,13 @@ func (deps *Dependencies) handleVNCBrowserSocket() http.HandlerFunc {
 func (deps *Dependencies) handleVNCDeviceSocket() http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		sessionToken := r.Header.Get("X-Session-Token")
+		if sessionToken == "" {
+			// Also accept Authorization: Bearer <token> per spec §9.
+			auth := r.Header.Get("Authorization")
+			if strings.HasPrefix(auth, "Bearer ") {
+				sessionToken = strings.TrimPrefix(auth, "Bearer ")
+			}
+		}
 		if sessionToken == "" {
 			sessionToken = r.URL.Query().Get("token")
 		}

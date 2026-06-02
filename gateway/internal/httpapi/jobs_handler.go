@@ -111,7 +111,7 @@ func (deps *Dependencies) handleSubmitJob() http.HandlerFunc {
 				JobID:        job.ID,
 				CredentialID: cred.ID,
 				Origin:       cred.Origin,
-				Data:         base64.StdEncoding.EncodeToString(plaintext),
+				StorageState: base64.StdEncoding.EncodeToString(plaintext),
 				SHA256:       cred.SHA256,
 			})
 			_ = deps.Hub.SendFrame(agent.DeviceID, frame)
@@ -214,6 +214,15 @@ func (deps *Dependencies) handleCancelJob() http.HandlerFunc {
 		if err := deps.Jobs.Cancel(r.Context(), jobID, userID); err != nil {
 			writeError(w, http.StatusInternalServerError, model.ErrCodeInternalError, "failed to cancel job")
 			return
+		}
+
+		// Send JOB_CANCEL over tunnel if agent is allocated
+		if job.AgentID != nil && job.DeviceID != nil {
+			frame, _ := tunnel.NewFrame(model.FrameJobCancel, map[string]interface{}{
+				"job_id": jobID.String(),
+				"reason": "user requested",
+			})
+			_ = deps.Hub.SendFrame(*job.DeviceID, frame)
 		}
 
 		// Release agent if allocated

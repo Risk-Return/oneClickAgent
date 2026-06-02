@@ -110,12 +110,14 @@ class TunnelClient:
             )
 
     async def _send_hello_and_sync(self):
+        agents = self.hello_extras.get("agents", [])
         hello_payload = {
             "device_id": self.device_id,
             "platform": self.hello_extras.get("platform", ""),
             "agent_version": self.hello_extras.get("agent_version", ""),
+            "agent_count": len(agents),
             "resources": self.hello_extras.get("resources", {}),
-            "agents": self.hello_extras.get("agents", []),
+            "agents": agents,
             "capabilities": self.hello_extras.get("capabilities", {}),
         }
         if self.hello_builder:

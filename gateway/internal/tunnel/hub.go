@@ -13,6 +13,7 @@ package tunnel
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"log/slog"
 	"sync"
@@ -69,8 +70,12 @@ type Hub struct {
 	onSkillState  func(ctx context.Context, deviceID model.UUID, payload model.SkillStatePayload) error
 	onFileAck     func(ctx context.Context, deviceID model.UUID, payload model.FileAckPayload) error
 	onVNCOpened   func(ctx context.Context, deviceID model.UUID, payload model.VNCOpenedPayload) error
+	onVNCClose    func(ctx context.Context, deviceID model.UUID, payload json.RawMessage) error
+	onCredCapture func(ctx context.Context, deviceID model.UUID, payload model.CredCapturePayload) error
 	onCredPushAck    func(ctx context.Context, deviceID model.UUID, payload model.CredPushAckPayload) error
 	onCredCaptureAck func(ctx context.Context, deviceID model.UUID, payload model.CredCaptureAckPayload) error
+	onSkillDispatchAck func(ctx context.Context, deviceID model.UUID, payload json.RawMessage) error
+	onFilePurged       func(ctx context.Context, deviceID model.UUID, payload json.RawMessage) error
 
 	heartbeatInterval      time.Duration
 	heartbeatMissThreshold time.Duration
@@ -92,8 +97,12 @@ type HubConfig struct {
 	OnSkillState            func(ctx context.Context, deviceID model.UUID, payload model.SkillStatePayload) error
 	OnFileAck               func(ctx context.Context, deviceID model.UUID, payload model.FileAckPayload) error
 	OnVNCOpened             func(ctx context.Context, deviceID model.UUID, payload model.VNCOpenedPayload) error
+	OnVNCClose              func(ctx context.Context, deviceID model.UUID, payload json.RawMessage) error
+	OnCredCapture           func(ctx context.Context, deviceID model.UUID, payload model.CredCapturePayload) error
 	OnCredPushAck           func(ctx context.Context, deviceID model.UUID, payload model.CredPushAckPayload) error
 	OnCredCaptureAck        func(ctx context.Context, deviceID model.UUID, payload model.CredCaptureAckPayload) error
+	OnSkillDispatchAck      func(ctx context.Context, deviceID model.UUID, payload json.RawMessage) error
+	OnFilePurged            func(ctx context.Context, deviceID model.UUID, payload json.RawMessage) error
 }
 
 // NewHub creates a new tunnel Hub.
@@ -121,8 +130,12 @@ func NewHub(cfg HubConfig) *Hub {
 		onSkillState:           cfg.OnSkillState,
 		onFileAck:              cfg.OnFileAck,
 		onVNCOpened:            cfg.OnVNCOpened,
+		onVNCClose:             cfg.OnVNCClose,
+		onCredCapture:          cfg.OnCredCapture,
 		onCredPushAck:          cfg.OnCredPushAck,
 		onCredCaptureAck:       cfg.OnCredCaptureAck,
+		onSkillDispatchAck:     cfg.OnSkillDispatchAck,
+		onFilePurged:           cfg.OnFilePurged,
 		heartbeatInterval:      cfg.HeartbeatInterval,
 		heartbeatMissThreshold: cfg.HeartbeatMissThreshold,
 		logger:                 obs.Logger("tunnel"),
@@ -143,8 +156,12 @@ func (h *Hub) SetHandlers(cfg HubConfig) {
 	h.onSkillState = cfg.OnSkillState
 	h.onFileAck = cfg.OnFileAck
 	h.onVNCOpened = cfg.OnVNCOpened
+	h.onVNCClose = cfg.OnVNCClose
+	h.onCredCapture = cfg.OnCredCapture
 	h.onCredPushAck = cfg.OnCredPushAck
 	h.onCredCaptureAck = cfg.OnCredCaptureAck
+	h.onSkillDispatchAck = cfg.OnSkillDispatchAck
+	h.onFilePurged = cfg.OnFilePurged
 }
 
 // Register adds a new device connection, superseding any existing one.
@@ -197,7 +214,7 @@ func (h *Hub) IsOnline(deviceID model.UUID) bool {
 	return h.GetConnection(deviceID) != nil
 }
 
-// SendFrame routes a frame to a specific device.
+// SendFrame routes a frame to a specific device and tracks it for ACK.
 func (h *Hub) SendFrame(deviceID model.UUID, frame model.Frame) error {
 	h.mu.RLock()
 	conn := h.devices[deviceID]
@@ -205,6 +222,11 @@ func (h *Hub) SendFrame(deviceID model.UUID, frame model.Frame) error {
 
 	if conn == nil {
 		return fmt.Errorf("device %s is offline on this node", deviceID)
+	}
+
+	// Track non-ACK frames for retransmission (spec §2).
+	if frame.Type != model.FrameAck {
+		conn.acks.Track(frame)
 	}
 
 	select {
@@ -302,6 +324,34 @@ func (h *Hub) HandleCredPushAck(ctx context.Context, deviceID model.UUID, payloa
 func (h *Hub) HandleCredCaptureAck(ctx context.Context, deviceID model.UUID, payload model.CredCaptureAckPayload) error {
 	if h.onCredCaptureAck != nil {
 		return h.onCredCaptureAck(ctx, deviceID, payload)
+	}
+	return nil
+}
+
+func (h *Hub) HandleCredCapture(ctx context.Context, deviceID model.UUID, payload model.CredCapturePayload) error {
+	if h.onCredCapture != nil {
+		return h.onCredCapture(ctx, deviceID, payload)
+	}
+	return nil
+}
+
+func (h *Hub) HandleVNCClose(ctx context.Context, deviceID model.UUID, payload json.RawMessage) error {
+	if h.onVNCClose != nil {
+		return h.onVNCClose(ctx, deviceID, payload)
+	}
+	return nil
+}
+
+func (h *Hub) HandleSkillDispatchAck(ctx context.Context, deviceID model.UUID, payload json.RawMessage) error {
+	if h.onSkillDispatchAck != nil {
+		return h.onSkillDispatchAck(ctx, deviceID, payload)
+	}
+	return nil
+}
+
+func (h *Hub) HandleFilePurged(ctx context.Context, deviceID model.UUID, payload json.RawMessage) error {
+	if h.onFilePurged != nil {
+		return h.onFilePurged(ctx, deviceID, payload)
 	}
 	return nil
 }

@@ -636,8 +636,11 @@ type JobRejectedPayload struct {
 }
 
 type AgentCreatePayload struct {
-	AgentID   UUID   `json:"agent_id"`
-	AgentName string `json:"agent_name"`
+	AgentID UUID        `json:"agent_id"`
+	Image   string      `json:"image"`
+	Tags    []string    `json:"tags,omitempty"`
+	Limits  AgentLimits `json:"limits"`
+	Env     []string    `json:"env,omitempty"`
 }
 
 type AgentStatusPayload struct {
@@ -859,7 +862,7 @@ type CredPushPayload struct {
 	JobID        UUID   `json:"job_id"`
 	CredentialID UUID   `json:"credential_id"`
 	Origin       string `json:"origin"`
-	Data         string `json:"data"`  // base64-encoded plaintext
+	StorageState string `json:"storage_state"`
 	SHA256       string `json:"sha256"`
 }
 
@@ -874,6 +877,8 @@ type CredPushAckPayload struct {
 // CredCapturePayload is the payload for CRED_CAPTURE frame (device → gateway).
 type CredCapturePayload struct {
 	SessionID UUID   `json:"session_id"`
+	JobID     UUID   `json:"job_id"`
+	AgentID   UUID   `json:"agent_id"`
 	Origin    string `json:"origin"`
 	Data      string `json:"data"`  // base64-encoded browser storage state
 	SHA256    string `json:"sha256"`
@@ -882,9 +887,10 @@ type CredCapturePayload struct {
 
 // CredCaptureAckPayload is the payload for CRED_CAPTURE_ACK frame (gateway → device).
 type CredCaptureAckPayload struct {
-	SessionID UUID   `json:"session_id"`
-	Status    string `json:"status"` // ok | error
-	Error     string `json:"error,omitempty"`
+	CredentialID UUID   `json:"credential_id,omitempty"`
+	SessionID    UUID   `json:"session_id"`
+	Status       string `json:"status"` // STORED | error
+	Error        string `json:"error,omitempty"`
 }
 
 // ─── VNC + Credential DTOs ──────────────────────────────────

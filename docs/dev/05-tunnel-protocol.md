@@ -3,8 +3,9 @@
 | Field | Value |
 |-------|-------|
 | **Spec** | `docs/spec/05-tunnel-protocol.md` |
-| **Status** | Implemented |
+| **Status** | Implemented (audit gaps fixed 2026-06-02) |
 | **Last Updated** | 2026-06-02 |
+| **Audit** | `docs/audit/05-tunnel-protocol.md` (5 critical, 8 significant, 4 minor — all resolved) |
 | **Build (Go)** | `go build ./...` passes |
 | **Vet (Go)** | `go vet ./...` passes |
 | **Tests (Go)** | `go test ./internal/tunnel/...` — 15/15 pass |
@@ -123,7 +124,25 @@ Separate binary WS socket (`/session/{sessionID}`, subprotocol `iagent.session.v
 - [x] Device ACK retransmit with backoff (`_retransmit_loop` — 1s/2s/4s, max 3x)
 - [x] Deadlock fix: `Hub.Register` releases lock before calling `conn.Close`
 - [x] Identity-safe `Unregister`: only unregisters matching connection, not superseded replacement
+- [x] (Audit 1.3) `Hub.SendFrame` now calls `acks.Track()` — all G→D frames retransmitted with backoff
+- [x] (Audit 1.1) `CredPushPayload.Data` → `StorageState` JSON field name — device can read storage_state
+- [x] (Audit 1.2) Gateway handles `FrameCredCapture` (D→G) in read pump + `HandleCredCapture` on Hub
+- [x] (Audit 1.4) `handleVNCDeviceSocket` reads `Authorization: Bearer <token>` per spec §9
+- [x] (Audit 1.5) CRED_CAPTURE instruction includes `AgentID`, `JobID` from VNC session
+- [x] (Audit 2.1) `handleCancelJob` sends `JOB_CANCEL` frame over tunnel before releasing agent
+- [x] (Audit 2.3) `NewFrame()` sets `TS: time.Now().UnixMilli()` — all outbound frames have timestamps
+- [x] (Audit 2.4) Gateway `handleFrame` sends ACK for HELLO frame
+- [x] (Audit 2.6) Handlers added for `SKILL_DISPATCH_ACK`, `FILE_PURGED` in device_conn + router + Hub
+- [x] (Audit 2.7) `VNC_CLOSE` from device handled via `HandleVNCClose` + `FrameVNCClose` case
+- [x] (Audit 2.8) `VNC_OPEN` payload includes `AgentID`, `JobID`
+- [x] (Audit 2.2) `JobDispatchPayload` populated with `Params`, `SubmittedAt`
+- [x] (Audit 2.5) `AgentCreatePayload` includes `Image`, `Tags`, `Limits`; allocator sets defaults
+- [x] (Audit 3.1) Device HELLO payload includes `agent_count`
+- [x] (Audit 3.3) **Rejected**: HELLO_ACK is a response frame, not an ACK. Spec §4.1 lists them separately. ACK for HELLO is sent via separate `sendAck()` call (Audit 2.4 fix).
+
+### Audit fixes — cross-module touch points
 
 ## Git History
 
-- (pending commit) — feat(tunnel): full spec compliance — HELLO timeout, ACK retransmit (both sides), idempotency, close codes 4004/4005/4290, WS-level ping/pong, device retransmit, tunnel endpoint, tests
+- (pending commit) — fix(tunnel): resolve all 16 audit gaps — ACK tracking, credential field names, VNC auth, cancel dispatch, G→D timestamps, HELLO/CAPTURE/CLOSE/DISPATCH/ACK/PURGED handlers, allocator payloads
+- (previous) — feat(tunnel): full spec compliance — HELLO timeout, ACK retransmit (both sides), idempotency, close codes 4004/4005/4290, WS-level ping/pong, device retransmit, tunnel endpoint, tests

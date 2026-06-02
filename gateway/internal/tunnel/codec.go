@@ -5,6 +5,7 @@ package tunnel
 import (
 	"encoding/json"
 	"fmt"
+	"time"
 
 	"github.com/oneClickAgent/gateway/internal/model"
 )
@@ -64,6 +65,7 @@ func NewFrame(frameType model.FrameType, payload interface{}) (model.Frame, erro
 		Version: model.FrameVersion,
 		Type:    frameType,
 		MsgID:   model.NewUUID().String(),
+		TS:      time.Now().UnixMilli(),
 		Payload: payloadBytes,
 	}, nil
 }

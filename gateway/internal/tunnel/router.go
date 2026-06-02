@@ -128,4 +128,24 @@ func (r *Router) RegisterAll(hub *Hub) {
 		}
 		return hub.HandleCredCaptureAck(ctx, deviceID, p)
 	})
+
+	r.Register(model.FrameCredCapture, func(ctx context.Context, deviceID model.UUID, payload json.RawMessage) error {
+		var p model.CredCapturePayload
+		if err := json.Unmarshal(payload, &p); err != nil {
+			return err
+		}
+		return hub.HandleCredCapture(ctx, deviceID, p)
+	})
+
+	r.Register(model.FrameVNCClose, func(ctx context.Context, deviceID model.UUID, payload json.RawMessage) error {
+		return hub.HandleVNCClose(ctx, deviceID, payload)
+	})
+
+	r.Register(model.FrameSkillDispatchAck, func(ctx context.Context, deviceID model.UUID, payload json.RawMessage) error {
+		return hub.HandleSkillDispatchAck(ctx, deviceID, payload)
+	})
+
+	r.Register(model.FrameFilePurged, func(ctx context.Context, deviceID model.UUID, payload json.RawMessage) error {
+		return hub.HandleFilePurged(ctx, deviceID, payload)
+	})
 }

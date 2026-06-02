@@ -3,6 +3,7 @@ package pool
 
 import (
 	"context"
+	"encoding/json"
 	"log/slog"
 	"time"
 
@@ -178,16 +179,16 @@ func (a *Allocator) expireQueued(ctx context.Context) {
 // dispatchJob sends a JOB_DISPATCH frame over the tunnel to the device.
 func (a *Allocator) dispatchJob(ctx context.Context, job *model.Job, agent *model.Agent) error {
 	payload := model.JobDispatchPayload{
-		JobID:   job.ID,
-		UserID:  job.UserID,
-		AgentID: agent.ID,
-		Command: job.Command,
-		SkillID: job.SkillID,
+		JobID:       job.ID,
+		UserID:      job.UserID,
+		AgentID:     agent.ID,
+		Command:     job.Command,
+		SkillID:     job.SkillID,
+		SubmittedAt: job.SubmittedAt.UnixMilli(),
 	}
 
-	// Include file IDs if present
-	if job.SkillID != nil {
-		payload.SkillID = job.SkillID
+	if job.Params != nil {
+		payload.Params = json.RawMessage(*job.Params)
 	}
 
 	frame, err := tunnel.NewFrame(model.FrameJobDispatch, payload)
@@ -223,8 +224,14 @@ func (a *Allocator) EnsurePoolSize(ctx context.Context, deviceID model.UUID, des
 	for i := currentCount; i < desiredSize; i++ {
 		agentID := model.NewUUID()
 		payload := model.AgentCreatePayload{
-			AgentID:   agentID,
-			AgentName: "agent-" + agentID.String()[:8],
+			AgentID: agentID,
+			Image:   "iagent/agent:dev",
+			Tags:    []string{"opencode", "camoufox"},
+			Limits: model.AgentLimits{
+				CPU:    2,
+				MemMB:  4096,
+				DiskMB: 10240,
+			},
 		}
 
 		frame, err := tunnel.NewFrame(model.FrameAgentCreate, payload)
