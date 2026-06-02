@@ -5,8 +5,6 @@ files, device_skills, agent_skills, outbox, vnc_sessions.
 import json
 import sqlite3
 import time
-import uuid
-from typing import Any
 
 
 class DeviceRepo:
@@ -87,6 +85,14 @@ class AgentRepo:
     def get_by_id(self, agent_id: str) -> dict | None:
         row = self.conn.execute("SELECT * FROM agents WHERE agent_id=?", (agent_id,)).fetchone()
         return dict(row) if row else None
+
+    def increment_restarts(self, agent_id: str):
+        now = time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime())
+        self.conn.execute(
+            "UPDATE agents SET restarts=restarts+1, status='unhealthy', updated_at=? WHERE agent_id=?",
+            (now, agent_id),
+        )
+        self.conn.commit()
 
     def delete(self, agent_id: str):
         self.conn.execute("DELETE FROM agents WHERE agent_id=?", (agent_id,))

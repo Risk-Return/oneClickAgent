@@ -18,23 +18,20 @@ class CredRelay:
         self.outbox = outbox
 
     async def handle_cred_push(self, payload: dict):
-        """Inject credentials into agent browser state."""
         job_id = payload.get("job_id", "")
         credential_id = payload.get("credential_id", "")
         agent_id = payload.get("agent_id", "")
-        origin = payload.get("origin", "")
-        data = payload.get("data", "")  # base64 plaintext
+        storage_state = payload.get("storage_state", "")
         sha256 = payload.get("sha256", "")
 
-        # Decode and verify
         import base64
-        plaintext = base64.b64decode(data)
+        plaintext = base64.b64decode(storage_state)
         actual = hashlib.sha256(plaintext).hexdigest()
         if actual != sha256:
             await self.outbox.enqueue_and_send(FrameType.CRED_PUSH_ACK, {
                 "job_id": job_id,
                 "credential_id": credential_id,
-                "status": "error",
+                "status": "ERROR",
                 "error": "SHA-256 mismatch",
             })
             return
@@ -44,32 +41,55 @@ class CredRelay:
             await self.outbox.enqueue_and_send(FrameType.CRED_PUSH_ACK, {
                 "job_id": job_id,
                 "credential_id": credential_id,
-                "status": "error",
+                "status": "ERROR",
                 "error": "agent not reachable",
             })
             return
 
         try:
-            storage_state = plaintext.decode("utf-8")
-            await client.set_browser_state(storage_state)
+            state = plaintext.decode("utf-8")
+            await client.set_browser_state(state)
             await self.outbox.enqueue_and_send(FrameType.CRED_PUSH_ACK, {
                 "job_id": job_id,
                 "credential_id": credential_id,
-                "status": "ok",
+                "status": "INJECTED",
             })
         except Exception as e:
             await self.outbox.enqueue_and_send(FrameType.CRED_PUSH_ACK, {
                 "job_id": job_id,
                 "credential_id": credential_id,
-                "status": "error",
+                "status": "ERROR",
                 "error": str(e),
             })
 
+    async def inject_credential(self, payload: dict):
+        job_id = payload.get("job_id", "")
+        credential_id = payload.get("credential_id", "")
+        agent_id = payload.get("agent_id", "")
+        storage_state = payload.get("storage_state", "")
+        sha256 = payload.get("sha256", "")
+
+        if not storage_state:
+            return
+
+        import base64
+        plaintext = base64.b64decode(storage_state)
+        actual = hashlib.sha256(plaintext).hexdigest()
+        if actual != sha256:
+            logger.error("credential %s sha256 mismatch for job %s", credential_id, job_id)
+            return
+
+        client = self.docker.get_client(agent_id)
+        if client:
+            state = plaintext.decode("utf-8")
+            await client.set_browser_state(state)
+
     async def handle_cred_capture(self, payload: dict):
-        """Capture browser state from agent and relay to gateway."""
         session_id = payload.get("session_id", "")
         agent_id = payload.get("agent_id", "")
         origin = payload.get("origin", "")
+        label = payload.get("label", "")
+        job_id = payload.get("job_id", "")
 
         client = self.docker.get_client(agent_id)
         if not client:
@@ -89,8 +109,10 @@ class CredRelay:
 
             await self.outbox.enqueue_and_send(FrameType.CRED_CAPTURE, {
                 "session_id": session_id,
+                "job_id": job_id,
+                "label": label,
                 "origin": origin,
-                "data": encoded,
+                "storage_state": encoded,
                 "sha256": sha256,
             })
         except Exception as e:

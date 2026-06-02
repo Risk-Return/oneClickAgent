@@ -8,7 +8,7 @@ import hashlib
 import logging
 from pathlib import Path
 
-from iagent_device.tunnel.codec import FrameType, new_msg_id
+from iagent_device.tunnel.codec import FrameType
 from iagent_device.tunnel.outbox import Outbox
 from iagent_device.store.repositories import SkillRepo, AgentRepo
 from iagent_device.docker.manager import DockerManager
@@ -67,25 +67,26 @@ class SkillManager:
         actual = buf["hasher"].hexdigest()
         expected = buf["sha256"]
         if actual != expected:
-            await self.outbox.enqueue_and_send(FrameType.SKILL_STATE, {
+            await self.outbox.enqueue_and_send(FrameType.SKILL_DISPATCH_ACK, {
                 "skill_id": skill_id,
                 "skill_version_id": buf["version_id"],
-                "scope": "device",
-                "status": "error",
-                "error": f"SHA-256 mismatch",
+                "status": "ERROR",
+                "error": "SHA-256 mismatch",
             })
             return
 
-        # Cache artifact
         artifact_path = self.skills_dir / skill_id / "artifact.tar.gz"
         artifact_path.parent.mkdir(parents=True, exist_ok=True)
         artifact_path.write_bytes(buf["data"])
 
-        await self.outbox.enqueue_and_send(FrameType.SKILL_STATE, {
+        self.skill_repo.upsert_device_skill(
+            skill_id, skill_id, skill_id, buf["version_id"], "", str(artifact_path), buf["sha256"], "cached"
+        )
+
+        await self.outbox.enqueue_and_send(FrameType.SKILL_DISPATCH_ACK, {
             "skill_id": skill_id,
             "skill_version_id": buf["version_id"],
-            "scope": "device",
-            "status": "cached",
+            "status": "CACHED",
         })
 
     async def handle_skill_action(self, payload: dict):
@@ -96,30 +97,130 @@ class SkillManager:
         version = payload.get("version", "")
 
         if scope == "device":
-            agents = self.agent_repo.list_all() if action in ("install", "update") else [dict(agent_id=agent_id) for _ in [1] if agent_id]
+            if action == "install":
+                self.skill_repo.upsert_device_skill(
+                    skill_id, skill_id, skill_id, version, "", "", "", "installing"
+                )
+            elif action == "update":
+                self.skill_repo.update_device_skill_status(skill_id, "updating")
+            elif action == "disable":
+                self.skill_repo.update_device_skill_status(skill_id, "disabling")
+            elif action == "delete":
+                self.skill_repo.update_device_skill_status(skill_id, "deleting")
 
-            for agent in agents:
-                if action == "delete":
-                    agents_to_use = self.agent_repo.list_all()
-                    for a in agents_to_use:
-                        await self._apply_skill_action(a["agent_id"], skill_id, action)
+            target_agents = self.agent_repo.list_all()
+            successes = 0
+            failures = 0
+            for agent in target_agents:
+                try:
+                    await self._apply_skill_action(agent["agent_id"], skill_id, action, version)
+                    successes += 1
+                except Exception:
+                    failures += 1
+                    logger.exception("skill action %s failed for agent %s", action, agent["agent_id"])
+
+            if action == "install" or action == "update":
+                final_status = "installed" if failures == 0 else "error"
+                self.skill_repo.update_device_skill_status(skill_id, final_status)
+            elif action == "disable":
+                final_status = "disabled" if failures == 0 else "error"
+                self.skill_repo.update_device_skill_status(skill_id, final_status)
+            elif action == "delete":
+                if failures == 0:
+                    self.skill_repo.delete_device_skill(skill_id)
+                    self._prune_skill_cache(skill_id)
+                    final_status = "deleted"
                 else:
-                    await self._apply_skill_action(agent["agent_id"], skill_id, action)
-        elif scope == "agent" and agent_id:
-            await self._apply_skill_action(agent_id, skill_id, action)
+                    final_status = "error"
+            else:
+                final_status = "error"
 
-    async def _apply_skill_action(self, agent_id: str, skill_id: str, action: str):
+            await self._emit_skill_state()
+
+        elif scope == "agent" and agent_id:
+            try:
+                await self._apply_skill_action(agent_id, skill_id, action, version)
+            except Exception:
+                logger.exception("per-agent skill action %s failed for agent %s", action, agent_id)
+            status = "enabled" if action == "enable" else "disabled" if action == "disable" else "applied"
+            self.skill_repo.upsert_agent_skill(agent_id, skill_id, status)
+            await self._emit_skill_state()
+
+    async def _apply_skill_action(self, agent_id: str, skill_id: str, action: str, version: str = ""):
         client = self.docker.get_client(agent_id)
         if not client:
             return
-        try:
-            if action == "install" or action == "update":
-                await client.install_skill(skill_id, "", "", "")
-            elif action == "enable":
-                await client.enable_skill(skill_id)
-            elif action == "disable":
-                await client.disable_skill(skill_id)
-            elif action == "delete":
-                await client.delete_skill(skill_id)
-        except Exception:
-            logger.exception("skill action %s failed for agent %s", action, agent_id)
+        if action == "install" or action == "update":
+            skill = self.skill_repo.list_device_skills()
+            skill_info = next((s for s in skill if s["skill_id"] == skill_id), {})
+            artifact_path = skill_info.get("artifact_path", "")
+            manifest = skill_info.get("manifest", "")
+            await client.install_skill(skill_id, version or skill_info.get("version", ""), manifest, artifact_path)
+        elif action == "enable":
+            await client.enable_skill(skill_id)
+        elif action == "disable":
+            await client.disable_skill(skill_id)
+        elif action == "delete":
+            await client.delete_skill(skill_id)
+
+    async def handle_skill_sync(self, payload: dict):
+        desired_device_skills = payload.get("device_skills", [])
+        desired_agent_skills = payload.get("agent_skills", [])
+
+        for ds in desired_device_skills:
+            skill_id = ds["skill_id"]
+            existing = next((s for s in self.skill_repo.list_device_skills() if s["skill_id"] == skill_id), None)
+            if not existing or existing.get("version") != ds.get("version"):
+                await self.outbox.enqueue_and_send(FrameType.SKILL_SYNC, {
+                    "skill_id": skill_id,
+                    "status": "missing",
+                })
+
+        for ags in desired_agent_skills:
+            agent_skills = self.skill_repo.list_agent_skills(ags["agent_id"])
+            existing = next((s for s in agent_skills if s["skill_id"] == ags["skill_id"]), None)
+            if not existing or existing.get("status") != ags.get("status"):
+                await self.handle_skill_action({
+                    "scope": "agent",
+                    "action": ags.get("status", "enable"),
+                    "skill_id": ags["skill_id"],
+                    "agent_id": ags["agent_id"],
+                })
+
+    async def install_skills_on_new_agent(self, agent_id: str):
+        for skill in self.skill_repo.list_device_skills():
+            if skill.get("status") in ("installed", "cached"):
+                try:
+                    await self._apply_skill_action(agent_id, skill["skill_id"], "install", skill.get("version", ""))
+                    self.skill_repo.upsert_agent_skill(agent_id, skill["skill_id"], "enabled")
+                except Exception:
+                    logger.exception("failed to install skill %s on new agent %s", skill["skill_id"], agent_id)
+
+    async def _emit_skill_state(self):
+        device_skills = []
+        for s in self.skill_repo.list_device_skills():
+            device_skills.append({
+                "skill_id": s["skill_id"],
+                "version": s.get("version", ""),
+                "status": s.get("status", ""),
+            })
+
+        agent_skills = []
+        for agent in self.agent_repo.list_all():
+            for s in self.skill_repo.list_agent_skills(agent["agent_id"]):
+                agent_skills.append({
+                    "agent_id": agent["agent_id"],
+                    "skill_id": s["skill_id"],
+                    "status": s.get("status", ""),
+                })
+
+        await self.outbox.enqueue_and_send(FrameType.SKILL_STATE, {
+            "device_skills": device_skills,
+            "agent_skills": agent_skills,
+        })
+
+    def _prune_skill_cache(self, skill_id: str):
+        skill_dir = self.skills_dir / skill_id
+        if skill_dir.exists():
+            import shutil
+            shutil.rmtree(skill_dir)

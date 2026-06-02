@@ -63,6 +63,13 @@ class FrameType(StrEnum):
     CRED_CAPTURE = "CRED_CAPTURE"
     CRED_CAPTURE_ACK = "CRED_CAPTURE_ACK"
 
+    SKILL_DISPATCH_ACK = "SKILL_DISPATCH_ACK"
+    FILE_PURGED = "FILE_PURGED"
+
+    JOB_QUERY_ACK = "JOB_QUERY_ACK"
+    AGENT_STATUS_ACK = "AGENT_STATUS_ACK"
+    SKILL_STATE_ACK = "SKILL_STATE_ACK"
+
 
 def new_msg_id() -> str:
     return str(uuid.uuid4())

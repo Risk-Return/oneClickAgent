@@ -7,7 +7,7 @@ import hashlib
 import logging
 from pathlib import Path
 
-from iagent_device.tunnel.codec import FrameType, new_msg_id
+from iagent_device.tunnel.codec import FrameType
 from iagent_device.tunnel.outbox import Outbox
 from iagent_device.store.repositories import FileRepo
 

@@ -2,12 +2,13 @@
 - Create N idle containers (pull image, resource limits, security hardening, labels)
 - Start/stop/restart/remove individual agents
 - Health checks per agent, recovery with max_restarts cap
-- Pool reaper: recycle agents after job completion (clear workspace → IDLE)
+- Pool reaper: recycle agents after job completion (clear workspace -> IDLE)
 - Scale up/down the pool to match desired size
 """
 
 import asyncio
 import logging
+import shutil
 import uuid
 
 from iagent_device.store.repositories import AgentRepo
@@ -32,9 +33,20 @@ class DockerManager:
         self.port_start = port_start
         self.port_end = port_end
         self.max_restarts = max_restarts
-        self.docker = docker_client  # docker.from_env()
+        self.docker = docker_client
         self.data_dir = data_dir
         self._allocated_ports: set[int] = set()
+
+    async def prepull_image(self):
+        if not self.docker:
+            logger.info("mock: pull image %s", self.image)
+            return
+        try:
+            logger.info("pulling image %s ...", self.image)
+            self.docker.images.pull(self.image)
+            logger.info("image %s pulled", self.image)
+        except Exception:
+            logger.exception("failed to pull image %s", self.image)
 
     async def ensure_pool(self, desired_size: int):
         current = self.repo.list_all()
@@ -42,31 +54,33 @@ class DockerManager:
         busy = [a for a in current if a["status"] == "busy"]
         total = len(idle) + len(busy)
 
-        # Remove surplus
         if total > desired_size:
-            for agent in idle[desired_size - len(busy):]:
+            surplus = idle[max(0, desired_size - len(busy)):]
+            for agent in surplus:
+                self._remove_container(agent)
                 self.repo.delete(agent["agent_id"])
+                self._release_port(agent["port"])
                 total -= 1
 
-        # Create missing
         for _ in range(desired_size - total):
             agent_id = str(uuid.uuid4())
             port = self._allocate_port()
             name = f"agent-{agent_id[:8]}"
             self.repo.upsert(agent_id, name, self.image, port, status="creating")
-            await self._create_container(agent_id, name, port)
-            self.repo.update_status(agent_id, "idle")
+            container_id = await self._create_container(agent_id, name, port)
+            self.repo.update_status(agent_id, "idle", container_id=container_id or "")
 
-    async def _create_container(self, agent_id: str, name: str, port: int):
+    async def _create_container(self, agent_id: str, name: str, port: int) -> str | None:
         if not self.docker:
             logger.info("mock: create container %s on port %d", name, port)
-            return
+            return None
         try:
-            self.docker.containers.run(
+            workspace_mount = f"{self.data_dir}/workspaces:/workspaces:rw"
+            container = self.docker.containers.run(
                 self.image,
                 name=name,
                 detach=True,
-                ports={8090: port},
+                ports={"8090/tcp": port},
                 labels={
                     "iagent.agent_id": agent_id,
                     "iagent.pool": "true",
@@ -76,10 +90,26 @@ class DockerManager:
                 network="bridge",
                 cap_drop=["ALL"],
                 read_only=True,
-                remove=True,
+                remove=False,
+                volumes=[workspace_mount],
+                tmpfs={"/tmp": "exec", "/run": "exec,rw"},
+                pids_limit=256,
+                user="1000:1000",
             )
+            return container.id
         except Exception:
             logger.exception("failed to create container %s", name)
+            return None
+
+    def _remove_container(self, agent: dict):
+        if not self.docker or not agent.get("container_id"):
+            return
+        try:
+            c = self.docker.containers.get(agent["container_id"])
+            c.stop(timeout=5)
+            c.remove(force=True)
+        except Exception:
+            pass
 
     def _allocate_port(self) -> int:
         for p in range(self.port_start, self.port_end + 1):
@@ -100,11 +130,26 @@ class DockerManager:
         ok = await client.healthz()
         if not ok:
             restarts = int(agent.get("restarts", 0)) + 1
+            self.repo.increment_restarts(agent_id)
             if restarts > self.max_restarts:
                 self.repo.update_status(agent_id, "failed")
                 logger.error("agent %s exceeded max restarts", agent_id)
             else:
                 logger.warning("agent %s unhealthy, restart %d/%d", agent_id, restarts, self.max_restarts)
+                self._restart_container(agent_id)
+
+    def _restart_container(self, agent_id: str):
+        agent = self.repo.get_by_id(agent_id)
+        if not agent or not self.docker:
+            return
+        try:
+            cid = agent.get("container_id", "")
+            if cid:
+                c = self.docker.containers.get(cid)
+                c.restart(timeout=10)
+                logger.info("restarted container for agent %s", agent_id)
+        except Exception:
+            logger.exception("failed to restart container for agent %s", agent_id)
 
     async def health_loop(self, interval: float = 30.0):
         while True:
@@ -112,8 +157,64 @@ class DockerManager:
                 await self.health_check(agent["agent_id"])
             await asyncio.sleep(interval)
 
+    async def get_container_stats(self, agent_id: str) -> dict:
+        agent = self.repo.get_by_id(agent_id)
+        if not agent or not self.docker:
+            return {"cpu_pct": 0.0, "mem_mb": 0, "disk_mb": 0}
+        try:
+            cid = agent.get("container_id", "")
+            if not cid:
+                return {"cpu_pct": 0.0, "mem_mb": 0, "disk_mb": 0}
+            c = self.docker.containers.get(cid)
+            stats = c.stats(stream=False)
+            cpu_delta = stats["cpu_stats"]["cpu_usage"]["total_usage"] - stats["precpu_stats"]["cpu_usage"]["total_usage"]
+            system_delta = stats["cpu_stats"]["system_cpu_usage"] - stats["precpu_stats"]["system_cpu_usage"]
+            num_cpus = stats["cpu_stats"].get("online_cpus", 1)
+            cpu_pct = 0.0
+            if system_delta > 0 and cpu_delta > 0:
+                cpu_pct = (cpu_delta / system_delta) * num_cpus * 100.0
+            mem_usage = stats["memory_stats"].get("usage", 0)
+            mem_mb = round(mem_usage / (1024 * 1024))
+            return {
+                "cpu_pct": round(cpu_pct, 2),
+                "mem_mb": mem_mb,
+                "disk_mb": 0,
+            }
+        except Exception:
+            return {"cpu_pct": 0.0, "mem_mb": 0, "disk_mb": 0}
+
+    async def reaper_cleanup(self, agent_id: str, job_id: str):
+        ws_dir = f"{self.data_dir}/workspaces/{job_id}"
+        try:
+            shutil.rmtree(ws_dir, ignore_errors=True)
+        except Exception:
+            pass
+
     def get_client(self, agent_id: str) -> AgentClient | None:
         agent = self.repo.get_by_id(agent_id)
         if not agent or not agent.get("port"):
             return None
         return AgentClient(f"http://127.0.0.1:{agent['port']}")
+
+    def list_pool_containers(self) -> list[dict]:
+        if not self.docker:
+            return []
+        try:
+            containers = self.docker.containers.list(
+                all=True,
+                filters={"label": "iagent.pool=true"},
+            )
+            result = []
+            for c in containers:
+                labels = c.labels or {}
+                result.append({
+                    "container_id": c.id,
+                    "name": c.name,
+                    "status": c.status,
+                    "agent_id": labels.get("iagent.agent_id", ""),
+                    "labels": labels,
+                })
+            return result
+        except Exception:
+            logger.exception("failed to list pool containers")
+            return []

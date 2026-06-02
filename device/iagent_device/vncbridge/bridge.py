@@ -4,16 +4,19 @@ connects TCP to the agent's RFB port, and bridges bytes both ways.
 
 import asyncio
 import logging
+from typing import cast
 
-import websockets
 from websockets.asyncio.client import connect as ws_connect
+from websockets.typing import Subprotocol
 
-from iagent_device.tunnel.codec import FrameType, new_msg_id, encode_frame
+from iagent_device.tunnel.codec import FrameType
 from iagent_device.tunnel.outbox import Outbox
 from iagent_device.store.repositories import VNCSessionRepo
 from iagent_device.docker.manager import DockerManager
 
 logger = logging.getLogger(__name__)
+
+BACKPRESSURE_BUFFER = 256 * 1024
 
 
 class VNCBridge:
@@ -35,6 +38,7 @@ class VNCBridge:
         agent_id = payload.get("agent_id", "")
         relay_url = payload["relay_url"]
         session_token = payload["session_token"]
+        ttl_s = payload.get("ttl_s", 0)
 
         self.repo.create(session_id, "", agent_id, relay_url, session_token)
 
@@ -55,7 +59,9 @@ class VNCBridge:
                 "rfb_password": rfb_password,
             })
 
-            task = asyncio.create_task(self._bridge(session_id, relay_url, session_token, rfb_port, agent_id))
+            task = asyncio.create_task(
+                self._bridge(session_id, relay_url, session_token, rfb_port, agent_id, ttl_s)
+            )
             self._sessions[session_id] = task
         except Exception as e:
             logger.exception("vnc open failed for session %s", session_id)
@@ -65,15 +71,18 @@ class VNCBridge:
                 "error": str(e),
             })
 
-    async def _bridge(self, session_id: str, relay_url: str, session_token: str, rfb_port: int, agent_id: str):
+    async def _bridge(self, session_id: str, relay_url: str, session_token: str, rfb_port: int, agent_id: str, ttl_s: int = 0):
         try:
             async with ws_connect(
                 relay_url,
-                additional_headers={"X-Session-Token": session_token},
-                subprotocols=["iagent.session.v1"],
+                additional_headers={"Authorization": f"Bearer {session_token}"},
+                subprotocols=[cast(Subprotocol, "iagent.session.v1")],
+                max_size=BACKPRESSURE_BUFFER * 2,
             ) as ws:
-                # Connect to agent RFB
-                reader, writer = await asyncio.open_connection("127.0.0.1", rfb_port)
+                reader, writer = await asyncio.wait_for(
+                    asyncio.open_connection("127.0.0.1", rfb_port),
+                    timeout=self.dial_timeout,
+                )
 
                 async def ws_to_tcp():
                     try:
@@ -93,7 +102,15 @@ class VNCBridge:
                     except Exception:
                         pass
 
-                await asyncio.gather(ws_to_tcp(), tcp_to_ws())
+                if ttl_s > 0:
+                    await asyncio.wait_for(
+                        asyncio.gather(ws_to_tcp(), tcp_to_ws()),
+                        timeout=ttl_s,
+                    )
+                else:
+                    await asyncio.gather(ws_to_tcp(), tcp_to_ws())
+        except asyncio.TimeoutError:
+            logger.info("vnc session %s expired (ttl=%ds)", session_id, ttl_s)
         except Exception:
             logger.exception("vnc bridge error for session %s", session_id)
         finally:
@@ -101,6 +118,10 @@ class VNCBridge:
             client = self.docker.get_client(agent_id)
             if client:
                 await client.vnc_stop()
+            await self.outbox.enqueue_and_send(FrameType.VNC_CLOSE, {
+                "session_id": session_id,
+                "reason": "bridge closed",
+            })
 
     async def handle_vnc_close(self, payload: dict):
         session_id = payload.get("session_id", "")

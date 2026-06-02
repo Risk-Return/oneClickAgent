@@ -6,7 +6,7 @@ handles cancellation. Signals pool reaper on terminal to release agent back to I
 import asyncio
 import logging
 
-from iagent_device.tunnel.codec import FrameType, new_msg_id
+from iagent_device.tunnel.codec import FrameType
 from iagent_device.tunnel.outbox import Outbox
 from iagent_device.store.repositories import JobRepo, AgentRepo
 from iagent_device.docker.manager import DockerManager
@@ -21,11 +21,15 @@ class JobDispatcher:
         agent_repo: AgentRepo,
         docker_mgr: DockerManager,
         outbox: Outbox,
+        stager=None,
+        cred_relay=None,
     ):
         self.job_repo = job_repo
         self.agent_repo = agent_repo
         self.docker = docker_mgr
         self.outbox = outbox
+        self.stager = stager
+        self.cred_relay = cred_relay
 
     async def handle_job_dispatch(self, payload: dict):
         job_id = payload["job_id"]
@@ -50,7 +54,16 @@ class JobDispatcher:
             return
 
         try:
-            result = await client.create_job(job_id, command, {}, "", skill_id)
+            if credential_ids_list and self.cred_relay:
+                for cred in credential_ids_list:
+                    cred_payload = {
+                        "job_id": job_id,
+                        "credential_id": cred,
+                        "agent_id": agent_id,
+                    }
+                    await self.cred_relay.inject_credential(cred_payload)
+
+            await client.create_job(job_id, command, {}, "", skill_id)
             self.job_repo.update_status(job_id, "running")
             await self.outbox.enqueue_and_send(FrameType.JOB_PROGRESS, {
                 "job_id": job_id,
@@ -58,21 +71,9 @@ class JobDispatcher:
                 "percent": 0,
                 "message": "Job started",
             })
-            # Simulate progress then result
-            await asyncio.sleep(1)
-            await self.outbox.enqueue_and_send(FrameType.JOB_PROGRESS, {
-                "job_id": job_id,
-                "status": "running",
-                "percent": 50,
-                "message": "Processing...",
-            })
-            await asyncio.sleep(1)
-            self.job_repo.update_status(job_id, "succeeded")
-            await self.outbox.enqueue_and_send(FrameType.JOB_RESULT, {
-                "job_id": job_id,
-                "status": "succeeded",
-                "result": {"output": result},
-            })
+
+            await self._poll_progress(client, job_id)
+
         except Exception as e:
             self.job_repo.update_status(job_id, "failed")
             await self.outbox.enqueue_and_send(FrameType.JOB_RESULT, {
@@ -81,7 +82,71 @@ class JobDispatcher:
                 "error_msg": str(e),
             })
         finally:
+            if self.stager:
+                try:
+                    await self.stager.cleanup(job_id)
+                except Exception:
+                    logger.exception("cleanup failed for job %s", job_id)
+                await self.outbox.enqueue_and_send(FrameType.FILE_PURGED, {
+                    "job_id": job_id,
+                })
+            await self.docker.reaper_cleanup(agent_id, job_id)
             self.agent_repo.release(agent_id)
+            await self.outbox.enqueue_and_send(FrameType.AGENT_STATUS, {
+                "agent_id": agent_id,
+                "status": "idle",
+                "health": "healthy",
+                "restarts": 0,
+                "usage": {"cpu_pct": 0, "mem_mb": 0, "disk_mb": 0},
+                "ts": int(asyncio.get_event_loop().time() * 1000),
+            })
+
+    async def _poll_progress(self, client, job_id: str):
+        last_percent = 0
+        for _ in range(300):
+            try:
+                status_data = await client.get_job(job_id)
+                status = status_data.get("status", "running")
+                percent = status_data.get("percent", last_percent)
+                message = status_data.get("message", "")
+
+                if percent != last_percent or status in ("succeeded", "failed", "cancelled"):
+                    await self.outbox.enqueue_and_send(FrameType.JOB_PROGRESS, {
+                        "job_id": job_id,
+                        "status": status,
+                        "percent": percent,
+                        "message": message,
+                    })
+                    last_percent = percent
+
+                if status in ("succeeded", "failed", "cancelled"):
+                    result_data = status_data.get("result", {})
+                    error_data = status_data.get("error", {})
+
+                    self.job_repo.update_status(job_id, status)
+                    if status == "succeeded":
+                        await self.outbox.enqueue_and_send(FrameType.JOB_RESULT, {
+                            "job_id": job_id,
+                            "status": "succeeded",
+                            "result": result_data,
+                        })
+                    else:
+                        await self.outbox.enqueue_and_send(FrameType.JOB_RESULT, {
+                            "job_id": job_id,
+                            "status": status,
+                            "error_msg": error_data.get("message", status),
+                        })
+                    return
+            except Exception:
+                pass
+            await asyncio.sleep(2)
+
+        self.job_repo.update_status(job_id, "failed")
+        await self.outbox.enqueue_and_send(FrameType.JOB_RESULT, {
+            "job_id": job_id,
+            "status": "failed",
+            "error_msg": "job timed out",
+        })
 
     async def handle_job_cancel(self, payload: dict):
         job_id = payload.get("job_id", "")
