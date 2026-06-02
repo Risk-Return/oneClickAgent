@@ -1,7 +1,7 @@
 ---
 description: Audit a module's implementation against its spec. Use when the user asks to audit, review dev progress, check spec compliance, find implementation gaps, or verify a module. Trigger keywords: audit, gap analysis, spec review, implementation review, did we build what we planned, check against spec, verify module.
 mode: subagent
-model: hboom_ds/deepseek-v4-pro
+model: hboom_DS/deepseek-v4-pro
 permission:
   edit: deny
   bash: ask
