@@ -1,0 +1,9 @@
+{
+  "name": "iagent-agent-deps",
+  "private": true,
+  "dependencies": {
+    "typescript": "^5.4.0",
+    "esbuild": "^0.20.0",
+    "prettier": "^3.2.0"
+  }
+}
