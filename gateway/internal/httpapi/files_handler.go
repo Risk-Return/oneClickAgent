@@ -51,7 +51,7 @@ func (deps *Dependencies) handleListFiles() http.HandlerFunc {
 		}
 
 		writeJSON(w, http.StatusOK, model.PaginatedResponse[model.File]{
-			Data:       files,
+			Items:       files,
 			NextCursor: nextCursor,
 			HasMore:    nextCursor != nil,
 		})

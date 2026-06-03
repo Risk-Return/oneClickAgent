@@ -282,6 +282,19 @@ func writeError(w http.ResponseWriter, status int, code model.ErrorCode, message
 	})
 }
 
+func writeErrorWithRequest(r *http.Request, w http.ResponseWriter, status int, code model.ErrorCode, message string) {
+	reqID := middleware.GetReqID(r.Context())
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(status)
+	_ = json.NewEncoder(w).Encode(model.APIErrorResponse{
+		Error: model.APIError{
+			Code:      code,
+			Message:   message,
+			RequestID: reqID,
+		},
+	})
+}
+
 func decodeJSON(r *http.Request, v interface{}) error {
 	defer r.Body.Close()
 	return json.NewDecoder(r.Body).Decode(v)

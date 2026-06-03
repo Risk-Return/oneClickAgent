@@ -128,7 +128,7 @@ func (deps *Dependencies) handleListDevices() http.HandlerFunc {
 		}
 
 		writeJSON(w, http.StatusOK, model.PaginatedResponse[model.Device]{
-			Data:       devices,
+			Items:       devices,
 			NextCursor: nextCursor,
 			HasMore:    nextCursor != nil,
 		})

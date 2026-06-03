@@ -1,10 +1,17 @@
 package httpapi
 
 import (
+	"errors"
 	"net/http"
 
 	"github.com/go-chi/chi/v5"
+	"github.com/oneClickAgent/gateway/internal/auth"
 	"github.com/oneClickAgent/gateway/internal/model"
+)
+
+var (
+	errUnauthorized = errors.New("unauthorized")
+	errForbidden    = errors.New("forbidden")
 )
 
 func (deps *Dependencies) handleListMyAgents() http.HandlerFunc {
@@ -163,7 +170,7 @@ func (deps *Dependencies) handleAdminListAgents() http.HandlerFunc {
 		}
 
 		writeJSON(w, http.StatusOK, model.PaginatedResponse[model.Agent]{
-			Data:       agents,
+			Items:       agents,
 			NextCursor: nextCursor,
 			HasMore:    nextCursor != nil,
 		})
@@ -244,5 +251,22 @@ func (deps *Dependencies) handleAdminDeleteAgent() http.HandlerFunc {
 }
 
 func checkAgentAccess(claims interface{}, agent *model.Agent) error {
+	c, ok := claims.(*auth.Claims)
+	if !ok || c == nil {
+		return errUnauthorized
+	}
+	if c.Role == model.RoleAdmin {
+		return nil
+	}
+	if agent.UserID == nil {
+		return errForbidden
+	}
+	id, err := auth.ExtractUserID(c)
+	if err != nil {
+		return errUnauthorized
+	}
+	if id != *agent.UserID {
+		return errForbidden
+	}
 	return nil
 }

@@ -83,6 +83,7 @@ func NewRouter(deps *Dependencies) chi.Router {
 	r.Group(func(r chi.Router) {
 		r.Use(authMiddleware(deps.JWT))
 		r.Use(tenantScopeMiddleware(deps.Jobs, deps.Files))
+		r.Use(idempotencyMiddleware)
 
 		// Auth
 		r.Post("/api/v1/auth/logout", deps.handleLogout())
@@ -146,6 +147,7 @@ func NewRouter(deps *Dependencies) chi.Router {
 
 		r.Group(func(r chi.Router) {
 			r.Use(requireAdminMiddleware)
+			r.Get("/api/v1/admin/skills", deps.handleAdminListSkills())
 			r.Post("/api/v1/admin/skills", deps.handleCreateSkill())
 			r.Get("/api/v1/admin/skills/{skillID}", deps.handleAdminGetSkill())
 			r.Patch("/api/v1/admin/skills/{skillID}", deps.handleUpdateSkill())
@@ -170,6 +172,7 @@ func NewRouter(deps *Dependencies) chi.Router {
 			r.Post("/api/v1/admin/orgs", deps.handleCreateOrg())
 			r.Get("/api/v1/admin/orgs", deps.handleListOrgs())
 			r.Get("/api/v1/admin/orgs/{orgID}", deps.handleGetOrg())
+			r.Get("/api/v1/admin/orgs/{orgID}/members", deps.handleListOrgMembers())
 			r.Patch("/api/v1/admin/orgs/{orgID}", deps.handleUpdateOrg())
 			r.Delete("/api/v1/admin/orgs/{orgID}", deps.handleDeleteOrg())
 			r.Post("/api/v1/admin/orgs/{orgID}/members", deps.handleAddOrgMember())

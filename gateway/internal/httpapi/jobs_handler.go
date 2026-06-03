@@ -147,7 +147,7 @@ func (deps *Dependencies) handleListJobs() http.HandlerFunc {
 		}
 
 		writeJSON(w, http.StatusOK, model.PaginatedResponse[model.Job]{
-			Data:       jobs,
+			Items:       jobs,
 			NextCursor: nextCursor,
 			HasMore:    nextCursor != nil,
 		})

@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"log/slog"
 	"net/http"
+	"strings"
 
 	"github.com/gorilla/websocket"
 	"github.com/oneClickAgent/gateway/internal/auth"
@@ -22,11 +23,15 @@ var upgrader = websocket.Upgrader{
 
 func (deps *Dependencies) handleWebSocket() http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
-		// Authenticate via query param or upgrade header
 		token := r.URL.Query().Get("token")
 		if token == "" {
+			authHeader := r.Header.Get("Authorization")
+			if strings.HasPrefix(authHeader, "Bearer ") {
+				token = strings.TrimPrefix(authHeader, "Bearer ")
+			}
+		}
+		if token == "" {
 			token = r.Header.Get("Sec-WebSocket-Protocol")
-			// Try to extract from Authorization-like query
 		}
 
 		if token == "" {
@@ -103,16 +108,28 @@ func (deps *Dependencies) handleWebSocket() http.HandlerFunc {
 
 			msgType, _ := wsMsg["type"].(string)
 			switch msgType {
-			case "subscribe":
-				topic, _ := wsMsg["topic"].(string)
-				if topic != "" {
-					deps.Broker.Subscribe(topic, subscriberID, userID)
+		case "subscribe":
+			if topics, ok := wsMsg["topics"].([]interface{}); ok {
+				for _, t := range topics {
+					if topicStr, ok := t.(string); ok && topicStr != "" {
+						deps.Broker.Subscribe(topicStr, subscriberID, userID)
+					}
 				}
-			case "unsubscribe":
-				topic, _ := wsMsg["topic"].(string)
-				if topic != "" {
-					deps.Broker.Unsubscribe(topic, subscriberID)
+			}
+			if topic, ok := wsMsg["topic"].(string); ok && topic != "" {
+				deps.Broker.Subscribe(topic, subscriberID, userID)
+			}
+		case "unsubscribe":
+			if topics, ok := wsMsg["topics"].([]interface{}); ok {
+				for _, t := range topics {
+					if topicStr, ok := t.(string); ok && topicStr != "" {
+						deps.Broker.Unsubscribe(topicStr, subscriberID)
+					}
 				}
+			}
+			if topic, ok := wsMsg["topic"].(string); ok && topic != "" {
+				deps.Broker.Unsubscribe(topic, subscriberID)
+			}
 			case "ping":
 				pong := map[string]interface{}{"type": "pong"}
 				pongData, _ := json.Marshal(pong)

@@ -470,15 +470,16 @@ type PaginationParams struct {
 }
 
 type PaginatedResponse[T any] struct {
-	Data       []T    `json:"data"`
+	Items      []T    `json:"items"`
 	NextCursor *UUID  `json:"next_cursor,omitempty"`
 	HasMore    bool   `json:"has_more"`
 }
 
 type APIError struct {
-	Code    ErrorCode `json:"code"`
-	Message string    `json:"message"`
-	Details *string   `json:"details,omitempty"`
+	Code      ErrorCode `json:"code"`
+	Message   string    `json:"message"`
+	Details   *string   `json:"details,omitempty"`
+	RequestID string    `json:"request_id,omitempty"`
 }
 
 type APIErrorResponse struct {

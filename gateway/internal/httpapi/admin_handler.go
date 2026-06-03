@@ -42,7 +42,7 @@ func (deps *Dependencies) handleListOrgs() http.HandlerFunc {
 		}
 
 		writeJSON(w, http.StatusOK, model.PaginatedResponse[model.Organization]{
-			Data:       orgs,
+			Items:       orgs,
 			NextCursor: nextCursor,
 			HasMore:    nextCursor != nil,
 		})
@@ -164,6 +164,24 @@ func (deps *Dependencies) handleRemoveOrgMember() http.HandlerFunc {
 		}
 
 		writeJSON(w, http.StatusOK, map[string]string{"message": "member removed"})
+	}
+}
+
+func (deps *Dependencies) handleListOrgMembers() http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		orgID, err := model.ParseUUID(chi.URLParam(r, "orgID"))
+		if err != nil {
+			writeError(w, http.StatusBadRequest, model.ErrCodeValidationFailed, "invalid org_id")
+			return
+		}
+
+		members, err := deps.Orgs.ListMembers(r.Context(), orgID)
+		if err != nil {
+			writeError(w, http.StatusInternalServerError, model.ErrCodeInternalError, "failed to list members")
+			return
+		}
+
+		writeJSON(w, http.StatusOK, members)
 	}
 }
 

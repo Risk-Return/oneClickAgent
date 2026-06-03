@@ -230,7 +230,7 @@ func (deps *Dependencies) handleLogout() http.HandlerFunc {
 			writeError(w, http.StatusInternalServerError, model.ErrCodeInternalError, "internal error")
 			return
 		}
-		writeJSON(w, http.StatusOK, map[string]string{"message": "logged out"})
+		w.WriteHeader(http.StatusNoContent)
 	}
 }
 

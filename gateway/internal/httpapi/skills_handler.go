@@ -26,6 +26,25 @@ func (deps *Dependencies) handleListVisibleSkills() http.HandlerFunc {
 	}
 }
 
+func (deps *Dependencies) handleAdminListSkills() http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		cursor := parseCursor(r)
+		limit := parseLimit(r, 50)
+
+		skills, nextCursor, err := deps.Vault.ListSkills(r.Context(), cursor, limit)
+		if err != nil {
+			writeError(w, http.StatusInternalServerError, model.ErrCodeInternalError, "failed to list skills")
+			return
+		}
+
+		writeJSON(w, http.StatusOK, model.PaginatedResponse[model.Skill]{
+			Items:      skills,
+			NextCursor: nextCursor,
+			HasMore:    nextCursor != nil,
+		})
+	}
+}
+
 func (deps *Dependencies) handleGetSkill() http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		userID := getUserID(r)

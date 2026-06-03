@@ -284,8 +284,8 @@ func TestListJobs(t *testing.T) {
 
 	var page model.PaginatedResponse[model.Job]
 	json.Unmarshal(w2.Body.Bytes(), &page)
-	if len(page.Data) != 3 {
-		t.Errorf("expected 3 jobs, got %d", len(page.Data))
+	if len(page.Items) != 3 {
+		t.Errorf("expected 3 jobs, got %d", len(page.Items))
 	}
 }
 
