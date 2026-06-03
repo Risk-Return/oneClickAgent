@@ -58,8 +58,8 @@ export function AgentsPage() {
                     <Badge key={tag} variant="secondary" className="text-xs">{tag}</Badge>
                   ))}
                 </div>
-                <ResourceBar label="CPU" used={agent.limits?.cpu / 2 * 100 || 0} total={agent.limits?.cpu || 2} unit="cores" />
-                <ResourceBar label="Memory" used={agent.limits?.mem_mb * 0.3 || 0} total={agent.limits?.mem_mb || 4096} unit="MB" />
+                <ResourceBar label="CPU" used={0} total={agent.limits?.cpu || 2} unit="cores" />
+                <ResourceBar label="Memory" used={0} total={agent.limits?.mem_mb || 4096} unit="MB" />
                 {agent.job_id && (
                   <Link to={`/jobs/${agent.job_id}`}>
                     <Button variant="outline" size="sm">

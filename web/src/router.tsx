@@ -16,6 +16,8 @@ import { SkillVaultPage } from "@/pages/admin/SkillVaultPage";
 import { FleetRolloutPage } from "@/pages/admin/FleetRolloutPage";
 import { OrganizationsPage } from "@/pages/admin/OrganizationsPage";
 import { VisibilityPage } from "@/pages/admin/VisibilityPage";
+import { UserTiersPage } from "@/pages/admin/UserTiersPage";
+import { AgentPoolPage } from "@/pages/admin/AgentPoolPage";
 
 export const router = createBrowserRouter([
   {
@@ -55,6 +57,8 @@ export const router = createBrowserRouter([
           { path: "admin/fleet-rollout", element: <FleetRolloutPage /> },
           { path: "admin/organizations", element: <OrganizationsPage /> },
           { path: "admin/visibility", element: <VisibilityPage /> },
+          { path: "admin/users", element: <UserTiersPage /> },
+          { path: "admin/pool", element: <AgentPoolPage /> },
         ],
       },
     ],

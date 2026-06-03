@@ -1,34 +1,43 @@
 import { useState } from "react";
 import { apiClient } from "@/api/client";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
-import { Card, CardContent } from "@/components/ui/card";
+import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import {
-  Dialog,
-  DialogContent,
-  DialogDescription,
-  DialogFooter,
-  DialogHeader,
-  DialogTitle,
-  DialogTrigger,
+  Dialog, DialogContent, DialogDescription, DialogFooter,
+  DialogHeader, DialogTitle, DialogTrigger,
 } from "@/components/ui/dialog";
 import { toast } from "sonner";
-import { Building2, Plus, Trash2, Loader2 } from "lucide-react";
+import { Building2, Plus, Trash2, Loader2, Users, UserPlus, UserX } from "lucide-react";
 import type { Organization } from "@/api/schemas";
+
+interface Member {
+  id: string;
+  username: string;
+  email: string;
+}
 
 export function OrganizationsPage() {
   const queryClient = useQueryClient();
   const [dialogOpen, setDialogOpen] = useState(false);
   const [formData, setFormData] = useState({ name: "", description: "" });
   const [creating, setCreating] = useState(false);
+  const [selectedOrgId, setSelectedOrgId] = useState<string | null>(null);
+  const [addMemberId, setAddMemberId] = useState("");
 
   const { data: orgs, isLoading } = useQuery({
     queryKey: ["admin", "orgs"],
     queryFn: () => apiClient.get<Organization[]>("/admin/orgs"),
+  });
+
+  const { data: members, isLoading: membersLoading, refetch: refetchMembers } = useQuery({
+    queryKey: ["admin", "orgs", selectedOrgId, "members"],
+    queryFn: () => apiClient.get<Member[]>(`/admin/orgs/${selectedOrgId}/members`),
+    enabled: !!selectedOrgId,
   });
 
   const handleCreate = async () => {
@@ -53,9 +62,33 @@ export function OrganizationsPage() {
     try {
       await apiClient.delete(`/admin/orgs/${orgId}`);
       queryClient.invalidateQueries({ queryKey: ["admin", "orgs"] });
+      if (selectedOrgId === orgId) setSelectedOrgId(null);
       toast.success("Organization deleted");
     } catch {
       toast.error("Failed to delete organization");
+    }
+  };
+
+  const handleAddMember = async () => {
+    if (!selectedOrgId || !addMemberId) return;
+    try {
+      await apiClient.post(`/admin/orgs/${selectedOrgId}/members`, { user_id: addMemberId });
+      refetchMembers();
+      setAddMemberId("");
+      toast.success("Member added");
+    } catch (err: unknown) {
+      toast.error((err as { message?: string })?.message || "Failed to add member");
+    }
+  };
+
+  const handleRemoveMember = async (userId: string) => {
+    if (!selectedOrgId) return;
+    try {
+      await apiClient.delete(`/admin/orgs/${selectedOrgId}/members/${userId}`);
+      refetchMembers();
+      toast.success("Member removed");
+    } catch {
+      toast.error("Failed to remove member");
     }
   };
 
@@ -80,21 +113,11 @@ export function OrganizationsPage() {
             <div className="space-y-3">
               <div className="space-y-2">
                 <Label htmlFor="org-name">Name</Label>
-                <Input
-                  id="org-name"
-                  value={formData.name}
-                  onChange={(e) => setFormData((d) => ({ ...d, name: e.target.value }))}
-                  placeholder="Engineering Team"
-                />
+                <Input id="org-name" value={formData.name} onChange={(e) => setFormData((d) => ({ ...d, name: e.target.value }))} placeholder="Engineering Team" />
               </div>
               <div className="space-y-2">
                 <Label htmlFor="org-desc">Description</Label>
-                <Input
-                  id="org-desc"
-                  value={formData.description}
-                  onChange={(e) => setFormData((d) => ({ ...d, description: e.target.value }))}
-                  placeholder="The engineering department"
-                />
+                <Input id="org-desc" value={formData.description} onChange={(e) => setFormData((d) => ({ ...d, description: e.target.value }))} placeholder="The engineering department" />
               </div>
             </div>
             <DialogFooter>
@@ -107,54 +130,115 @@ export function OrganizationsPage() {
         </Dialog>
       </div>
 
-      <Card>
-        <CardContent className="p-0">
-          <Table>
-            <TableHeader>
-              <TableRow>
-                <TableHead>Name</TableHead>
-                <TableHead>Description</TableHead>
-                <TableHead>Created</TableHead>
-                <TableHead className="text-right">Actions</TableHead>
-              </TableRow>
-            </TableHeader>
-            <TableBody>
-              {isLoading ? (
-                Array.from({ length: 3 }).map((_, i) => (
-                  <TableRow key={i}>
-                    <TableCell><Skeleton className="h-4 w-24" /></TableCell>
-                    <TableCell><Skeleton className="h-4 w-40" /></TableCell>
-                    <TableCell><Skeleton className="h-4 w-20" /></TableCell>
-                    <TableCell><Skeleton className="h-4 w-16" /></TableCell>
-                  </TableRow>
-                ))
-              ) : orgs?.length === 0 ? (
+      <div className="grid gap-6 md:grid-cols-2">
+        <Card>
+          <CardHeader>
+            <CardTitle className="text-base">Organizations</CardTitle>
+          </CardHeader>
+          <CardContent className="p-0">
+            <Table>
+              <TableHeader>
                 <TableRow>
-                  <TableCell colSpan={4} className="py-8 text-center text-muted-foreground">
-                    <Building2 className="mx-auto h-8 w-8 mb-2" />
-                    No organizations yet.
-                  </TableCell>
+                  <TableHead>Name</TableHead>
+                  <TableHead>Created</TableHead>
+                  <TableHead className="text-right">Actions</TableHead>
                 </TableRow>
-              ) : (
-                orgs?.map((org) => (
-                  <TableRow key={org.id}>
-                    <TableCell className="font-medium">{org.name}</TableCell>
-                    <TableCell className="text-muted-foreground">{org.description || "-"}</TableCell>
-                    <TableCell className="text-muted-foreground text-sm">
-                      {new Date(org.created_at).toLocaleDateString()}
-                    </TableCell>
-                    <TableCell className="text-right">
-                      <Button variant="ghost" size="icon" onClick={() => handleDelete(org.id)}>
-                        <Trash2 className="h-4 w-4 text-destructive" />
-                      </Button>
+              </TableHeader>
+              <TableBody>
+                {isLoading ? (
+                  Array.from({ length: 3 }).map((_, i) => (
+                    <TableRow key={i}>
+                      <TableCell><Skeleton className="h-4 w-24" /></TableCell>
+                      <TableCell><Skeleton className="h-4 w-20" /></TableCell>
+                      <TableCell><Skeleton className="h-4 w-16" /></TableCell>
+                    </TableRow>
+                  ))
+                ) : orgs?.length === 0 ? (
+                  <TableRow>
+                    <TableCell colSpan={3} className="py-8 text-center text-muted-foreground">
+                      <Building2 className="mx-auto h-8 w-8 mb-2" />
+                      No organizations yet.
                     </TableCell>
                   </TableRow>
-                ))
-              )}
-            </TableBody>
-          </Table>
-        </CardContent>
-      </Card>
+                ) : (
+                  orgs?.map((org) => (
+                    <TableRow
+                      key={org.id}
+                      className="cursor-pointer hover:bg-muted/50"
+                      onClick={() => setSelectedOrgId(org.id)}
+                    >
+                      <TableCell className="font-medium">{org.name}</TableCell>
+                      <TableCell className="text-muted-foreground text-sm">
+                        {new Date(org.created_at).toLocaleDateString()}
+                      </TableCell>
+                      <TableCell className="text-right">
+                        <Button variant="ghost" size="icon" onClick={(e) => { e.stopPropagation(); handleDelete(org.id); }}>
+                          <Trash2 className="h-4 w-4 text-destructive" />
+                        </Button>
+                      </TableCell>
+                    </TableRow>
+                  ))
+                )}
+              </TableBody>
+            </Table>
+          </CardContent>
+        </Card>
+
+        {selectedOrgId && (
+          <Card>
+            <CardHeader className="flex flex-row items-center justify-between">
+              <CardTitle className="text-base">Members</CardTitle>
+              <div className="flex items-center gap-2">
+                <Input
+                  placeholder="User UUID"
+                  value={addMemberId}
+                  onChange={(e) => setAddMemberId(e.target.value)}
+                  className="h-8 w-40 text-xs"
+                  onKeyDown={(e) => e.key === "Enter" && handleAddMember()}
+                />
+                <Button size="sm" variant="outline" onClick={handleAddMember} disabled={!addMemberId}>
+                  <UserPlus className="mr-1 h-3 w-3" /> Add
+                </Button>
+              </div>
+            </CardHeader>
+            <CardContent className="p-0">
+              <Table>
+                <TableHeader>
+                  <TableRow>
+                    <TableHead>Username</TableHead>
+                    <TableHead>Email</TableHead>
+                    <TableHead className="text-right">Actions</TableHead>
+                  </TableRow>
+                </TableHeader>
+                <TableBody>
+                  {membersLoading ? (
+                    <TableRow><TableCell colSpan={3}><Skeleton className="h-4 w-full" /></TableCell></TableRow>
+                  ) : !members || members.length === 0 ? (
+                    <TableRow>
+                      <TableCell colSpan={3} className="py-4 text-center text-muted-foreground text-sm">
+                        <Users className="mx-auto h-6 w-6 mb-1" />
+                        No members.
+                      </TableCell>
+                    </TableRow>
+                  ) : (
+                    members.map((member) => (
+                      <TableRow key={member.id}>
+                        <TableCell className="font-medium">{member.username}</TableCell>
+                        <TableCell className="text-muted-foreground text-sm">{member.email}</TableCell>
+                        <TableCell className="text-right">
+                          <Button variant="ghost" size="icon" onClick={() => handleRemoveMember(member.id)}>
+                            <UserX className="h-4 w-4 text-destructive" />
+                          </Button>
+                        </TableCell>
+                      </TableRow>
+                    ))
+                  )}
+                </TableBody>
+              </Table>
+            </CardContent>
+          </Card>
+        )}
+      </div>
     </div>
   );
 }

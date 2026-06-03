@@ -10,7 +10,10 @@ interface JobProgressCardProps {
   queuePosition: number | null;
   estimatedWaitSeconds: number | null;
   startedAt: string | null;
+  errorCode: string | null;
+  errorMessage: string | null;
   onCancel: () => void;
+  onResubmit?: () => void;
 }
 
 export function JobProgressCard({
@@ -20,8 +23,11 @@ export function JobProgressCard({
   queuePosition,
   estimatedWaitSeconds,
   startedAt,
+  errorCode,
+  errorMessage: _errorMessage,
 }: JobProgressCardProps) {
   const isActive = status === "running" || status === "dispatched";
+  const isExpired = errorCode === "QUEUE_TIMEOUT";
 
   const elapsed = startedAt
     ? formatDistanceToNow(new Date(startedAt), { addSuffix: false })
@@ -51,8 +57,16 @@ export function JobProgressCard({
         </div>
       )}
 
-      <Progress value={percent} className={status === "failed" ? "[&>div]:bg-red-500" : ""} />
-      <p className="text-sm text-muted-foreground">{progressMessage || "Waiting..."}</p>
+      {isExpired && (
+        <div className="rounded-md bg-destructive/10 p-3 text-sm text-destructive">
+          Job expired in queue. Cancel or resubmit.
+        </div>
+      )}
+
+      <div aria-live="polite" aria-atomic="true">
+        <Progress value={percent} className={status === "failed" ? "[&>div]:bg-red-500" : ""} />
+        <p className="mt-2 text-sm text-muted-foreground">{progressMessage || "Waiting..."}</p>
+      </div>
     </div>
   );
 }

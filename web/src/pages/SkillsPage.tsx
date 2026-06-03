@@ -11,7 +11,7 @@ export function SkillsPage() {
     <div className="space-y-6 p-6">
       <div>
         <h1 className="text-2xl font-bold tracking-tight">Skills</h1>
-        <p className="text-muted-foreground">Skills available for your jobs. Select at most one per job.</p>
+        <p className="text-muted-foreground">Skills available for your jobs. Select at most one per job. Skills must be installed on the pool's host devices to be usable.</p>
       </div>
 
       {isLoading ? (

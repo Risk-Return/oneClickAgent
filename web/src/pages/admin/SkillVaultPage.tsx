@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { useAdminSkills, useCreateSkill, useInstallSkillFleet } from "@/features/useSkills";
+import { useAdminSkills, useCreateSkill, useInstallSkillFleet, usePublishSkillVersion } from "@/features/useSkills";
 import { Card, CardContent } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -16,27 +16,26 @@ import {
   DialogTitle,
   DialogTrigger,
 } from "@/components/ui/dialog";
-import { Archive, Plus, Download, Loader2 } from "lucide-react";
+import { Archive, Plus, Download, Loader2, Upload } from "lucide-react";
 
 export function SkillVaultPage() {
   const { data: skills, isLoading } = useAdminSkills();
   const createSkill = useCreateSkill();
   const installSkill = useInstallSkillFleet();
+  const publishVersion = usePublishSkillVersion();
   const [dialogOpen, setDialogOpen] = useState(false);
-  const [formData, setFormData] = useState({ key: "", name: "", description: "", visibility: "restricted" });
+  const [formData, setFormData] = useState({ key: "", name: "", description: "" });
+  const [publishSkillId, setPublishSkillId] = useState<string | null>(null);
+  const [publishVersion_str, setPublishVersionStr] = useState("");
+  const [publishFile, setPublishFile] = useState<File | null>(null);
 
   const handleCreate = () => {
     createSkill.mutate(
-      {
-        key: formData.key,
-        name: formData.name,
-        description: formData.description || undefined,
-        visibility: formData.visibility,
-      },
+      { key: formData.key, name: formData.name, description: formData.description || undefined },
       {
         onSuccess: () => {
           setDialogOpen(false);
-          setFormData({ key: "", name: "", description: "", visibility: "restricted" });
+          setFormData({ key: "", name: "", description: "" });
         },
       }
     );
@@ -44,6 +43,23 @@ export function SkillVaultPage() {
 
   const handleInstall = (skillId: string) => {
     installSkill.mutate(skillId);
+  };
+
+  const handlePublish = () => {
+    if (!publishSkillId || !publishVersion_str || !publishFile) return;
+    const fd = new FormData();
+    fd.append("version", publishVersion_str);
+    fd.append("manifest", publishFile);
+    publishVersion.mutate(
+      { skillId: publishSkillId, formData: fd },
+      {
+        onSuccess: () => {
+          setPublishSkillId(null);
+          setPublishVersionStr("");
+          setPublishFile(null);
+        },
+      }
+    );
   };
 
   return (
@@ -101,6 +117,40 @@ export function SkillVaultPage() {
             </DialogFooter>
           </DialogContent>
         </Dialog>
+
+        <Dialog open={!!publishSkillId} onOpenChange={(open) => !open && setPublishSkillId(null)}>
+          <DialogContent>
+            <DialogHeader>
+              <DialogTitle>Publish Version</DialogTitle>
+              <DialogDescription>Upload a new version of this skill.</DialogDescription>
+            </DialogHeader>
+            <div className="space-y-3">
+              <div className="space-y-2">
+                <Label htmlFor="version">Version (semver)</Label>
+                <Input
+                  id="version"
+                  value={publishVersion_str}
+                  onChange={(e) => setPublishVersionStr(e.target.value)}
+                  placeholder="1.0.0"
+                />
+              </div>
+              <div className="space-y-2">
+                <Label htmlFor="artifact">Manifest file</Label>
+                <Input
+                  id="artifact"
+                  type="file"
+                  onChange={(e) => setPublishFile(e.target.files?.[0] || null)}
+                />
+              </div>
+            </div>
+            <DialogFooter>
+              <Button onClick={handlePublish} disabled={!publishVersion_str || !publishFile || publishVersion.isPending}>
+                {publishVersion.isPending ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : null}
+                Publish
+              </Button>
+            </DialogFooter>
+          </DialogContent>
+        </Dialog>
       </div>
 
       <Card>
@@ -125,7 +175,7 @@ export function SkillVaultPage() {
                     <TableCell><Skeleton className="h-4 w-16" /></TableCell>
                     <TableCell><Skeleton className="h-4 w-12" /></TableCell>
                     <TableCell><Skeleton className="h-4 w-16" /></TableCell>
-                    <TableCell><Skeleton className="h-4 w-20" /></TableCell>
+                    <TableCell><Skeleton className="h-4 w-40" /></TableCell>
                   </TableRow>
                 ))
               ) : skills?.length === 0 ? (
@@ -150,9 +200,27 @@ export function SkillVaultPage() {
                       <Badge variant={skill.status === "active" ? "success" : "secondary"}>{skill.status}</Badge>
                     </TableCell>
                     <TableCell className="text-right">
-                      <Button variant="ghost" size="sm" onClick={() => handleInstall(skill.id)} disabled={installSkill.isPending}>
-                        <Download className="mr-1 h-3 w-3" /> Install fleet
-                      </Button>
+                      <div className="flex items-center justify-end gap-1">
+                        <Button
+                          variant="ghost"
+                          size="sm"
+                          onClick={() => {
+                            setPublishSkillId(skill.id);
+                            setPublishVersionStr("");
+                            setPublishFile(null);
+                          }}
+                        >
+                          <Upload className="mr-1 h-3 w-3" /> Publish
+                        </Button>
+                        <Button
+                          variant="ghost"
+                          size="sm"
+                          onClick={() => handleInstall(skill.id)}
+                          disabled={installSkill.isPending}
+                        >
+                          <Download className="mr-1 h-3 w-3" /> Install fleet
+                        </Button>
+                      </div>
                     </TableCell>
                   </TableRow>
                 ))

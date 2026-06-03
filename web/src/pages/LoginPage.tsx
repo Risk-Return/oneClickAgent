@@ -31,8 +31,7 @@ export function LoginPage() {
     try {
       const success = await TokenManager.getInstance().login(data.email, data.password);
       if (success) {
-        const role = TokenManager.getInstance().getUserRole();
-        navigate(role === "admin" ? "/admin/devices" : "/", { replace: true });
+        navigate("/", { replace: true });
         toast.success("Welcome back!");
       } else {
         setError("Invalid email or password.");

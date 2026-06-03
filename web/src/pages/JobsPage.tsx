@@ -1,7 +1,10 @@
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { useParams, useNavigate } from "react-router-dom";
 import { useJob, useSubmitJob, useCancelJob } from "@/features/useJobs";
 import { useVisibleSkills } from "@/features/useSkills";
+import { useCredentials, useOpenVNC } from "@/features/useCredentials";
+import { getWSClient } from "@/api/ws";
+import { apiClient } from "@/api/client";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Textarea } from "@/components/ui/textarea";
@@ -10,40 +13,117 @@ import { Skeleton } from "@/components/ui/skeleton";
 import { JobProgressCard } from "@/components/JobProgressCard";
 import { FileDropzone } from "@/components/FileDropzone";
 import { SkillSelector } from "@/components/SkillSelector";
+import { VNCPanel } from "@/components/VNCPanel";
 import { toast } from "sonner";
-import { Send, Loader2, Monitor, X } from "lucide-react";
+import { Send, Loader2, Monitor, X, Key } from "lucide-react";
+import type { Job, JobStatus } from "@/api/schemas";
 
 export function JobsPage() {
   const { jobId } = useParams<{ jobId: string }>();
   const navigate = useNavigate();
   const [fileIds, setFileIds] = useState<string[]>([]);
   const [skillId, setSkillId] = useState<string | null>(null);
+  const [credentialIds, setCredentialIds] = useState<string[]>([]);
   const [command, setCommand] = useState("");
+  const [inlineError, setInlineError] = useState<string | null>(null);
+  const [vncOpen, setVncOpen] = useState(false);
+  const [vncData, setVncData] = useState<{ wsUrl: string; rfbPassword: string; sessionId: string } | null>(null);
 
   const submitJob = useSubmitJob();
-  const { data: job, isLoading: jobLoading } = useJob(jobId || "");
   const cancelJob = useCancelJob();
+  const openVNC = useOpenVNC();
   const { data: skills } = useVisibleSkills();
+  const { data: credentials } = useCredentials();
+
+  const [liveJob, setLiveJob] = useState<Job | null>(null);
+  const { data: job, isLoading: jobLoading } = useJob(jobId || "");
+
+  useEffect(() => {
+    if (job && jobId) {
+      setLiveJob(job);
+    }
+  }, [job, jobId]);
+
+  useEffect(() => {
+    if (!jobId) return;
+    const ws = getWSClient();
+    ws.connect();
+
+    ws.subscribe(`job:${jobId}`, (event) => {
+      if (event.type === "job.progress") {
+        setLiveJob((prev) => {
+          if (!prev) return prev;
+          return {
+            ...prev,
+            status: (event.payload.status as JobStatus) || prev.status,
+            percent: (event.payload.percent as number) ?? prev.percent,
+            progress_message: (event.payload.message as string) ?? prev.progress_message,
+          };
+        });
+      }
+      if (event.type === "job.queue_update") {
+        setLiveJob((prev) => {
+          if (!prev) return prev;
+          return {
+            ...prev,
+            queue_position: (event.payload.queue_position as number) ?? prev.queue_position,
+            estimated_wait_seconds: (event.payload.estimated_wait_seconds as number) ?? prev.estimated_wait_seconds,
+          };
+        });
+      }
+      if (event.type === "job.result") {
+        setLiveJob((prev) => {
+          if (!prev) return prev;
+          return {
+            ...prev,
+            status: (event.payload.status as JobStatus) || prev.status,
+            result: (event.payload.result as Record<string, unknown>) || prev.result,
+          };
+        });
+        if (event.payload.status === "succeeded") {
+          toast.success("Job completed!");
+        } else if (event.payload.status === "failed") {
+          toast.error("Job failed");
+        }
+      }
+    });
+
+    return () => {
+      ws.unsubscribe(`job:${jobId}`, () => {});
+    };
+  }, [jobId]);
+
+  const effectiveJob = liveJob || job;
 
   const handleSubmit = () => {
     if (!command.trim()) {
-      toast.error("Please enter a command");
+      setInlineError("Please enter a command.");
       return;
     }
+    setInlineError(null);
 
     submitJob.mutate(
       {
         command: command.trim(),
         file_ids: fileIds.length > 0 ? fileIds : undefined,
         skill_id: skillId || undefined,
+        credential_ids: credentialIds.length > 0 ? credentialIds : undefined,
       },
       {
         onSuccess: (job) => {
           setCommand("");
           setFileIds([]);
           setSkillId(null);
+          setCredentialIds([]);
           if (job.id) {
             navigate(`/jobs/${job.id}`);
+          }
+        },
+        onError: (error: { code?: string; message?: string }) => {
+          if (error.code === "QUEUE_FULL") {
+            setInlineError("Too many queued jobs — cancel one or wait.");
+          } else {
+            setInlineError(error.message || "Failed to submit job");
           }
         },
       }
@@ -51,9 +131,53 @@ export function JobsPage() {
   };
 
   const handleCancel = () => {
-    if (job?.id) {
-      cancelJob.mutate(job.id);
+    if (effectiveJob?.id) {
+      cancelJob.mutate(effectiveJob.id);
     }
+  };
+
+  const toggleCredential = (credId: string) => {
+    setCredentialIds((prev) =>
+      prev.includes(credId) ? prev.filter((id) => id !== credId) : [...prev, credId]
+    );
+  };
+
+  const handleOpenVNC = () => {
+    if (!effectiveJob?.id) return;
+    openVNC.mutate(effectiveJob.id, {
+      onSuccess: (data) => {
+        setVncData({
+          wsUrl: data.ws_url,
+          rfbPassword: data.rfb_password,
+          sessionId: data.session_id,
+        });
+        setVncOpen(true);
+      },
+      onError: (error: { message?: string }) => {
+        toast.error(error.message || "Failed to open browser");
+      },
+    });
+  };
+
+  const handleSaveLogin = async (sessionId: string, label: string) => {
+    try {
+      await apiClient.post(`/vnc/${sessionId}/save-login`, { label });
+      toast.success(`Login "${label}" saved`);
+    } catch (err: unknown) {
+      toast.error((err as { message?: string })?.message || "Failed to save login");
+    }
+  };
+
+  const handleCloseVNC = async () => {
+    if (vncData?.sessionId) {
+      try {
+        await apiClient.delete(`/vnc/${vncData.sessionId}`);
+      } catch {
+        // session may already be closed
+      }
+    }
+    setVncOpen(false);
+    setVncData(null);
   };
 
   if (jobId) {
@@ -64,7 +188,7 @@ export function JobsPage() {
           <p className="text-muted-foreground font-mono text-xs">{jobId}</p>
         </div>
 
-        {jobLoading ? (
+        {jobLoading && !effectiveJob ? (
           <Card>
             <CardContent className="space-y-4 py-6">
               <Skeleton className="h-6 w-32" />
@@ -72,48 +196,51 @@ export function JobsPage() {
               <Skeleton className="h-8 w-full" />
             </CardContent>
           </Card>
-        ) : job ? (
+        ) : effectiveJob ? (
           <div className="space-y-4">
             <Card>
               <CardHeader>
-                <CardTitle className="text-base">{job.command}</CardTitle>
-                <CardDescription className="text-xs font-mono">ID: {job.id}</CardDescription>
+                <CardTitle className="text-base">{effectiveJob.command}</CardTitle>
+                <CardDescription className="text-xs font-mono">ID: {effectiveJob.id}</CardDescription>
               </CardHeader>
               <CardContent>
                 <JobProgressCard
-                  status={job.status}
-                  percent={job.percent}
-                  progressMessage={job.progress_message}
-                  queuePosition={job.queue_position}
-                  estimatedWaitSeconds={job.estimated_wait_seconds}
-                  startedAt={job.started_at}
+                  status={effectiveJob.status}
+                  percent={effectiveJob.percent}
+                  progressMessage={effectiveJob.progress_message}
+                  queuePosition={effectiveJob.queue_position}
+                  estimatedWaitSeconds={effectiveJob.estimated_wait_seconds}
+                  startedAt={effectiveJob.started_at}
+                  errorCode={effectiveJob.error_code}
+                  errorMessage={effectiveJob.error_message}
                   onCancel={handleCancel}
                 />
               </CardContent>
             </Card>
 
-            {["succeeded", "failed"].includes(job.status) && job.result && (
+            {["succeeded", "failed"].includes(effectiveJob.status) && effectiveJob.result && (
               <Card>
                 <CardHeader>
                   <CardTitle className="text-base">Result</CardTitle>
                 </CardHeader>
                 <CardContent>
                   <pre className="whitespace-pre-wrap rounded-md bg-muted p-4 text-sm">
-                    {JSON.stringify(job.result, null, 2)}
+                    {JSON.stringify(effectiveJob.result, null, 2)}
                   </pre>
                 </CardContent>
               </Card>
             )}
 
             <div className="flex gap-2">
-              {!["succeeded", "failed", "cancelled"].includes(job.status) && (
+              {!["succeeded", "failed", "cancelled"].includes(effectiveJob.status) && (
                 <Button variant="destructive" onClick={handleCancel} disabled={cancelJob.isPending}>
                   <X className="mr-2 h-4 w-4" /> Cancel job
                 </Button>
               )}
-              {job.status === "running" && (
-                <Button variant="outline">
-                  <Monitor className="mr-2 h-4 w-4" /> Open Browser
+              {effectiveJob.status === "running" && (
+                <Button variant="outline" onClick={handleOpenVNC} disabled={openVNC.isPending}>
+                  {openVNC.isPending ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Monitor className="mr-2 h-4 w-4" />}
+                  Open Browser
                 </Button>
               )}
             </div>
@@ -127,6 +254,17 @@ export function JobsPage() {
               </Button>
             </CardContent>
           </Card>
+        )}
+
+        {vncOpen && vncData && (
+          <VNCPanel
+            open={vncOpen}
+            onClose={handleCloseVNC}
+            wsUrl={vncData.wsUrl}
+            rfbPassword={vncData.rfbPassword}
+            sessionId={vncData.sessionId}
+            onSaveLogin={handleSaveLogin}
+          />
         )}
       </div>
     );
@@ -167,6 +305,38 @@ export function JobsPage() {
               selectedSkillId={skillId}
               onSkillChange={setSkillId}
             />
+          )}
+
+          {credentials && credentials.length > 0 && (
+            <div className="space-y-3">
+              <div className="flex items-center gap-2">
+                <Key className="h-4 w-4" />
+                <Label>Saved Logins (attach to inject browser cookies)</Label>
+              </div>
+              <div className="flex flex-wrap gap-2">
+                {credentials.map((cred) => (
+                  <button
+                    key={cred.id}
+                    type="button"
+                    onClick={() => toggleCredential(cred.id)}
+                    className={`inline-flex items-center gap-1.5 rounded-full border px-3 py-1.5 text-sm font-medium transition-colors ${
+                      credentialIds.includes(cred.id)
+                        ? "border-primary bg-primary text-primary-foreground"
+                        : "border-muted-foreground/25 bg-transparent hover:bg-accent"
+                    }`}
+                  >
+                    {cred.label}
+                    <span className="text-xs opacity-70">({cred.origin})</span>
+                  </button>
+                ))}
+              </div>
+            </div>
+          )}
+
+          {inlineError && (
+            <div className="rounded-md bg-destructive/10 p-3 text-sm text-destructive">
+              {inlineError}
+            </div>
           )}
 
           <Button

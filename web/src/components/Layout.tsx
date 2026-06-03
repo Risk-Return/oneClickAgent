@@ -33,6 +33,8 @@ import {
   ChevronLeft,
   User,
   Key,
+  Users,
+  Layers,
 } from "lucide-react";
 
 interface NavItem {
@@ -57,6 +59,8 @@ const adminNav: NavItem[] = [
   { label: "Fleet Rollout", href: "/admin/fleet-rollout", icon: Rocket, adminOnly: true },
   { label: "Organizations", href: "/admin/organizations", icon: Building2, adminOnly: true },
   { label: "Visibility", href: "/admin/visibility", icon: Eye, adminOnly: true },
+  { label: "Users", href: "/admin/users", icon: Users, adminOnly: true },
+  { label: "Agent Pool", href: "/admin/pool", icon: Layers, adminOnly: true },
 ];
 
 export function Layout() {
