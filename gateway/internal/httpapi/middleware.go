@@ -246,6 +246,127 @@ func extractUUIDFromPath(path, prefix string) string {
 	return rest
 }
 
+// ─── Security Headers (§12) ─────────────────────────────────
+
+// securityHeadersMiddleware sets security-related HTTP headers on every response.
+func securityHeadersMiddleware(next http.Handler) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Strict-Transport-Security", "max-age=63072000; includeSubDomains; preload")
+		w.Header().Set("Content-Security-Policy", "default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data:; connect-src 'self' wss:; frame-src 'none'; object-src 'none'")
+		w.Header().Set("X-Content-Type-Options", "nosniff")
+		w.Header().Set("X-Frame-Options", "DENY")
+		w.Header().Set("Referrer-Policy", "strict-origin-when-cross-origin")
+		w.Header().Set("Cross-Origin-Opener-Policy", "same-origin")
+		w.Header().Set("Cache-Control", "no-store, max-age=0")
+		next.ServeHTTP(w, r)
+	})
+}
+
+// ─── CSRF Protection (§9) ────────────────────────────────────
+
+// csrfMiddleware validates Origin/Referer headers for state-changing requests.
+func csrfMiddleware(allowedOrigins []string) func(http.Handler) http.Handler {
+	allowed := make(map[string]bool)
+	for _, o := range allowedOrigins {
+		allowed[strings.ToLower(o)] = true
+	}
+
+	return func(next http.Handler) http.Handler {
+		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			method := strings.ToUpper(r.Method)
+			if method == "GET" || method == "HEAD" || method == "OPTIONS" || method == "TRACE" {
+				next.ServeHTTP(w, r)
+				return
+			}
+
+			if len(allowed) == 0 || allowed["*"] {
+				next.ServeHTTP(w, r)
+				return
+			}
+
+			origin := r.Header.Get("Origin")
+			referer := r.Header.Get("Referer")
+			if origin == "" && referer == "" {
+				next.ServeHTTP(w, r)
+				return
+			}
+
+			if origin != "" && allowed[strings.ToLower(origin)] {
+				next.ServeHTTP(w, r)
+				return
+			}
+
+			if referer != "" {
+				for originHost := range allowed {
+					if strings.HasPrefix(strings.ToLower(referer), originHost) {
+						next.ServeHTTP(w, r)
+						return
+					}
+				}
+			}
+
+			writeError(w, http.StatusForbidden, model.ErrCodeForbidden, "cross-origin request denied")
+		})
+	}
+}
+
+// ─── Auth Rate Limiting (§9) ──────────────────────────────────
+
+// authRateLimitMiddleware applies per-IP rate limiting for auth endpoints.
+func authRateLimitMiddleware(maxPerMin int) func(http.Handler) http.Handler {
+	var mu sync.Mutex
+	tokens := make(map[string][]time.Time)
+	cleanupTick := time.NewTicker(time.Minute)
+
+	go func() {
+		for range cleanupTick.C {
+			mu.Lock()
+			cutoff := time.Now().Add(-2 * time.Minute)
+			for k, times := range tokens {
+				var valid []time.Time
+				for _, t := range times {
+					if t.After(cutoff) {
+						valid = append(valid, t)
+					}
+				}
+				if len(valid) == 0 {
+					delete(tokens, k)
+				} else {
+					tokens[k] = valid
+				}
+			}
+			mu.Unlock()
+		}
+	}()
+
+	return func(next http.Handler) http.Handler {
+		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			ipKey := r.RemoteAddr
+			now := time.Now()
+			window := now.Add(-time.Minute)
+
+			mu.Lock()
+			times := tokens[ipKey]
+			var recent []time.Time
+			for _, t := range times {
+				if t.After(window) {
+					recent = append(recent, t)
+				}
+			}
+			if len(recent) >= maxPerMin {
+				mu.Unlock()
+				writeError(w, http.StatusTooManyRequests, model.ErrCodeLimitExceeded, "too many auth attempts, try again later")
+				return
+			}
+			recent = append(recent, now)
+			tokens[ipKey] = recent
+			mu.Unlock()
+
+			next.ServeHTTP(w, r)
+		})
+	}
+}
+
 // Helpers to extract info from context
 
 func getClaims(r *http.Request) *auth.Claims {

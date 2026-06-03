@@ -113,6 +113,10 @@ func (deps *Dependencies) handleDeviceEnroll() http.HandlerFunc {
 			DeviceID:    device.ID,
 			DeviceToken: deviceToken,
 		})
+
+		if deps.Audit != nil {
+			_ = deps.Audit.Log(r.Context(), device.OperatorID, "device.enroll", "device", &device.ID, nil)
+		}
 	}
 }
 
@@ -215,6 +219,15 @@ func (deps *Dependencies) handleRotateDeviceToken() http.HandlerFunc {
 		if err := deps.Devices.UpdateToken(r.Context(), deviceID, tokenHash); err != nil {
 			writeError(w, http.StatusInternalServerError, model.ErrCodeInternalError, "failed to rotate token")
 			return
+		}
+
+		if deps.Hub != nil {
+			deps.Hub.CloseDevice(deviceID, 4005, "token_rotated")
+		}
+
+		if deps.Audit != nil {
+			userID := getUserID(r)
+			_ = deps.Audit.Log(r.Context(), userID, "device.token_rotated", "device", &deviceID, nil)
 		}
 
 		writeJSON(w, http.StatusOK, map[string]string{

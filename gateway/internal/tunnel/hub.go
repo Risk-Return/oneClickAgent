@@ -423,6 +423,16 @@ func (h *Hub) PendingCount() int {
 
 // --- Shutdown ---
 
+// CloseDevice closes the tunnel connection for a specific device with the given
+// WebSocket close code and reason. Used when a device's token is rotated.
+func (h *Hub) CloseDevice(deviceID model.UUID, code int, reason string) {
+	h.mu.Lock()
+	defer h.mu.Unlock()
+	if conn, ok := h.devices[deviceID]; ok {
+		conn.Close(code, reason)
+	}
+}
+
 func (h *Hub) CloseAll() {
 	h.mu.Lock()
 	defer h.mu.Unlock()

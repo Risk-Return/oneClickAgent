@@ -2,6 +2,7 @@ package store
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"time"
 
@@ -55,7 +56,7 @@ type JobStoreInterface interface {
 	GetByID(ctx context.Context, id model.UUID) (*model.Job, error)
 	UpdateStatus(ctx context.Context, id model.UUID, status model.JobStatus) error
 	UpdateProgress(ctx context.Context, id model.UUID, percent int, message string) error
-	UpdateResult(ctx context.Context, id model.UUID, status model.JobStatus, result *string) error
+	UpdateResult(ctx context.Context, id model.UUID, status model.JobStatus, result *json.RawMessage) error
 	SetAgent(ctx context.Context, jobID, agentID, deviceID model.UUID) error
 	Cancel(ctx context.Context, id, userID model.UUID) error
 	DequeueNext(ctx context.Context) (*model.Job, error)

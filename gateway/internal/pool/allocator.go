@@ -3,7 +3,6 @@ package pool
 
 import (
 	"context"
-	"encoding/json"
 	"log/slog"
 	"time"
 

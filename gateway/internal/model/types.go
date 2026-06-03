@@ -354,7 +354,7 @@ type RefreshToken struct {
 	UserAgent  string     `json:"-" db:"user_agent"`
 	IP         string     `json:"-" db:"ip"`
 	CreatedAt  time.Time  `json:"created_at" db:"created_at"`
-	Family     string     `json:"-" db:"-"` // theft detection (not in DB)
+	Family     string     `json:"-" db:"family"`  // theft detection (refresh token rotation family)
 }
 
 type AuditLog struct {

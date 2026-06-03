@@ -16,9 +16,9 @@ func (s *TokenStore) Create(ctx context.Context, t *model.RefreshToken) error {
 	t.ID = model.NewUUID()
 	t.CreatedAt = time.Now().UTC()
 	_, err := s.db.Pool.Exec(ctx,
-		`INSERT INTO refresh_tokens (id, user_id, token_hash, expires_at, user_agent, ip, created_at)
-		 VALUES ($1,$2,$3,$4,$5,$6,$7)`,
-		t.ID, t.UserID, t.TokenHash, t.ExpiresAt, t.UserAgent, t.IP, t.CreatedAt,
+		`INSERT INTO refresh_tokens (id, user_id, token_hash, expires_at, user_agent, ip, family, created_at)
+		 VALUES ($1,$2,$3,$4,$5,$6,$7,$8)`,
+		t.ID, t.UserID, t.TokenHash, t.ExpiresAt, t.UserAgent, t.IP, t.Family, t.CreatedAt,
 	)
 	return err
 }
@@ -26,8 +26,8 @@ func (s *TokenStore) Create(ctx context.Context, t *model.RefreshToken) error {
 func (s *TokenStore) GetByHash(ctx context.Context, tokenHash string) (*model.RefreshToken, error) {
 	t := &model.RefreshToken{}
 	err := s.db.Pool.QueryRow(ctx,
-		`SELECT id, user_id, token_hash, expires_at, revoked_at, user_agent, ip, created_at FROM refresh_tokens WHERE token_hash=$1`, tokenHash,
-	).Scan(&t.ID, &t.UserID, &t.TokenHash, &t.ExpiresAt, &t.RevokedAt, &t.UserAgent, &t.IP, &t.CreatedAt)
+		`SELECT id, user_id, token_hash, expires_at, revoked_at, user_agent, ip, family, created_at FROM refresh_tokens WHERE token_hash=$1`, tokenHash,
+	).Scan(&t.ID, &t.UserID, &t.TokenHash, &t.ExpiresAt, &t.RevokedAt, &t.UserAgent, &t.IP, &t.Family, &t.CreatedAt)
 	if err == pgx.ErrNoRows {
 		return nil, nil
 	}
@@ -42,8 +42,7 @@ func (s *TokenStore) Revoke(ctx context.Context, id model.UUID) error {
 
 func (s *TokenStore) RevokeFamily(ctx context.Context, family string) error {
 	now := time.Now().UTC()
-	_, err := s.db.Pool.Exec(ctx, `UPDATE refresh_tokens SET revoked_at=$2 WHERE id::text LIKE $3 AND revoked_at IS NULL`, now, family+"%")
-	_ = now; _ = family
+	_, err := s.db.Pool.Exec(ctx, `UPDATE refresh_tokens SET revoked_at=$2 WHERE family=$1 AND revoked_at IS NULL`, family, now)
 	return err
 }
 

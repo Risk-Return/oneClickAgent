@@ -58,12 +58,15 @@ func NewRouter(deps *Dependencies) chi.Router {
 	// Middleware
 	r.Use(requestIDMiddleware)
 	r.Use(recoverMiddleware)
+	r.Use(securityHeadersMiddleware)
 	r.Use(corsMiddleware(deps.Config.CORSAllowedOrigins))
+	r.Use(csrfMiddleware(deps.Config.CORSAllowedOrigins))
 	r.Use(rateLimitMiddleware(deps.Config.RateLimitAPIPerSec))
 	r.Use(loggerMiddleware)
 
-	// Public routes
+	// Public routes (with auth-specific rate limiting)
 	r.Group(func(r chi.Router) {
+		r.Use(authRateLimitMiddleware(deps.Config.RateLimitAuthPerMin))
 		r.Post("/api/v1/auth/register", deps.handleRegister())
 		r.Post("/api/v1/auth/login", deps.handleLogin())
 		r.Post("/api/v1/auth/refresh", deps.handleRefresh())

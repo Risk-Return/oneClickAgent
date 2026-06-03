@@ -24,6 +24,7 @@ func setupTestDeps() *httpapi.Dependencies {
 		RefreshTTL:         720 * time.Hour,
 		MaxUploadBytes:     100 * 1024 * 1024,
 		RateLimitAPIPerSec: 10000, // high limit for tests
+		RateLimitAuthPerMin: 10000, // high limit for tests
 	}
 
 	broker := pubsub.NewBroker()

@@ -87,6 +87,10 @@ func (deps *Dependencies) handleRegister() http.HandlerFunc {
 			ExpiresIn:    int(deps.Config.AccessTTL.Seconds()),
 			User:         *user,
 		})
+
+		if deps.Audit != nil {
+			_ = deps.Audit.Log(r.Context(), user.ID, "auth.register", "user", &user.ID, map[string]string{"email": user.Email, "username": user.Username})
+		}
 	}
 }
 
@@ -149,6 +153,10 @@ func (deps *Dependencies) handleLogin() http.HandlerFunc {
 			ExpiresIn:    int(deps.Config.AccessTTL.Seconds()),
 			User:         *user,
 		})
+
+		if deps.Audit != nil {
+			_ = deps.Audit.Log(r.Context(), user.ID, "auth.login", "user", &user.ID, nil)
+		}
 	}
 }
 
@@ -220,6 +228,10 @@ func (deps *Dependencies) handleRefresh() http.HandlerFunc {
 			ExpiresIn:    int(deps.Config.AccessTTL.Seconds()),
 			User:         *user,
 		})
+
+		if deps.Audit != nil {
+			_ = deps.Audit.Log(r.Context(), user.ID, "auth.token_refresh", "refresh_token", &rt.ID, nil)
+		}
 	}
 }
 
@@ -229,6 +241,9 @@ func (deps *Dependencies) handleLogout() http.HandlerFunc {
 		if err := deps.Tokens.RevokeAllForUser(r.Context(), userID); err != nil {
 			writeError(w, http.StatusInternalServerError, model.ErrCodeInternalError, "internal error")
 			return
+		}
+		if deps.Audit != nil {
+			_ = deps.Audit.Log(r.Context(), userID, "auth.logout", "user", &userID, nil)
 		}
 		w.WriteHeader(http.StatusNoContent)
 	}

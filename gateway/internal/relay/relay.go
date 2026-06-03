@@ -53,6 +53,12 @@ func (r *FileRelay) StageFile(ctx context.Context, userID model.UUID, fileName s
 	fileID := model.NewUUID()
 	storagePath := filepath.Join(r.baseDir, fileID.String())
 
+	// Sanitize filename: keep only the base name, strip path separators
+	safeName := filepath.Base(filepath.Clean(fileName))
+	if safeName == "." || safeName == "/" {
+		safeName = "upload"
+	}
+
 	// Ensure directory exists
 	if err := os.MkdirAll(r.baseDir, 0o755); err != nil {
 		return nil, fmt.Errorf("create staging dir: %w", err)
@@ -84,7 +90,7 @@ func (r *FileRelay) StageFile(ctx context.Context, userID model.UUID, fileName s
 	file := &model.File{
 		ID:         fileID,
 		UserID:     userID,
-		Name:       fileName,
+		Name:       safeName,
 		Size:       written,
 		Mime:       mimeType,
 		SHA256:     sha256Sum,
