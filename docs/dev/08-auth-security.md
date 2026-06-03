@@ -4,8 +4,8 @@
 |-------|-------|
 | **Spec** | `docs/spec/08-auth-security.md` |
 | **Status** | Implemented |
-| **Last Updated** | 2026-06-03 |
-| **Imports** | `go vet ./...` OK; `ruff check .` OK; `mypy .` OK; `go test ./internal/auth/... ./internal/httpapi/...` PASS |
+| **Last Updated** | 2026-06-03 (post-audit fixes applied) |
+| **Imports** | `go vet ./...` OK; `ruff check .` OK; `mypy .` OK; `go test ./internal/auth/... ./internal/httpapi/... ./internal/credvault/... ./internal/config/...` PASS |
 
 ## Changes Implemented
 
@@ -63,6 +63,20 @@
 - **`store/interfaces.go:59`** — fixed `UpdateResult` parameter type from `*string` to `*json.RawMessage` (mismatched with implementation)
 - **`pool/allocator.go`** — removed unused `encoding/json` import
 
+### 9. Post-Audit Fixes (Auditor gap analysis applied)
+
+- **Logout revoke presented token only** (audit 2.1): `auth_handler.go` — reads refresh token from request body, hashes it, looks up family, revokes family only. Falls back to `RevokeAllForUser` when no token is provided.
+- **Admin audit logging** (audit 2.2): Added `deps.Audit.Log()` calls to 25 admin mutation handlers across `devices_handler.go`, `admin_handler.go`, `agents_handler.go`, `skills_handler.go`:
+  - Device: `device.create`, `device.update`, `device.delete`, `device.set_pool_size`
+  - Organization: `org.create`, `org.update`, `org.delete`, `org.add_member`, `org.remove_member`
+  - Agent: `agent.drain`, `agent.force_release`, `agent.delete`
+  - Skill vault: `skill.create`, `skill.update`, `skill.delete`, `skill.publish_version`, `skill.fleet_install`, `skill.fleet_disable`, `skill.fleet_enable`, `skill.fleet_update`, `skill.fleet_delete`, `skill.update_visibility`, `skill.create_grant`, `skill.delete_grant`
+  - User: `user.update_tier`
+- **PostgreSQL TLS enforcement** (audit 2.4): `config.go` — warns if `DBURL` lacks `sslmode=` in non-development environments
+- **Per-user job submission rate limiting** (audit 2.5): `middleware.go` — `jobRateLimitMiddleware` keyed by authenticated `userID`, configurable via `IAGENT_RATE_LIMIT_JOB_SUBMIT_PER_MIN` (default 30/min)
+- **WS subscription rate limiting** (audit 2.6): `ws_handler.go` — per-connection subscription cap, configurable via `IAGENT_WS_MAX_SUBSCRIPTIONS` (default 50), decremented on unsubscribe
+- **Removed dead interface** (audit 3.3): Deleted unused `CredentialStore` interface from `credvault/vault.go` that used `interface{}` instead of `context.Context`
+
 ## Key Design Decisions
 
 - Security headers and CSRF middleware are applied globally (before routes), not per-route, since they apply to all responses
@@ -75,5 +89,5 @@
 - [ ] HIBP k-anon password check (optional per spec §2)
 - [ ] Device WSS certificate pinning (optional per spec §5)
 - [ ] OS keystore for device token storage (`keyring`) — currently uses `0600` file only (spec §3)
-- [ ] Frontend `TokenManager.ts` and `AuthGuard.tsx` are stubs with no real implementation (spec §2 transport requirements for HttpOnly cookie + in-memory access token)
-- [ ] Postgres connection-level encryption (TLS) is not enforced in config validation (spec §8)
+- [ ] Frontend `TokenManager.ts` and `AuthGuard.tsx` are stubs with no real implementation (spec §2)
+- [ ] KMS envelope encryption for credential vault (spec §13.2) — data key path is fully functional; KMS requires cloud provider SDK
