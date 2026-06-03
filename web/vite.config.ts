@@ -6,5 +6,20 @@ import path from 'path';
 export default defineConfig({
   plugins: [react()],
   resolve: { alias: { '@': path.resolve(__dirname, 'src') } },
-  server: { proxy: { '/api': 'http://localhost:8080' } },
+  server: {
+    proxy: {
+      '/api': {
+        target: 'http://localhost:8080',
+        changeOrigin: true,
+      },
+      '/ws': {
+        target: 'ws://localhost:8080',
+        ws: true,
+      },
+      '/tunnel': {
+        target: 'ws://localhost:8080',
+        ws: true,
+      },
+    },
+  },
 });

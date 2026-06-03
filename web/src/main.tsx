@@ -1,2 +1,5 @@
-// App entry point: renders React root, sets up React Router, TanStack Query,
-// and global providers (theme, auth).
+import ReactDOM from "react-dom/client";
+import { App } from "./App";
+import "./index.css";
+
+ReactDOM.createRoot(document.getElementById("root")!).render(<App />);

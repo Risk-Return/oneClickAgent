@@ -1,2 +1,25 @@
-// Route guard component: redirects unauthenticated users to /login,
-// checks role for admin-only routes, redirects to appropriate dashboard.
+import { Navigate, Outlet } from "react-router-dom";
+import { TokenManager } from "./TokenManager";
+import { useLocation } from "react-router-dom";
+
+export function RequireAuth() {
+  const location = useLocation();
+  const tokenManager = TokenManager.getInstance();
+
+  if (!tokenManager.isAuthenticated()) {
+    return <Navigate to="/login" state={{ from: location }} replace />;
+  }
+
+  return <Outlet />;
+}
+
+export function RequireAdmin() {
+  const tokenManager = TokenManager.getInstance();
+  const role = tokenManager.getUserRole();
+
+  if (role !== "admin") {
+    return <Navigate to="/" replace />;
+  }
+
+  return <Outlet />;
+}
