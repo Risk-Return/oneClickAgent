@@ -367,6 +367,67 @@ func authRateLimitMiddleware(maxPerMin int) func(http.Handler) http.Handler {
 	}
 }
 
+// ─── Per-User Job Submission Rate Limiting (§9) ───────────────
+
+// jobRateLimitMiddleware applies per-user rate limiting on job submission.
+func jobRateLimitMiddleware(maxPerMin int) func(http.Handler) http.Handler {
+	var mu sync.Mutex
+	tokens := make(map[model.UUID][]time.Time)
+	cleanupTick := time.NewTicker(time.Minute)
+
+	go func() {
+		for range cleanupTick.C {
+			mu.Lock()
+			cutoff := time.Now().Add(-2 * time.Minute)
+			for k, times := range tokens {
+				var valid []time.Time
+				for _, t := range times {
+					if t.After(cutoff) {
+						valid = append(valid, t)
+					}
+				}
+				if len(valid) == 0 {
+					delete(tokens, k)
+				} else {
+					tokens[k] = valid
+				}
+			}
+			mu.Unlock()
+		}
+	}()
+
+	return func(next http.Handler) http.Handler {
+		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			if maxPerMin <= 0 {
+				next.ServeHTTP(w, r)
+				return
+			}
+			userID := getUserID(r)
+			now := time.Now()
+			window := now.Add(-time.Minute)
+
+			mu.Lock()
+			times := tokens[userID]
+			var recent []time.Time
+			for _, t := range times {
+				if t.After(window) {
+					recent = append(recent, t)
+				}
+			}
+			if len(recent) >= maxPerMin {
+				mu.Unlock()
+				writeError(w, http.StatusTooManyRequests, model.ErrCodeLimitExceeded, "too many job submissions, please wait")
+				return
+			}
+			recent = append(recent, now)
+			tokens[userID] = recent
+			mu.Unlock()
+
+			next.ServeHTTP(w, r)
+		})
+	}
+}
+
 // Helpers to extract info from context
 
 func getClaims(r *http.Request) *auth.Claims {

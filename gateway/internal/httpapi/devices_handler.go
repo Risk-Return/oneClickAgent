@@ -36,6 +36,10 @@ func (deps *Dependencies) handleCreateDevice() http.HandlerFunc {
 			return
 		}
 
+		if deps.Audit != nil {
+			_ = deps.Audit.Log(r.Context(), userID, "device.create", "device", &device.ID, nil)
+		}
+
 		writeJSON(w, http.StatusCreated, model.CreateDeviceResponse{
 			Device:         *device,
 			EnrollmentCode: enrollmentCode,
@@ -73,6 +77,10 @@ func (deps *Dependencies) handleUpdateDevice() http.HandlerFunc {
 		if err := deps.Devices.Update(r.Context(), device); err != nil {
 			writeError(w, http.StatusInternalServerError, model.ErrCodeInternalError, "failed to update device")
 			return
+		}
+
+		if deps.Audit != nil {
+			_ = deps.Audit.Log(r.Context(), getUserID(r), "device.update", "device", &deviceID, nil)
 		}
 
 		writeJSON(w, http.StatusOK, device)
@@ -174,6 +182,10 @@ func (deps *Dependencies) handleDeleteDevice() http.HandlerFunc {
 			return
 		}
 
+		if deps.Audit != nil {
+			_ = deps.Audit.Log(r.Context(), getUserID(r), "device.delete", "device", &deviceID, nil)
+		}
+
 		writeJSON(w, http.StatusOK, map[string]string{"message": "device deleted"})
 	}
 }
@@ -198,6 +210,10 @@ func (deps *Dependencies) handleSetPoolSize() http.HandlerFunc {
 		}
 
 		_ = deps.Allocator.EnsurePoolSize(r.Context(), deviceID, req.Size)
+
+		if deps.Audit != nil {
+			_ = deps.Audit.Log(r.Context(), getUserID(r), "device.set_pool_size", "device", &deviceID, nil)
+		}
 
 		writeJSON(w, http.StatusOK, map[string]interface{}{
 			"device_id": deviceID,

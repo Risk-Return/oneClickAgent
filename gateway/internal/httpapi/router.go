@@ -120,7 +120,10 @@ func NewRouter(deps *Dependencies) chi.Router {
 		})
 
 		// Jobs
-		r.Post("/api/v1/jobs", deps.handleSubmitJob())
+		r.Group(func(r chi.Router) {
+			r.Use(jobRateLimitMiddleware(deps.Config.RateLimitJobSubmitPerMin))
+			r.Post("/api/v1/jobs", deps.handleSubmitJob())
+		})
 		r.Get("/api/v1/jobs", deps.handleListJobs())
 		r.Get("/api/v1/jobs/{jobID}", deps.handleGetJob())
 		r.Post("/api/v1/jobs/{jobID}/cancel", deps.handleCancelJob())

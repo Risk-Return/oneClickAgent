@@ -36,6 +36,8 @@ type Config struct {
 	CORSAllowedOrigins  []string      `env:"IAGENT_CORS_ORIGINS" envSeparator:","`
 	RateLimitAuthPerMin int           `env:"IAGENT_RATE_LIMIT_AUTH_PER_MIN" envDefault:"10"`
 	RateLimitAPIPerSec  int           `env:"IAGENT_RATE_LIMIT_API_PER_SEC" envDefault:"100"`
+	RateLimitJobSubmitPerMin int    `env:"IAGENT_RATE_LIMIT_JOB_SUBMIT_PER_MIN" envDefault:"30"`
+	WSMaxSubscriptions     int           `env:"IAGENT_WS_MAX_SUBSCRIPTIONS" envDefault:"50"`
 	FileRetentionHours     int           `env:"IAGENT_FILE_RETENTION_HOURS" envDefault:"24"`
 	JobResultRetentionDays int           `env:"IAGENT_JOB_RESULT_RETENTION_DAYS" envDefault:"90"`
 
@@ -82,6 +84,11 @@ func (c Config) validate() error {
 
 	if c.DBURL == "" {
 		errs = append(errs, "IAGENT_DB_URL is required")
+	}
+	if c.DBURL != "" && !strings.Contains(c.DBURL, "sslmode=") {
+		if c.Env != "development" {
+			errs = append(errs, "IAGENT_DB_URL must include sslmode parameter (e.g. sslmode=require, sslmode=verify-full)")
+		}
 	}
 	if c.JWTSecret == "" {
 		errs = append(errs, "IAGENT_JWT_SECRET is required")

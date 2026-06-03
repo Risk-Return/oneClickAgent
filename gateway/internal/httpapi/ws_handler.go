@@ -59,6 +59,8 @@ func (deps *Dependencies) handleWebSocket() http.HandlerFunc {
 		defer conn.Close()
 
 		subscriberID := userID.String() + "-" + model.NewUUID().String()[:8]
+		subscriptionCount := 1 // jobSub counts as 1
+		maxSubs := deps.Config.WSMaxSubscriptions
 
 		// Subscribe to relevant topics
 		jobSub := deps.Broker.Subscribe(pubsub.JobTopic(userID), subscriberID, userID)
@@ -112,23 +114,30 @@ func (deps *Dependencies) handleWebSocket() http.HandlerFunc {
 			if topics, ok := wsMsg["topics"].([]interface{}); ok {
 				for _, t := range topics {
 					if topicStr, ok := t.(string); ok && topicStr != "" {
+						if subscriptionCount >= maxSubs {
+							break
+						}
 						deps.Broker.Subscribe(topicStr, subscriberID, userID)
+						subscriptionCount++
 					}
 				}
 			}
-			if topic, ok := wsMsg["topic"].(string); ok && topic != "" {
+			if topic, ok := wsMsg["topic"].(string); ok && topic != "" && subscriptionCount < maxSubs {
 				deps.Broker.Subscribe(topic, subscriberID, userID)
+				subscriptionCount++
 			}
 		case "unsubscribe":
 			if topics, ok := wsMsg["topics"].([]interface{}); ok {
 				for _, t := range topics {
 					if topicStr, ok := t.(string); ok && topicStr != "" {
 						deps.Broker.Unsubscribe(topicStr, subscriberID)
+						subscriptionCount--
 					}
 				}
 			}
 			if topic, ok := wsMsg["topic"].(string); ok && topic != "" {
 				deps.Broker.Unsubscribe(topic, subscriberID)
+				subscriptionCount--
 			}
 			case "ping":
 				pong := map[string]interface{}{"type": "pong"}

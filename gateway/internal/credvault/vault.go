@@ -168,17 +168,6 @@ func GenerateKey() (string, error) {
 	return base64.StdEncoding.EncodeToString(key), nil
 }
 
-// ─── Credential Store Operations ────────────────────────────
-
-// CredentialStore defines the persistence interface for browser credentials.
-type CredentialStore interface {
-	CreateCredential(ctx interface{}, cred *model.BrowserCredential) error
-	GetCredential(ctx interface{}, id model.UUID) (*model.BrowserCredential, error)
-	ListByUser(ctx interface{}, userID model.UUID) ([]model.BrowserCredential, error)
-	UpdateCredential(ctx interface{}, cred *model.BrowserCredential) error
-	DeleteCredential(ctx interface{}, id model.UUID) error
-}
-
 // CaptureResult is the result of capturing a credential from a VNC session.
 type CaptureResult struct {
 	Credential *model.BrowserCredential

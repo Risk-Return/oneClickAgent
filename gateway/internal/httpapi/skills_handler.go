@@ -98,6 +98,10 @@ func (deps *Dependencies) handleCreateSkill() http.HandlerFunc {
 			return
 		}
 
+		if deps.Audit != nil {
+			_ = deps.Audit.Log(r.Context(), getUserID(r), "skill.create", "skill", &skill.ID, nil)
+		}
+
 		writeJSON(w, http.StatusCreated, skill)
 	}
 }
@@ -137,6 +141,10 @@ func (deps *Dependencies) handleUpdateSkill() http.HandlerFunc {
 			return
 		}
 
+		if deps.Audit != nil {
+			_ = deps.Audit.Log(r.Context(), getUserID(r), "skill.update", "skill", &skillID, nil)
+		}
+
 		writeJSON(w, http.StatusOK, skill)
 	}
 }
@@ -152,6 +160,10 @@ func (deps *Dependencies) handleDeleteSkill() http.HandlerFunc {
 		if err := deps.Vault.DeleteSkill(r.Context(), skillID); err != nil {
 			writeError(w, http.StatusInternalServerError, model.ErrCodeInternalError, "failed to delete skill")
 			return
+		}
+
+		if deps.Audit != nil {
+			_ = deps.Audit.Log(r.Context(), getUserID(r), "skill.delete", "skill", &skillID, nil)
 		}
 
 		writeJSON(w, http.StatusOK, map[string]string{"message": "skill deleted"})
@@ -192,6 +204,10 @@ func (deps *Dependencies) handlePublishSkillVersion() http.HandlerFunc {
 			return
 		}
 
+		if deps.Audit != nil {
+			_ = deps.Audit.Log(r.Context(), getUserID(r), "skill.publish_version", "skill", &skillID, nil)
+		}
+
 		writeJSON(w, http.StatusCreated, ver)
 	}
 }
@@ -219,6 +235,10 @@ func (deps *Dependencies) handleInstallSkillFleet() http.HandlerFunc {
 		// Dispatch to all online devices
 		_ = deps.Dispatch.DispatchToAllDevices(r.Context(), skillID, ver.ID)
 
+		if deps.Audit != nil {
+			_ = deps.Audit.Log(r.Context(), getUserID(r), "skill.fleet_install", "skill", &skillID, nil)
+		}
+
 		writeJSON(w, http.StatusAccepted, map[string]string{"message": "skill installation initiated"})
 	}
 }
@@ -235,6 +255,11 @@ func (deps *Dependencies) handleDisableSkillFleet() http.HandlerFunc {
 		for _, d := range devices {
 			_ = deps.Dispatch.SendSkillAction(r.Context(), d.ID, model.SkillScopeDevice, model.SkillActionDisable, skillID, "", nil)
 		}
+
+		if deps.Audit != nil {
+			_ = deps.Audit.Log(r.Context(), getUserID(r), "skill.fleet_disable", "skill", &skillID, nil)
+		}
+
 		writeJSON(w, http.StatusAccepted, map[string]string{"message": "skill disable initiated"})
 	}
 }
@@ -257,6 +282,11 @@ func (deps *Dependencies) handleUpdateSkillFleet() http.HandlerFunc {
 			return
 		}
 		_ = deps.Dispatch.DispatchToAllDevices(r.Context(), skillID, ver.ID)
+
+		if deps.Audit != nil {
+			_ = deps.Audit.Log(r.Context(), getUserID(r), "skill.fleet_update", "skill", &skillID, nil)
+		}
+
 		writeJSON(w, http.StatusAccepted, map[string]string{"message": "skill update initiated"})
 	}
 }
@@ -272,6 +302,11 @@ func (deps *Dependencies) handleDeleteSkillFleet() http.HandlerFunc {
 		for _, d := range devices {
 			_ = deps.Dispatch.SendSkillAction(r.Context(), d.ID, model.SkillScopeDevice, model.SkillActionDelete, skillID, "", nil)
 		}
+
+		if deps.Audit != nil {
+			_ = deps.Audit.Log(r.Context(), getUserID(r), "skill.fleet_delete", "skill", &skillID, nil)
+		}
+
 		writeJSON(w, http.StatusAccepted, map[string]string{"message": "skill deletion initiated"})
 	}
 }
@@ -293,6 +328,10 @@ func (deps *Dependencies) handleUpdateSkillVisibility() http.HandlerFunc {
 		if err := deps.Vault.UpdateVisibility(r.Context(), skillID, req.Visibility); err != nil {
 			writeError(w, http.StatusInternalServerError, model.ErrCodeInternalError, "failed to update visibility")
 			return
+		}
+
+		if deps.Audit != nil {
+			_ = deps.Audit.Log(r.Context(), getUserID(r), "skill.update_visibility", "skill", &skillID, nil)
 		}
 
 		writeJSON(w, http.StatusOK, map[string]string{"message": "visibility updated"})
@@ -318,6 +357,10 @@ func (deps *Dependencies) handleCreateSkillGrant() http.HandlerFunc {
 			return
 		}
 
+		if deps.Audit != nil {
+			_ = deps.Audit.Log(r.Context(), getUserID(r), "skill.create_grant", "skill", &skillID, nil)
+		}
+
 		writeJSON(w, http.StatusCreated, map[string]string{"message": "grant created"})
 	}
 }
@@ -339,6 +382,10 @@ func (deps *Dependencies) handleDeleteSkillGrant() http.HandlerFunc {
 		if err := deps.Vault.RevokeVisibility(r.Context(), skillID, req.PrincipalType, req.PrincipalID); err != nil {
 			writeError(w, http.StatusInternalServerError, model.ErrCodeInternalError, "failed to delete grant")
 			return
+		}
+
+		if deps.Audit != nil {
+			_ = deps.Audit.Log(r.Context(), getUserID(r), "skill.delete_grant", "skill", &skillID, nil)
 		}
 
 		writeJSON(w, http.StatusOK, map[string]string{"message": "grant removed"})
@@ -368,6 +415,10 @@ func (deps *Dependencies) handleDeleteSkillGrantPath() http.HandlerFunc {
 		if err := deps.Vault.RevokeVisibility(r.Context(), skillID, principalType, principalID); err != nil {
 			writeError(w, http.StatusInternalServerError, model.ErrCodeInternalError, "failed to delete grant")
 			return
+		}
+
+		if deps.Audit != nil {
+			_ = deps.Audit.Log(r.Context(), getUserID(r), "skill.delete_grant", "skill", &skillID, nil)
 		}
 
 		writeJSON(w, http.StatusOK, map[string]string{"message": "grant removed"})
@@ -460,6 +511,10 @@ func (deps *Dependencies) handleEnableSkillFleet() http.HandlerFunc {
 		devices, _ := deps.Devices.ListAll(r.Context())
 		for _, d := range devices {
 			_ = deps.Dispatch.SendSkillAction(r.Context(), d.ID, model.SkillScopeDevice, model.SkillActionEnable, skillID, "", nil)
+		}
+
+		if deps.Audit != nil {
+			_ = deps.Audit.Log(r.Context(), getUserID(r), "skill.fleet_enable", "skill", &skillID, nil)
 		}
 
 		writeJSON(w, http.StatusAccepted, map[string]string{"message": "skill enable initiated"})

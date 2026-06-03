@@ -238,10 +238,20 @@ func (deps *Dependencies) handleRefresh() http.HandlerFunc {
 func (deps *Dependencies) handleLogout() http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		userID := getUserID(r)
-		if err := deps.Tokens.RevokeAllForUser(r.Context(), userID); err != nil {
-			writeError(w, http.StatusInternalServerError, model.ErrCodeInternalError, "internal error")
-			return
+
+		var req model.RefreshRequest
+		if err := json.NewDecoder(r.Body).Decode(&req); err == nil && req.RefreshToken != "" {
+			tokenHash := auth.HashToken(req.RefreshToken)
+			rt, err := deps.Tokens.GetByHash(r.Context(), tokenHash)
+			if err == nil && rt != nil && rt.UserID == userID && rt.RevokedAt == nil {
+				_ = deps.Tokens.RevokeFamily(r.Context(), rt.Family)
+			}
+			// Always 204 even if token not found (idempotent)
+		} else {
+			// Fallback: revoke all if no token provided
+			_ = deps.Tokens.RevokeAllForUser(r.Context(), userID)
 		}
+
 		if deps.Audit != nil {
 			_ = deps.Audit.Log(r.Context(), userID, "auth.logout", "user", &userID, nil)
 		}

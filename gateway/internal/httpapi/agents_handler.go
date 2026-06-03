@@ -190,6 +190,10 @@ func (deps *Dependencies) handleDrainAgent() http.HandlerFunc {
 			return
 		}
 
+		if deps.Audit != nil {
+			_ = deps.Audit.Log(r.Context(), getUserID(r), "agent.drain", "agent", &agentID, nil)
+		}
+
 		writeJSON(w, http.StatusOK, map[string]string{"message": "agent draining"})
 	}
 }
@@ -205,6 +209,10 @@ func (deps *Dependencies) handleForceReleaseAgent() http.HandlerFunc {
 		if err := deps.Allocator.ForceRelease(r.Context(), agentID); err != nil {
 			writeError(w, http.StatusInternalServerError, model.ErrCodeInternalError, "failed to release agent")
 			return
+		}
+
+		if deps.Audit != nil {
+			_ = deps.Audit.Log(r.Context(), getUserID(r), "agent.force_release", "agent", &agentID, nil)
 		}
 
 		writeJSON(w, http.StatusOK, map[string]string{"message": "agent released"})
@@ -244,6 +252,10 @@ func (deps *Dependencies) handleAdminDeleteAgent() http.HandlerFunc {
 		if err := deps.Agents.Delete(r.Context(), agentID); err != nil {
 			writeError(w, http.StatusInternalServerError, model.ErrCodeInternalError, "failed to delete agent")
 			return
+		}
+
+		if deps.Audit != nil {
+			_ = deps.Audit.Log(r.Context(), getUserID(r), "agent.delete", "agent", &agentID, nil)
 		}
 
 		writeJSON(w, http.StatusOK, map[string]string{"message": "agent removed from pool"})

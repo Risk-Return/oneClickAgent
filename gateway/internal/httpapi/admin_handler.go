@@ -26,6 +26,10 @@ func (deps *Dependencies) handleCreateOrg() http.HandlerFunc {
 			return
 		}
 
+		if deps.Audit != nil {
+			_ = deps.Audit.Log(r.Context(), getUserID(r), "org.create", "organization", &org.ID, nil)
+		}
+
 		writeJSON(w, http.StatusCreated, org)
 	}
 }
@@ -100,6 +104,10 @@ func (deps *Dependencies) handleUpdateOrg() http.HandlerFunc {
 			return
 		}
 
+		if deps.Audit != nil {
+			_ = deps.Audit.Log(r.Context(), getUserID(r), "org.update", "organization", &orgID, nil)
+		}
+
 		writeJSON(w, http.StatusOK, org)
 	}
 }
@@ -115,6 +123,10 @@ func (deps *Dependencies) handleDeleteOrg() http.HandlerFunc {
 		if err := deps.Orgs.Delete(r.Context(), orgID); err != nil {
 			writeError(w, http.StatusInternalServerError, model.ErrCodeInternalError, "failed to delete organization")
 			return
+		}
+
+		if deps.Audit != nil {
+			_ = deps.Audit.Log(r.Context(), getUserID(r), "org.delete", "organization", &orgID, nil)
 		}
 
 		writeJSON(w, http.StatusOK, map[string]string{"message": "organization deleted"})
@@ -140,13 +152,17 @@ func (deps *Dependencies) handleAddOrgMember() http.HandlerFunc {
 			return
 		}
 
+		if deps.Audit != nil {
+			_ = deps.Audit.Log(r.Context(), getUserID(r), "org.add_member", "organization", &orgID, nil)
+		}
+
 		writeJSON(w, http.StatusOK, map[string]string{"message": "member added"})
 	}
 }
 
 func (deps *Dependencies) handleRemoveOrgMember() http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
-		_, err := model.ParseUUID(chi.URLParam(r, "orgID"))
+		orgID, err := model.ParseUUID(chi.URLParam(r, "orgID"))
 		if err != nil {
 			writeError(w, http.StatusBadRequest, model.ErrCodeValidationFailed, "invalid org_id")
 			return
@@ -161,6 +177,10 @@ func (deps *Dependencies) handleRemoveOrgMember() http.HandlerFunc {
 		if err := deps.Orgs.RemoveMember(r.Context(), userID); err != nil {
 			writeError(w, http.StatusInternalServerError, model.ErrCodeInternalError, "failed to remove member")
 			return
+		}
+
+		if deps.Audit != nil {
+			_ = deps.Audit.Log(r.Context(), getUserID(r), "org.remove_member", "organization", &orgID, nil)
 		}
 
 		writeJSON(w, http.StatusOK, map[string]string{"message": "member removed"})
@@ -207,6 +227,10 @@ func (deps *Dependencies) handleUpdateUserTier() http.HandlerFunc {
 		if err := deps.Users.UpdateTier(r.Context(), userID, req.Tier); err != nil {
 			writeError(w, http.StatusInternalServerError, model.ErrCodeInternalError, "failed to update tier")
 			return
+		}
+
+		if deps.Audit != nil {
+			_ = deps.Audit.Log(r.Context(), getUserID(r), "user.update_tier", "user", &userID, nil)
 		}
 
 		writeJSON(w, http.StatusOK, map[string]string{"message": "tier updated"})
