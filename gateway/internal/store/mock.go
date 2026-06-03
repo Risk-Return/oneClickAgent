@@ -456,6 +456,9 @@ func (m *MockSkillStore) IsSkillVisibleToUser(ctx context.Context, skillID, user
 func (m *MockSkillStore) ListVisibleSkills(ctx context.Context, userID model.UUID, orgID *model.UUID) ([]model.Skill, error) {
 	return nil, nil
 }
+func (m *MockSkillStore) GetDeviceSkillsForSkill(ctx context.Context, skillID model.UUID) ([]model.DeviceSkill, error) {
+	return nil, nil
+}
 
 // ─── MockTokenStore ────────────────────────────────────────
 
@@ -499,6 +502,7 @@ func (m *MockDeviceStore) Create(ctx context.Context, d *model.Device) error    
 func (m *MockDeviceStore) GetByID(ctx context.Context, id model.UUID) (*model.Device, error)                    { return nil, nil }
 func (m *MockDeviceStore) GetByTokenHash(ctx context.Context, tokenHash string) (*model.Device, error)          { return nil, ErrNotFound }
 func (m *MockDeviceStore) UpdateToken(ctx context.Context, id model.UUID, hash string) error                    { return nil }
+func (m *MockDeviceStore) Update(ctx context.Context, d *model.Device) error                                   { return nil }
 func (m *MockDeviceStore) UpdateStatus(ctx context.Context, id model.UUID, status model.DeviceStatus) error      { return nil }
 func (m *MockDeviceStore) List(ctx context.Context, cursor *model.UUID, limit int) ([]model.Device, *model.UUID, error) {
 	return nil, nil, nil

@@ -8,6 +8,77 @@ import (
 	"github.com/oneClickAgent/gateway/internal/model"
 )
 
+func (deps *Dependencies) handleCreateDevice() http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		var req model.CreateDeviceRequest
+		if err := decodeJSON(r, &req); err != nil {
+			writeError(w, http.StatusBadRequest, model.ErrCodeValidationFailed, "invalid request body")
+			return
+		}
+		if req.Name == "" {
+			writeError(w, http.StatusBadRequest, model.ErrCodeValidationFailed, "name is required")
+			return
+		}
+
+		userID := getUserID(r)
+		enrollmentCode := model.NewUUID().String()
+
+		device := &model.Device{
+			OperatorID:  userID,
+			Name:        req.Name,
+			Description: req.Description,
+			Status:      model.DeviceEnrolled,
+			TokenHash:   enrollmentCode,
+		}
+
+		if err := deps.Devices.Create(r.Context(), device); err != nil {
+			writeError(w, http.StatusInternalServerError, model.ErrCodeInternalError, "failed to create device")
+			return
+		}
+
+		writeJSON(w, http.StatusCreated, model.CreateDeviceResponse{
+			Device:         *device,
+			EnrollmentCode: enrollmentCode,
+		})
+	}
+}
+
+func (deps *Dependencies) handleUpdateDevice() http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		deviceID, err := model.ParseUUID(chi.URLParam(r, "deviceID"))
+		if err != nil {
+			writeError(w, http.StatusBadRequest, model.ErrCodeValidationFailed, "invalid device_id")
+			return
+		}
+
+		device, err := deps.Devices.GetByID(r.Context(), deviceID)
+		if err != nil || device == nil {
+			writeError(w, http.StatusNotFound, model.ErrCodeNotFound, "device not found")
+			return
+		}
+
+		var req model.UpdateDeviceRequest
+		if err := decodeJSON(r, &req); err != nil {
+			writeError(w, http.StatusBadRequest, model.ErrCodeValidationFailed, "invalid request body")
+			return
+		}
+
+		if req.Name != nil {
+			device.Name = *req.Name
+		}
+		if req.Description != nil {
+			device.Description = *req.Description
+		}
+
+		if err := deps.Devices.Update(r.Context(), device); err != nil {
+			writeError(w, http.StatusInternalServerError, model.ErrCodeInternalError, "failed to update device")
+			return
+		}
+
+		writeJSON(w, http.StatusOK, device)
+	}
+}
+
 func (deps *Dependencies) handleDeviceEnroll() http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		var req model.EnrollmentRequest

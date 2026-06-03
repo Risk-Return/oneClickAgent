@@ -259,6 +259,25 @@ func (s *SkillStore) DeleteAgentSkill(ctx context.Context, agentID, skillID mode
 	return err
 }
 
+func (s *SkillStore) GetDeviceSkillsForSkill(ctx context.Context, skillID model.UUID) ([]model.DeviceSkill, error) {
+	rows, err := s.db.Pool.Query(ctx,
+		`SELECT device_id, skill_id, version, status, installed_by, error_message, updated_at FROM device_skills WHERE skill_id=$1`, skillID,
+	)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var dss []model.DeviceSkill
+	for rows.Next() {
+		var ds model.DeviceSkill
+		if err := rows.Scan(&ds.DeviceID, &ds.SkillID, &ds.Version, &ds.Status, &ds.InstalledBy, &ds.ErrorMessage, &ds.UpdatedAt); err != nil {
+			return nil, err
+		}
+		dss = append(dss, ds)
+	}
+	return dss, nil
+}
+
 // --- Skill Grants ---
 
 func (s *SkillStore) CreateGrant(ctx context.Context, g *model.SkillGrant) error {

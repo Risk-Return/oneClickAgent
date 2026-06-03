@@ -26,6 +26,7 @@ type DeviceStoreInterface interface {
 	Create(ctx context.Context, d *model.Device) error
 	GetByID(ctx context.Context, id model.UUID) (*model.Device, error)
 	GetByTokenHash(ctx context.Context, tokenHash string) (*model.Device, error)
+	Update(ctx context.Context, d *model.Device) error
 	UpdateToken(ctx context.Context, id model.UUID, tokenHash string) error
 	UpdateStatus(ctx context.Context, id model.UUID, status model.DeviceStatus) error
 	List(ctx context.Context, cursor *model.UUID, limit int) ([]model.Device, *model.UUID, error)
@@ -100,6 +101,7 @@ type SkillStoreInterface interface {
 	ListGrants(ctx context.Context, skillID model.UUID) ([]model.SkillGrant, error)
 	IsSkillVisibleToUser(ctx context.Context, skillID, userID model.UUID, orgID *model.UUID) (bool, error)
 	ListVisibleSkills(ctx context.Context, userID model.UUID, orgID *model.UUID) ([]model.Skill, error)
+	GetDeviceSkillsForSkill(ctx context.Context, skillID model.UUID) ([]model.DeviceSkill, error)
 }
 
 type OrgStoreInterface interface {

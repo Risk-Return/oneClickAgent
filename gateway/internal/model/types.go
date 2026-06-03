@@ -445,6 +445,21 @@ type UpdateUserTierRequest struct {
 	Tier UserTier `json:"tier" validate:"required,oneof=free pro enterprise"`
 }
 
+type CreateDeviceRequest struct {
+	Name        string `json:"name" validate:"required"`
+	Description string `json:"description,omitempty"`
+}
+
+type UpdateDeviceRequest struct {
+	Name        *string `json:"name,omitempty"`
+	Description *string `json:"description,omitempty"`
+}
+
+type CreateDeviceResponse struct {
+	Device         Device `json:"device"`
+	EnrollmentCode string `json:"enrollment_code"`
+}
+
 type SetPoolSizeRequest struct {
 	Size int `json:"size" validate:"required,min=1"`
 }
@@ -497,6 +512,20 @@ type SkillVisible struct {
 	Skill
 	LatestVersion *SkillVersion `json:"latest_version,omitempty"`
 	Enabled       *bool         `json:"enabled,omitempty"`
+}
+
+type SkillRolloutEntry struct {
+	DeviceID    UUID               `json:"device_id"`
+	DeviceName  string             `json:"device_name"`
+	Version     string             `json:"version,omitempty"`
+	Status      SkillInstallStatus `json:"status"`
+	Error       *string            `json:"error,omitempty"`
+	UpdatedAt   time.Time          `json:"updated_at"`
+}
+
+type VNCStatusResponse struct {
+	SessionID *UUID             `json:"session_id,omitempty"`
+	Status    VNCSessionStatus `json:"status"`
 }
 
 // ---------- Tunnel Frame Types ----------
@@ -922,7 +951,10 @@ type CreateCredentialRequest struct {
 	Origin string `json:"origin" validate:"required"`
 }
 
-// CredentialResponse is the API response for a credential (never contains cookie data).
+// UpdateCredentialRequest is the payload for PATCH /credentials/{id}.
+type UpdateCredentialRequest struct {
+	Label string `json:"label" validate:"required"`
+}
 type CredentialResponse struct {
 	ID         UUID       `json:"id"`
 	Label      string     `json:"label"`

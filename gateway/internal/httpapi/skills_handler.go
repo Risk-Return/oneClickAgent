@@ -325,3 +325,124 @@ func (deps *Dependencies) handleDeleteSkillGrant() http.HandlerFunc {
 		writeJSON(w, http.StatusOK, map[string]string{"message": "grant removed"})
 	}
 }
+
+func (deps *Dependencies) handleDeleteSkillGrantPath() http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		skillID, err := model.ParseUUID(chi.URLParam(r, "skillID"))
+		if err != nil {
+			writeError(w, http.StatusBadRequest, model.ErrCodeValidationFailed, "invalid skill_id")
+			return
+		}
+
+		principalType := model.PrincipalType(chi.URLParam(r, "principal_type"))
+		if principalType != model.PrincipalUser && principalType != model.PrincipalOrg {
+			writeError(w, http.StatusBadRequest, model.ErrCodeValidationFailed, "principal_type must be user or org")
+			return
+		}
+
+		principalID, err := model.ParseUUID(chi.URLParam(r, "principal_id"))
+		if err != nil {
+			writeError(w, http.StatusBadRequest, model.ErrCodeValidationFailed, "invalid principal_id")
+			return
+		}
+
+		if err := deps.Vault.RevokeVisibility(r.Context(), skillID, principalType, principalID); err != nil {
+			writeError(w, http.StatusInternalServerError, model.ErrCodeInternalError, "failed to delete grant")
+			return
+		}
+
+		writeJSON(w, http.StatusOK, map[string]string{"message": "grant removed"})
+	}
+}
+
+func (deps *Dependencies) handleListSkillGrants() http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		skillID, err := model.ParseUUID(chi.URLParam(r, "skillID"))
+		if err != nil {
+			writeError(w, http.StatusBadRequest, model.ErrCodeValidationFailed, "invalid skill_id")
+			return
+		}
+
+		grants, err := deps.Skills.ListGrants(r.Context(), skillID)
+		if err != nil {
+			writeError(w, http.StatusInternalServerError, model.ErrCodeInternalError, "failed to list grants")
+			return
+		}
+
+		writeJSON(w, http.StatusOK, grants)
+	}
+}
+
+func (deps *Dependencies) handleAdminGetSkill() http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		skillID, err := model.ParseUUID(chi.URLParam(r, "skillID"))
+		if err != nil {
+			writeError(w, http.StatusBadRequest, model.ErrCodeValidationFailed, "invalid skill_id")
+			return
+		}
+
+		skillWithVersion, err := deps.Vault.GetSkillWithLatestVersion(r.Context(), skillID)
+		if err != nil || skillWithVersion == nil {
+			writeError(w, http.StatusNotFound, model.ErrCodeNotFound, "skill not found")
+			return
+		}
+
+		grants, _ := deps.Skills.ListGrants(r.Context(), skillID)
+
+		writeJSON(w, http.StatusOK, map[string]interface{}{
+			"skill":           skillWithVersion,
+			"grants":          grants,
+		})
+	}
+}
+
+func (deps *Dependencies) handleGetSkillRollout() http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		skillID, err := model.ParseUUID(chi.URLParam(r, "skillID"))
+		if err != nil {
+			writeError(w, http.StatusBadRequest, model.ErrCodeValidationFailed, "invalid skill_id")
+			return
+		}
+
+		deviceSkills, err := deps.Skills.GetDeviceSkillsForSkill(r.Context(), skillID)
+		if err != nil {
+			writeError(w, http.StatusInternalServerError, model.ErrCodeInternalError, "failed to get rollout status")
+			return
+		}
+
+		var entries []model.SkillRolloutEntry
+		for _, ds := range deviceSkills {
+			deviceName := ""
+			if device, _ := deps.Devices.GetByID(r.Context(), ds.DeviceID); device != nil {
+				deviceName = device.Name
+			}
+			entries = append(entries, model.SkillRolloutEntry{
+				DeviceID:   ds.DeviceID,
+				DeviceName: deviceName,
+				Version:    ds.Version,
+				Status:     ds.Status,
+				Error:      ds.ErrorMessage,
+				UpdatedAt:  ds.UpdatedAt,
+			})
+		}
+
+		writeJSON(w, http.StatusOK, entries)
+	}
+}
+
+func (deps *Dependencies) handleEnableSkillFleet() http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		skillID, err := model.ParseUUID(chi.URLParam(r, "skillID"))
+		if err != nil {
+			writeError(w, http.StatusBadRequest, model.ErrCodeValidationFailed, "invalid skill_id")
+			return
+		}
+
+		devices, _ := deps.Devices.ListAll(r.Context())
+		for _, d := range devices {
+			_ = deps.Dispatch.SendSkillAction(r.Context(), d.ID, model.SkillScopeDevice, model.SkillActionEnable, skillID, "", nil)
+		}
+
+		writeJSON(w, http.StatusAccepted, map[string]string{"message": "skill enable initiated"})
+	}
+}

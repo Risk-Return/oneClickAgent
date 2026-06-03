@@ -69,6 +69,9 @@ func NewRouter(deps *Dependencies) chi.Router {
 		r.Post("/api/v1/auth/refresh", deps.handleRefresh())
 	})
 
+	// Device enrollment (device self-enrollment, no JWT required)
+	r.Post("/api/v1/devices/enroll", deps.handleDeviceEnroll())
+
 	// Health & metrics
 	r.Get("/healthz", handleHealthz(deps.DB))
 	r.Get("/readyz", handleReadyz(deps.DB))
@@ -88,12 +91,13 @@ func NewRouter(deps *Dependencies) chi.Router {
 		// Devices (admin only)
 		r.Group(func(r chi.Router) {
 			r.Use(requireAdminMiddleware)
-			r.Post("/api/v1/devices/enroll", deps.handleDeviceEnroll())
+			r.Post("/api/v1/devices", deps.handleCreateDevice())
 			r.Get("/api/v1/devices", deps.handleListDevices())
 			r.Get("/api/v1/devices/{deviceID}", deps.handleGetDevice())
+			r.Patch("/api/v1/devices/{deviceID}", deps.handleUpdateDevice())
 			r.Delete("/api/v1/devices/{deviceID}", deps.handleDeleteDevice())
+			r.Post("/api/v1/devices/{deviceID}/rotate-token", deps.handleRotateDeviceToken())
 			r.Post("/api/v1/admin/devices/{deviceID}/pool", deps.handleSetPoolSize())
-			r.Post("/api/v1/admin/devices/{deviceID}/rotate-token", deps.handleRotateDeviceToken())
 		})
 
 		// Agent pool (admin managed)
@@ -105,6 +109,8 @@ func NewRouter(deps *Dependencies) chi.Router {
 		r.Group(func(r chi.Router) {
 			r.Use(requireAdminMiddleware)
 			r.Get("/api/v1/admin/agents", deps.handleAdminListAgents())
+			r.Get("/api/v1/admin/agents/{agentID}", deps.handleAdminGetAgent())
+			r.Delete("/api/v1/admin/agents/{agentID}", deps.handleAdminDeleteAgent())
 			r.Post("/api/v1/admin/agents/{agentID}/drain", deps.handleDrainAgent())
 			r.Post("/api/v1/admin/agents/{agentID}/release", deps.handleForceReleaseAgent())
 		})
@@ -118,11 +124,14 @@ func NewRouter(deps *Dependencies) chi.Router {
 
 		// VNC sessions
 		r.Post("/api/v1/jobs/{jobID}/vnc", deps.handleOpenVNC())
+		r.Get("/api/v1/jobs/{jobID}/vnc", deps.handleGetJobVNC())
 		r.Post("/api/v1/vnc/{sessionID}/save-login", deps.handleSaveLogin())
 		r.Delete("/api/v1/vnc/{sessionID}", deps.handleCloseVNC())
 
 		// Credentials
 		r.Get("/api/v1/credentials", deps.handleListCredentials())
+		r.Get("/api/v1/credentials/{credentialID}", deps.handleGetCredential())
+		r.Patch("/api/v1/credentials/{credentialID}", deps.handleUpdateCredential())
 		r.Delete("/api/v1/credentials/{credentialID}", deps.handleDeleteCredential())
 
 		// Files
@@ -138,16 +147,21 @@ func NewRouter(deps *Dependencies) chi.Router {
 		r.Group(func(r chi.Router) {
 			r.Use(requireAdminMiddleware)
 			r.Post("/api/v1/admin/skills", deps.handleCreateSkill())
-			r.Put("/api/v1/admin/skills/{skillID}", deps.handleUpdateSkill())
+			r.Get("/api/v1/admin/skills/{skillID}", deps.handleAdminGetSkill())
+			r.Patch("/api/v1/admin/skills/{skillID}", deps.handleUpdateSkill())
 			r.Delete("/api/v1/admin/skills/{skillID}", deps.handleDeleteSkill())
 			r.Post("/api/v1/admin/skills/{skillID}/versions", deps.handlePublishSkillVersion())
 			r.Post("/api/v1/admin/skills/{skillID}/install", deps.handleInstallSkillFleet())
+			r.Delete("/api/v1/admin/skills/{skillID}/install", deps.handleDeleteSkillFleet())
 			r.Post("/api/v1/admin/skills/{skillID}/disable", deps.handleDisableSkillFleet())
+			r.Post("/api/v1/admin/skills/{skillID}/enable", deps.handleEnableSkillFleet())
 			r.Post("/api/v1/admin/skills/{skillID}/update", deps.handleUpdateSkillFleet())
-			r.Post("/api/v1/admin/skills/{skillID}/delete-fleet", deps.handleDeleteSkillFleet())
+			r.Get("/api/v1/admin/skills/{skillID}/rollout", deps.handleGetSkillRollout())
 			r.Patch("/api/v1/admin/skills/{skillID}/visibility", deps.handleUpdateSkillVisibility())
+			r.Get("/api/v1/admin/skills/{skillID}/grants", deps.handleListSkillGrants())
 			r.Post("/api/v1/admin/skills/{skillID}/grants", deps.handleCreateSkillGrant())
 			r.Delete("/api/v1/admin/skills/{skillID}/grants", deps.handleDeleteSkillGrant())
+			r.Delete("/api/v1/admin/skills/{skillID}/grants/{principal_type}/{principal_id}", deps.handleDeleteSkillGrantPath())
 		})
 
 		// Organizations (admin)
@@ -156,7 +170,7 @@ func NewRouter(deps *Dependencies) chi.Router {
 			r.Post("/api/v1/admin/orgs", deps.handleCreateOrg())
 			r.Get("/api/v1/admin/orgs", deps.handleListOrgs())
 			r.Get("/api/v1/admin/orgs/{orgID}", deps.handleGetOrg())
-			r.Put("/api/v1/admin/orgs/{orgID}", deps.handleUpdateOrg())
+			r.Patch("/api/v1/admin/orgs/{orgID}", deps.handleUpdateOrg())
 			r.Delete("/api/v1/admin/orgs/{orgID}", deps.handleDeleteOrg())
 			r.Post("/api/v1/admin/orgs/{orgID}/members", deps.handleAddOrgMember())
 			r.Delete("/api/v1/admin/orgs/{orgID}/members/{userID}", deps.handleRemoveOrgMember())

@@ -47,6 +47,15 @@ func (s *DeviceStore) UpdateToken(ctx context.Context, id model.UUID, tokenHash 
 	return err
 }
 
+func (s *DeviceStore) Update(ctx context.Context, d *model.Device) error {
+	d.UpdatedAt = time.Now().UTC()
+	_, err := s.db.Pool.Exec(ctx,
+		`UPDATE devices SET name=$2, description=$3, updated_at=$4 WHERE id=$1`,
+		d.ID, d.Name, d.Description, d.UpdatedAt,
+	)
+	return err
+}
+
 func (s *DeviceStore) UpdateStatus(ctx context.Context, id model.UUID, status model.DeviceStatus) error {
 	var err error
 	if status == model.DeviceOnline {

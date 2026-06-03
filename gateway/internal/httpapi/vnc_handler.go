@@ -168,6 +168,106 @@ func (deps *Dependencies) handleDeleteCredential() http.HandlerFunc {
 	}
 }
 
+func (deps *Dependencies) handleGetCredential() http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		userID := getUserID(r)
+		credID, err := model.ParseUUID(chi.URLParam(r, "credentialID"))
+		if err != nil {
+			writeError(w, http.StatusBadRequest, model.ErrCodeValidationFailed, "invalid credential_id")
+			return
+		}
+
+		cred, err := deps.Creds.GetByID(r.Context(), credID)
+		if err != nil || cred == nil {
+			writeError(w, http.StatusNotFound, model.ErrCodeNotFound, "credential not found")
+			return
+		}
+		if cred.UserID != userID {
+			writeError(w, http.StatusForbidden, model.ErrCodeForbidden, "access denied")
+			return
+		}
+
+		writeJSON(w, http.StatusOK, model.CredentialResponseFrom(cred))
+	}
+}
+
+func (deps *Dependencies) handleUpdateCredential() http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		userID := getUserID(r)
+		credID, err := model.ParseUUID(chi.URLParam(r, "credentialID"))
+		if err != nil {
+			writeError(w, http.StatusBadRequest, model.ErrCodeValidationFailed, "invalid credential_id")
+			return
+		}
+
+		cred, err := deps.Creds.GetByID(r.Context(), credID)
+		if err != nil || cred == nil {
+			writeError(w, http.StatusNotFound, model.ErrCodeNotFound, "credential not found")
+			return
+		}
+		if cred.UserID != userID {
+			writeError(w, http.StatusForbidden, model.ErrCodeForbidden, "access denied")
+			return
+		}
+
+		var req model.UpdateCredentialRequest
+		if err := decodeJSON(r, &req); err != nil {
+			writeError(w, http.StatusBadRequest, model.ErrCodeValidationFailed, "invalid request body")
+			return
+		}
+		if req.Label == "" {
+			writeError(w, http.StatusBadRequest, model.ErrCodeValidationFailed, "label is required")
+			return
+		}
+
+		cred.Label = req.Label
+		if err := deps.Creds.Update(r.Context(), cred); err != nil {
+			writeError(w, http.StatusInternalServerError, model.ErrCodeInternalError, "failed to update credential")
+			return
+		}
+
+		writeJSON(w, http.StatusOK, model.CredentialResponseFrom(cred))
+	}
+}
+
+func (deps *Dependencies) handleGetJobVNC() http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		userID := getUserID(r)
+		jobID, err := model.ParseUUID(chi.URLParam(r, "jobID"))
+		if err != nil {
+			writeError(w, http.StatusBadRequest, model.ErrCodeValidationFailed, "invalid job_id")
+			return
+		}
+
+		job, err := deps.Jobs.GetByID(r.Context(), jobID)
+		if err != nil || job == nil {
+			writeError(w, http.StatusNotFound, model.ErrCodeNotFound, "job not found")
+			return
+		}
+		if job.UserID != userID {
+			writeError(w, http.StatusForbidden, model.ErrCodeForbidden, "access denied")
+			return
+		}
+
+		sess, err := deps.VNC.GetByJobID(r.Context(), jobID)
+		if err != nil {
+			writeError(w, http.StatusInternalServerError, model.ErrCodeInternalError, "internal error")
+			return
+		}
+		if sess == nil {
+			writeJSON(w, http.StatusOK, model.VNCStatusResponse{
+				Status: model.VNCSessionClosed,
+			})
+			return
+		}
+
+		writeJSON(w, http.StatusOK, model.VNCStatusResponse{
+			SessionID: &sess.ID,
+			Status:    sess.Status,
+		})
+	}
+}
+
 func msToDur(secs int) time.Duration { return time.Duration(secs) * time.Second }
 
 // ─── VNC WebSocket Handlers ─────────────────────────────────

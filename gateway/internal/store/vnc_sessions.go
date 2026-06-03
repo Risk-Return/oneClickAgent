@@ -65,6 +65,21 @@ func (s *VNCSessionStore) Touch(ctx context.Context, id model.UUID) error {
 	return err
 }
 
+func (s *VNCSessionStore) GetByJobID(ctx context.Context, jobID model.UUID) (*model.VNCSession, error) {
+	sess := &model.VNCSession{}
+	err := s.db.Pool.QueryRow(ctx,
+		`SELECT id, job_id, user_id, device_id, agent_id, session_token_hash, rfb_password,
+		 status, gateway_node, idle_ttl_secs, max_ttl_secs, last_active_at, token_expires_at, started_at, close_reason, created_at, ended_at
+		 FROM vnc_sessions WHERE job_id=$1 AND status IN ('pending','ready','active') ORDER BY created_at DESC LIMIT 1`, jobID,
+	).Scan(&sess.ID, &sess.JobID, &sess.UserID, &sess.DeviceID, &sess.AgentID, &sess.SessionTokenHash,
+		&sess.RFBPassword, &sess.Status, &sess.GatewayNode, &sess.IdleTTLSecs, &sess.MaxTTLSecs,
+		&sess.LastActiveAt, &sess.TokenExpiresAt, &sess.StartedAt, &sess.CloseReason, &sess.CreatedAt, &sess.EndedAt)
+	if err == pgx.ErrNoRows {
+		return nil, nil
+	}
+	return sess, err
+}
+
 func (s *VNCSessionStore) CountActiveByUser(ctx context.Context, userID model.UUID) (int, error) {
 	var count int
 	err := s.db.Pool.QueryRow(ctx,

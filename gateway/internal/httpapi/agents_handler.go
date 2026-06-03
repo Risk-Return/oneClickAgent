@@ -204,6 +204,45 @@ func (deps *Dependencies) handleForceReleaseAgent() http.HandlerFunc {
 	}
 }
 
+func (deps *Dependencies) handleAdminGetAgent() http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		agentID, err := model.ParseUUID(chi.URLParam(r, "agentID"))
+		if err != nil {
+			writeError(w, http.StatusBadRequest, model.ErrCodeValidationFailed, "invalid agent_id")
+			return
+		}
+
+		agent, err := deps.Agents.GetByID(r.Context(), agentID)
+		if err != nil {
+			writeError(w, http.StatusInternalServerError, model.ErrCodeInternalError, "internal error")
+			return
+		}
+		if agent == nil {
+			writeError(w, http.StatusNotFound, model.ErrCodeNotFound, "agent not found")
+			return
+		}
+
+		writeJSON(w, http.StatusOK, agent)
+	}
+}
+
+func (deps *Dependencies) handleAdminDeleteAgent() http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		agentID, err := model.ParseUUID(chi.URLParam(r, "agentID"))
+		if err != nil {
+			writeError(w, http.StatusBadRequest, model.ErrCodeValidationFailed, "invalid agent_id")
+			return
+		}
+
+		if err := deps.Agents.Delete(r.Context(), agentID); err != nil {
+			writeError(w, http.StatusInternalServerError, model.ErrCodeInternalError, "failed to delete agent")
+			return
+		}
+
+		writeJSON(w, http.StatusOK, map[string]string{"message": "agent removed from pool"})
+	}
+}
+
 func checkAgentAccess(claims interface{}, agent *model.Agent) error {
 	return nil
 }
