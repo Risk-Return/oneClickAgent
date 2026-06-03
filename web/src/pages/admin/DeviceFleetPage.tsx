@@ -1,4 +1,5 @@
 import { useState } from "react";
+import { useTranslation } from "react-i18next";
 import { apiClient } from "@/api/client";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { Card, CardContent } from "@/components/ui/card";
@@ -22,6 +23,7 @@ import { Server, Plus, Trash2, Key, Pencil, Layers, Copy, Check } from "lucide-r
 import type { Device } from "@/api/schemas";
 
 export function DeviceFleetPage() {
+  const { t } = useTranslation();
   const queryClient = useQueryClient();
   const [dialogOpen, setDialogOpen] = useState(false);
   const [enrollmentResult, setEnrollmentResult] = useState<{ code: string; copied: boolean } | null>(null);
@@ -46,7 +48,7 @@ export function DeviceFleetPage() {
       setNewDeviceData({ name: "", description: "" });
       setEnrollmentResult({ code: result.enrollment_code, copied: false });
     } catch (err: unknown) {
-      toast.error((err as { message?: string })?.message || "Failed to create device");
+      toast.error((err as { message?: string })?.message || t("deviceFleet.createFailed"));
     }
   };
 
@@ -68,9 +70,9 @@ export function DeviceFleetPage() {
       await apiClient.patch(`/devices/${deviceId}`, { name: renameName });
       queryClient.invalidateQueries({ queryKey: ["admin", "devices"] });
       setRenameId(null);
-      toast.success("Device renamed");
+      toast.success(t("deviceFleet.deviceRenamed"));
     } catch (err: unknown) {
-      toast.error((err as { message?: string })?.message || "Failed to rename");
+      toast.error((err as { message?: string })?.message || t("deviceFleet.renameFailed"));
     }
   };
 
@@ -79,9 +81,9 @@ export function DeviceFleetPage() {
       await apiClient.post(`/admin/devices/${deviceId}/pool`, { size: poolSize });
       queryClient.invalidateQueries({ queryKey: ["admin", "devices"] });
       setPoolSizeId(null);
-      toast.success(`Pool size set to ${poolSize}`);
+      toast.success(t("deviceFleet.poolSizeSet", { size: poolSize }));
     } catch (err: unknown) {
-      toast.error((err as { message?: string })?.message || "Failed to set pool size");
+      toast.error((err as { message?: string })?.message || t("deviceFleet.poolSizeFailed"));
     }
   };
 
@@ -89,9 +91,9 @@ export function DeviceFleetPage() {
     try {
       await apiClient.post(`/devices/${deviceId}/rotate-token`);
       queryClient.invalidateQueries({ queryKey: ["admin", "devices"] });
-      toast.success("Token rotated");
+      toast.success(t("deviceFleet.tokenRotated"));
     } catch {
-      toast.error("Failed to rotate token");
+      toast.error(t("deviceFleet.tokenRotateFailed"));
     }
   };
 
@@ -99,9 +101,9 @@ export function DeviceFleetPage() {
     try {
       await apiClient.delete(`/devices/${deviceId}`);
       queryClient.invalidateQueries({ queryKey: ["admin", "devices"] });
-      toast.success("Device decommissioned");
+      toast.success(t("deviceFleet.deviceDecommissioned"));
     } catch {
-      toast.error("Failed to decommission device");
+      toast.error(t("deviceFleet.decommissionFailed"));
     }
   };
 
@@ -109,26 +111,26 @@ export function DeviceFleetPage() {
     <div className="space-y-6 p-6">
       <div className="flex items-center justify-between">
         <div>
-          <h1 className="text-2xl font-bold tracking-tight">Device Fleet</h1>
-          <p className="text-muted-foreground">Manage your local devices and their agent pools.</p>
+          <h1 className="text-2xl font-bold tracking-tight">{t("deviceFleet.title")}</h1>
+          <p className="text-muted-foreground">{t("deviceFleet.desc")}</p>
         </div>
         <Dialog open={dialogOpen} onOpenChange={(open) => { open ? setDialogOpen(true) : handleCloseDialog(); }}>
           <DialogTrigger asChild>
             <Button>
-              <Plus className="mr-2 h-4 w-4" /> Add Device
+              <Plus className="mr-2 h-4 w-4" /> {t("deviceFleet.addDevice")}
             </Button>
           </DialogTrigger>
           <DialogContent className="max-w-md">
             <DialogHeader>
-              <DialogTitle>Add Device</DialogTitle>
-              <DialogDescription>Create a new device entry and get an enrollment code.</DialogDescription>
+              <DialogTitle>{t("deviceFleet.addDeviceTitle")}</DialogTitle>
+              <DialogDescription>{t("deviceFleet.addDeviceDesc")}</DialogDescription>
             </DialogHeader>
 
             {enrollmentResult ? (
               <div className="space-y-4">
                 <div className="rounded-md bg-emerald-50 dark:bg-emerald-900/20 border border-emerald-200 dark:border-emerald-800 p-4">
-                  <p className="text-sm font-medium text-emerald-700 dark:text-emerald-300">Device created!</p>
-                  <p className="text-xs text-emerald-600 dark:text-emerald-400 mt-1">Copy the enrollment code below:</p>
+                  <p className="text-sm font-medium text-emerald-700 dark:text-emerald-300">{t("deviceFleet.deviceCreated")}</p>
+                  <p className="text-xs text-emerald-600 dark:text-emerald-400 mt-1">{t("deviceFleet.copyCode")}</p>
                   <div className="mt-2 flex items-center gap-2">
                     <code className="flex-1 rounded bg-emerald-100 dark:bg-emerald-900/40 px-3 py-2 text-sm font-mono break-all">
                       {enrollmentResult.code}
@@ -139,51 +141,51 @@ export function DeviceFleetPage() {
                   </div>
                 </div>
                 <div className="space-y-2 text-sm text-muted-foreground">
-                  <p className="font-medium">Setup instructions:</p>
+                  <p className="font-medium">{t("deviceFleet.setupInstructions")}</p>
                   <div className="space-y-2 text-xs">
                     <div>
-                      <strong>Windows:</strong> Install Docker Desktop, then run:
+                      <strong>{t("deviceFleet.setupWindows")}</strong> Install Docker Desktop, then run:
                       <code className="block mt-1 rounded bg-muted px-2 py-1">iagent-device enroll --code {enrollmentResult.code}</code>
                     </div>
                     <div>
-                      <strong>macOS:</strong> Install Docker Desktop, then run:
+                      <strong>{t("deviceFleet.setupMacos")}</strong> Install Docker Desktop, then run:
                       <code className="block mt-1 rounded bg-muted px-2 py-1">iagent-device enroll --code {enrollmentResult.code}</code>
                     </div>
                     <div>
-                      <strong>Linux:</strong> Install Docker Engine, then run:
+                      <strong>{t("deviceFleet.setupLinux")}</strong> Install Docker Engine, then run:
                       <code className="block mt-1 rounded bg-muted px-2 py-1">iagent-device enroll --code {enrollmentResult.code}</code>
                     </div>
                   </div>
                 </div>
                 <DialogFooter>
-                  <Button onClick={handleCloseDialog}>Done</Button>
+                  <Button onClick={handleCloseDialog}>{t("common.done")}</Button>
                 </DialogFooter>
               </div>
             ) : (
               <>
                 <div className="space-y-3">
                   <div className="space-y-2">
-                    <Label htmlFor="device-name">Name</Label>
+                    <Label htmlFor="device-name">{t("deviceFleet.deviceName")}</Label>
                     <Input
                       id="device-name"
                       value={newDeviceData.name}
                       onChange={(e) => setNewDeviceData((d) => ({ ...d, name: e.target.value }))}
-                      placeholder="home-server"
+                      placeholder={t("deviceFleet.deviceNamePlaceholder")}
                     />
                   </div>
                   <div className="space-y-2">
-                    <Label htmlFor="device-desc">Description (optional)</Label>
+                    <Label htmlFor="device-desc">{t("deviceFleet.deviceDesc")}</Label>
                     <Input
                       id="device-desc"
                       value={newDeviceData.description}
                       onChange={(e) => setNewDeviceData((d) => ({ ...d, description: e.target.value }))}
-                      placeholder="Living room Mac Mini"
+                      placeholder={t("deviceFleet.deviceDescPlaceholder")}
                     />
                   </div>
                 </div>
                 <DialogFooter>
                   <Button onClick={handleCreateDevice} disabled={!newDeviceData.name}>
-                    Create
+                    {t("common.create")}
                   </Button>
                 </DialogFooter>
               </>
@@ -221,7 +223,7 @@ export function DeviceFleetPage() {
                 <TableRow>
                   <TableCell colSpan={6} className="py-8 text-center text-muted-foreground">
                     <Server className="mx-auto h-8 w-8 mb-2" />
-                    No devices yet.
+                    {t("deviceFleet.noDevices")}
                   </TableCell>
                 </TableRow>
               ) : (
@@ -267,7 +269,7 @@ export function DeviceFleetPage() {
                         </div>
                       ) : (
                         <Button variant="ghost" size="sm" className="text-muted-foreground" onClick={() => { setPoolSizeId(device.id); setPoolSize(4); }}>
-                          <Layers className="mr-1 h-3 w-3" /> Configure
+                          <Layers className="mr-1 h-3 w-3" /> {t("deviceFleet.configure")}
                         </Button>
                       )}
                     </TableCell>

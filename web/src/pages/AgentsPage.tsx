@@ -1,3 +1,4 @@
+import { useTranslation } from "react-i18next";
 import { useAgents } from "@/features/useAgents";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Skeleton } from "@/components/ui/skeleton";
@@ -9,13 +10,14 @@ import { Button } from "@/components/ui/button";
 import { Bot, ExternalLink } from "lucide-react";
 
 export function AgentsPage() {
+  const { t } = useTranslation();
   const { data: agents, isLoading } = useAgents();
 
   return (
     <div className="space-y-6 p-6">
       <div>
-        <h1 className="text-2xl font-bold tracking-tight">Agents</h1>
-        <p className="text-muted-foreground">Agents currently allocated to your active jobs.</p>
+        <h1 className="text-2xl font-bold tracking-tight">{t("agents.title")}</h1>
+        <p className="text-muted-foreground">{t("agents.desc")}</p>
       </div>
 
       {isLoading ? (
@@ -35,9 +37,9 @@ export function AgentsPage() {
         <Card>
           <CardContent className="flex flex-col items-center gap-4 py-12">
             <Bot className="h-12 w-12 text-muted-foreground" />
-            <p className="text-muted-foreground">No active agents. Submit a job to get one allocated.</p>
+            <p className="text-muted-foreground">{t("agents.noAgents")}</p>
             <Link to="/jobs">
-              <Button>Submit a job</Button>
+              <Button>{t("agents.submitJob")}</Button>
             </Link>
           </CardContent>
         </Card>
@@ -50,7 +52,7 @@ export function AgentsPage() {
                   <CardTitle className="text-base">{agent.name}</CardTitle>
                   <AgentStatusBadge status={agent.status} />
                 </div>
-                <CardDescription>{agent.description || "No description"}</CardDescription>
+                <CardDescription>{agent.description || t("agents.noDescription")}</CardDescription>
               </CardHeader>
               <CardContent className="space-y-3">
                 <div className="flex flex-wrap gap-1">
@@ -63,7 +65,7 @@ export function AgentsPage() {
                 {agent.job_id && (
                   <Link to={`/jobs/${agent.job_id}`}>
                     <Button variant="outline" size="sm">
-                      <ExternalLink className="mr-2 h-3 w-3" /> View job
+                      <ExternalLink className="mr-2 h-3 w-3" /> {t("agents.viewJob")}
                     </Button>
                   </Link>
                 )}

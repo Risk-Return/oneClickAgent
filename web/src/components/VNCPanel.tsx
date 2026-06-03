@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState } from "react";
+import { useTranslation } from "react-i18next";
 import RFB from "@novnc/novnc/core/rfb";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
@@ -23,6 +24,7 @@ interface VNCPanelProps {
 type ConnectionStatus = "connecting" | "connected" | "disconnected" | "error";
 
 export function VNCPanel({ open, onClose, wsUrl, rfbPassword, sessionId, onSaveLogin }: VNCPanelProps) {
+  const { t } = useTranslation();
   const canvasRef = useRef<HTMLDivElement>(null);
   const rfbRef = useRef<RFB | null>(null);
   const [status, setStatus] = useState<ConnectionStatus>("connecting");
@@ -86,14 +88,21 @@ export function VNCPanel({ open, onClose, wsUrl, rfbPassword, sessionId, onSaveL
     }
   };
 
-  const statusBadge: Record<ConnectionStatus, { variant: "warning" | "success" | "destructive" | "secondary"; label: string }> = {
-    connecting: { variant: "warning", label: "Connecting..." },
-    connected: { variant: "success", label: "Live" },
-    disconnected: { variant: "secondary", label: "Disconnected" },
-    error: { variant: "destructive", label: "Error" },
+  const statusBadgeVariant: Record<ConnectionStatus, "warning" | "success" | "destructive" | "secondary"> = {
+    connecting: "warning",
+    connected: "success",
+    disconnected: "secondary",
+    error: "destructive",
   };
 
-  const currentStatus = statusBadge[status];
+  const statusLabel: Record<ConnectionStatus, string> = {
+    connecting: t("vnc.connecting"),
+    connected: t("vnc.live"),
+    disconnected: t("vnc.disconnected"),
+    error: t("vnc.error"),
+  };
+
+  const currentVariant = statusBadgeVariant[status];
 
   return (
     <Dialog open={open} onOpenChange={(o) => !o && handleClose()}>
@@ -102,9 +111,9 @@ export function VNCPanel({ open, onClose, wsUrl, rfbPassword, sessionId, onSaveL
           <div className="flex items-center gap-3">
             <DialogTitle>
               <Monitor className="inline mr-2 h-5 w-5" />
-              Browser Control
+              {t("vnc.browserControl")}
             </DialogTitle>
-            <Badge variant={currentStatus.variant}>{currentStatus.label}</Badge>
+            <Badge variant={currentVariant}>{statusLabel[status]}</Badge>
           </div>
         </DialogHeader>
 
@@ -124,21 +133,21 @@ export function VNCPanel({ open, onClose, wsUrl, rfbPassword, sessionId, onSaveL
                 onClick={() => setShowSaveLogin(true)}
                 disabled={status !== "connected"}
               >
-                <Save className="mr-2 h-4 w-4" /> Save Login
+                <Save className="mr-2 h-4 w-4" /> {t("vnc.saveLogin")}
               </Button>
             ) : (
               <div className="flex items-center gap-2">
                 <Input
                   value={loginLabel}
                   onChange={(e) => setLoginLabel(e.target.value)}
-                  placeholder="Login label, e.g. GitHub"
+                  placeholder={t("vnc.loginLabel")}
                   className="h-8 w-48"
                   autoFocus
                   onKeyDown={(e) => e.key === "Enter" && handleSaveLogin()}
                 />
                 <Button size="sm" onClick={handleSaveLogin} disabled={!loginLabel.trim() || saving}>
                   {saving ? <Loader2 className="mr-1 h-3 w-3 animate-spin" /> : null}
-                  Save
+                  {t("vnc.save")}
                 </Button>
                 <Button variant="ghost" size="sm" onClick={() => setShowSaveLogin(false)}>
                   <X className="h-4 w-4" />
@@ -147,7 +156,7 @@ export function VNCPanel({ open, onClose, wsUrl, rfbPassword, sessionId, onSaveL
             )}
           </div>
           <Button variant="ghost" size="sm" onClick={handleClose}>
-            <X className="mr-2 h-4 w-4" /> Close
+            <X className="mr-2 h-4 w-4" /> {t("vnc.close")}
           </Button>
         </div>
       </DialogContent>

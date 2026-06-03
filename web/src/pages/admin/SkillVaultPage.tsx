@@ -1,4 +1,5 @@
 import { useState } from "react";
+import { useTranslation } from "react-i18next";
 import { useAdminSkills, useCreateSkill, useInstallSkillFleet, usePublishSkillVersion } from "@/features/useSkills";
 import { Card, CardContent } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -19,6 +20,7 @@ import {
 import { Archive, Plus, Download, Loader2, Upload } from "lucide-react";
 
 export function SkillVaultPage() {
+  const { t } = useTranslation();
   const { data: skills, isLoading } = useAdminSkills();
   const createSkill = useCreateSkill();
   const installSkill = useInstallSkillFleet();
@@ -66,53 +68,53 @@ export function SkillVaultPage() {
     <div className="space-y-6 p-6">
       <div className="flex items-center justify-between">
         <div>
-          <h1 className="text-2xl font-bold tracking-tight">Skill Vault</h1>
-          <p className="text-muted-foreground">Central catalog of skills for the agent fleet.</p>
+          <h1 className="text-2xl font-bold tracking-tight">{t("skillVault.title")}</h1>
+          <p className="text-muted-foreground">{t("skillVault.desc")}</p>
         </div>
         <Dialog open={dialogOpen} onOpenChange={setDialogOpen}>
           <DialogTrigger asChild>
             <Button>
-              <Plus className="mr-2 h-4 w-4" /> New Skill
+              <Plus className="mr-2 h-4 w-4" /> {t("skillVault.newSkill")}
             </Button>
           </DialogTrigger>
           <DialogContent>
             <DialogHeader>
-              <DialogTitle>Create Skill Entry</DialogTitle>
-              <DialogDescription>Add a new skill to the vault catalog.</DialogDescription>
+              <DialogTitle>{t("skillVault.createTitle")}</DialogTitle>
+              <DialogDescription>{t("skillVault.createDesc")}</DialogDescription>
             </DialogHeader>
             <div className="space-y-3">
               <div className="space-y-2">
-                <Label htmlFor="skill-key">Key (slug)</Label>
+                <Label htmlFor="skill-key">{t("skillVault.key")}</Label>
                 <Input
                   id="skill-key"
                   value={formData.key}
                   onChange={(e) => setFormData((d) => ({ ...d, key: e.target.value }))}
-                  placeholder="pdf-extract"
+                  placeholder={t("skillVault.keyPlaceholder")}
                 />
               </div>
               <div className="space-y-2">
-                <Label htmlFor="skill-name">Display Name</Label>
+                <Label htmlFor="skill-name">{t("skillVault.displayName")}</Label>
                 <Input
                   id="skill-name"
                   value={formData.name}
                   onChange={(e) => setFormData((d) => ({ ...d, name: e.target.value }))}
-                  placeholder="PDF Extraction"
+                  placeholder={t("skillVault.displayNamePlaceholder")}
                 />
               </div>
               <div className="space-y-2">
-                <Label htmlFor="skill-desc">Description</Label>
+                <Label htmlFor="skill-desc">{t("common.description")}</Label>
                 <Input
                   id="skill-desc"
                   value={formData.description}
                   onChange={(e) => setFormData((d) => ({ ...d, description: e.target.value }))}
-                  placeholder="Extracts text from PDF documents"
+                  placeholder={t("skillVault.descPlaceholder")}
                 />
               </div>
             </div>
             <DialogFooter>
               <Button onClick={handleCreate} disabled={!formData.key || !formData.name || createSkill.isPending}>
                 {createSkill.isPending ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : null}
-                Create
+                {t("common.create")}
               </Button>
             </DialogFooter>
           </DialogContent>
@@ -121,8 +123,8 @@ export function SkillVaultPage() {
         <Dialog open={!!publishSkillId} onOpenChange={(open) => !open && setPublishSkillId(null)}>
           <DialogContent>
             <DialogHeader>
-              <DialogTitle>Publish Version</DialogTitle>
-              <DialogDescription>Upload a new version of this skill.</DialogDescription>
+              <DialogTitle>{t("skillVault.publishTitle")}</DialogTitle>
+              <DialogDescription>{t("skillVault.publishDesc")}</DialogDescription>
             </DialogHeader>
             <div className="space-y-3">
               <div className="space-y-2">
@@ -131,11 +133,11 @@ export function SkillVaultPage() {
                   id="version"
                   value={publishVersion_str}
                   onChange={(e) => setPublishVersionStr(e.target.value)}
-                  placeholder="1.0.0"
+                  placeholder={t("skillVault.versionPlaceholder")}
                 />
               </div>
               <div className="space-y-2">
-                <Label htmlFor="artifact">Manifest file</Label>
+                <Label htmlFor="artifact">{t("skillVault.manifestLabel")}</Label>
                 <Input
                   id="artifact"
                   type="file"
@@ -146,7 +148,7 @@ export function SkillVaultPage() {
             <DialogFooter>
               <Button onClick={handlePublish} disabled={!publishVersion_str || !publishFile || publishVersion.isPending}>
                 {publishVersion.isPending ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : null}
-                Publish
+                {t("skillVault.publish")}
               </Button>
             </DialogFooter>
           </DialogContent>
@@ -182,7 +184,7 @@ export function SkillVaultPage() {
                 <TableRow>
                   <TableCell colSpan={6} className="py-8 text-center text-muted-foreground">
                     <Archive className="mx-auto h-8 w-8 mb-2" />
-                    No skills in vault.
+                    {t("skillVault.noSkills")}
                   </TableCell>
                 </TableRow>
               ) : (
@@ -210,7 +212,7 @@ export function SkillVaultPage() {
                             setPublishFile(null);
                           }}
                         >
-                          <Upload className="mr-1 h-3 w-3" /> Publish
+                          <Upload className="mr-1 h-3 w-3" /> {t("skillVault.publish")}
                         </Button>
                         <Button
                           variant="ghost"
@@ -218,7 +220,7 @@ export function SkillVaultPage() {
                           onClick={() => handleInstall(skill.id)}
                           disabled={installSkill.isPending}
                         >
-                          <Download className="mr-1 h-3 w-3" /> Install fleet
+                          <Download className="mr-1 h-3 w-3" /> {t("skillVault.installFleet")}
                         </Button>
                       </div>
                     </TableCell>

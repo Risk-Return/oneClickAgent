@@ -1,4 +1,5 @@
 import { useState } from "react";
+import { useTranslation } from "react-i18next";
 import { useCredentials, useUpdateCredential, useDeleteCredential } from "@/features/useCredentials";
 import { Card, CardContent } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -19,6 +20,7 @@ import { Key, Pencil, Trash2, Check, X } from "lucide-react";
 import { formatDistanceToNow } from "date-fns";
 
 export function SavedLoginsPage() {
+  const { t } = useTranslation();
   const { data: credentials, isLoading } = useCredentials();
   const updateCredential = useUpdateCredential();
   const deleteCredential = useDeleteCredential();
@@ -53,11 +55,8 @@ export function SavedLoginsPage() {
   return (
     <div className="space-y-6 p-6">
       <div>
-        <h1 className="text-2xl font-bold tracking-tight">Saved Logins</h1>
-        <p className="text-muted-foreground">
-          Saved logins are encrypted and reused to sign the agent's browser into a site for you.
-          They are wiped from the agent after each job.
-        </p>
+        <h1 className="text-2xl font-bold tracking-tight">{t("logins.title")}</h1>
+        <p className="text-muted-foreground">{t("logins.desc")}</p>
       </div>
 
       <Card>
@@ -65,9 +64,9 @@ export function SavedLoginsPage() {
           <Table>
             <TableHeader>
               <TableRow>
-                <TableHead>Label</TableHead>
-                <TableHead>Origin</TableHead>
-                <TableHead>Last Used</TableHead>
+                <TableHead>{t("logins.label")}</TableHead>
+                <TableHead>{t("logins.origin")}</TableHead>
+                <TableHead>{t("logins.lastUsed")}</TableHead>
                 <TableHead className="text-right">Actions</TableHead>
               </TableRow>
             </TableHeader>
@@ -85,7 +84,7 @@ export function SavedLoginsPage() {
                 <TableRow>
                   <TableCell colSpan={4} className="py-8 text-center text-muted-foreground">
                     <Key className="mx-auto h-8 w-8 mb-2" />
-                    No saved logins yet. They are created from a live VNC browser session.
+                    {t("logins.noLogins")}
                   </TableCell>
                 </TableRow>
               ) : (
@@ -115,7 +114,7 @@ export function SavedLoginsPage() {
                     <TableCell className="text-muted-foreground text-sm">
                       {cred.last_used_at
                         ? formatDistanceToNow(new Date(cred.last_used_at), { addSuffix: true })
-                        : "Never"}
+                        : t("logins.never")}
                     </TableCell>
                     <TableCell className="text-right">
                       <div className="flex items-center justify-end gap-1">
@@ -138,15 +137,15 @@ export function SavedLoginsPage() {
       <AlertDialog open={!!deleteId} onOpenChange={(open) => !open && setDeleteId(null)}>
         <AlertDialogContent>
           <AlertDialogHeader>
-            <AlertDialogTitle>Delete saved login?</AlertDialogTitle>
+            <AlertDialogTitle>{t("logins.deleteConfirm")}</AlertDialogTitle>
             <AlertDialogDescription>
-              This cannot be undone. You'll need to save it again from a live VNC session.
+              {t("logins.deleteConfirmDesc")}
             </AlertDialogDescription>
           </AlertDialogHeader>
           <AlertDialogFooter>
-            <AlertDialogCancel>Cancel</AlertDialogCancel>
+            <AlertDialogCancel>{t("common.cancel")}</AlertDialogCancel>
             <AlertDialogAction onClick={handleDelete} className="bg-destructive">
-              Delete
+              {t("common.delete")}
             </AlertDialogAction>
           </AlertDialogFooter>
         </AlertDialogContent>

@@ -1,4 +1,5 @@
 import { Outlet, NavLink, useNavigate } from "react-router-dom";
+import { useTranslation } from "react-i18next";
 import { cn } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
 import { Separator } from "@/components/ui/separator";
@@ -44,26 +45,8 @@ interface NavItem {
   adminOnly?: boolean;
 }
 
-const customerNav: NavItem[] = [
-  { label: "Dashboard", href: "/", icon: LayoutDashboard },
-  { label: "Command", href: "/jobs", icon: Terminal },
-  { label: "History", href: "/history", icon: Clock },
-  { label: "Agents", href: "/agents", icon: Bot },
-  { label: "Skills", href: "/skills", icon: Puzzle },
-  { label: "Logins", href: "/logins", icon: Key },
-];
-
-const adminNav: NavItem[] = [
-  { label: "Devices", href: "/admin/devices", icon: Server, adminOnly: true },
-  { label: "Skill Vault", href: "/admin/skill-vault", icon: Archive, adminOnly: true },
-  { label: "Fleet Rollout", href: "/admin/fleet-rollout", icon: Rocket, adminOnly: true },
-  { label: "Organizations", href: "/admin/organizations", icon: Building2, adminOnly: true },
-  { label: "Visibility", href: "/admin/visibility", icon: Eye, adminOnly: true },
-  { label: "Users", href: "/admin/users", icon: Users, adminOnly: true },
-  { label: "Agent Pool", href: "/admin/pool", icon: Layers, adminOnly: true },
-];
-
 export function Layout() {
+  const { t } = useTranslation();
   const navigate = useNavigate();
   const { theme, setTheme, sidebarOpen, toggleSidebar } = useUIStore();
   const tokenManager = TokenManager.getInstance();
@@ -73,6 +56,25 @@ export function Layout() {
     await tokenManager.logout();
     navigate("/login");
   };
+
+  const customerNav: NavItem[] = [
+    { label: t("nav.dashboard"), href: "/", icon: LayoutDashboard },
+    { label: t("nav.command"), href: "/jobs", icon: Terminal },
+    { label: t("nav.history"), href: "/history", icon: Clock },
+    { label: t("nav.agents"), href: "/agents", icon: Bot },
+    { label: t("nav.skills"), href: "/skills", icon: Puzzle },
+    { label: t("nav.logins"), href: "/logins", icon: Key },
+  ];
+
+  const adminNav: NavItem[] = [
+    { label: t("nav.admin.devices"), href: "/admin/devices", icon: Server, adminOnly: true },
+    { label: t("nav.admin.skillVault"), href: "/admin/skill-vault", icon: Archive, adminOnly: true },
+    { label: t("nav.admin.fleetRollout"), href: "/admin/fleet-rollout", icon: Rocket, adminOnly: true },
+    { label: t("nav.admin.organizations"), href: "/admin/organizations", icon: Building2, adminOnly: true },
+    { label: t("nav.admin.visibility"), href: "/admin/visibility", icon: Eye, adminOnly: true },
+    { label: t("nav.admin.users"), href: "/admin/users", icon: Users, adminOnly: true },
+    { label: t("nav.admin.agentPool"), href: "/admin/pool", icon: Layers, adminOnly: true },
+  ];
 
   const navItems = [...customerNav, ...(isAdmin ? adminNav : [])];
 
@@ -132,7 +134,7 @@ export function Layout() {
             }
           >
             <Settings className="h-4 w-4 shrink-0" />
-            {sidebarOpen && <span>Settings</span>}
+            {sidebarOpen && <span>{t("nav.settings")}</span>}
           </NavLink>
         </div>
       </aside>
@@ -155,13 +157,13 @@ export function Layout() {
               </DropdownMenuTrigger>
               <DropdownMenuContent align="end">
                 <DropdownMenuItem onClick={() => setTheme("light")}>
-                  <Sun className="mr-2 h-4 w-4" /> Light
+                  <Sun className="mr-2 h-4 w-4" /> {t("nav.theme.light")}
                 </DropdownMenuItem>
                 <DropdownMenuItem onClick={() => setTheme("dark")}>
-                  <Moon className="mr-2 h-4 w-4" /> Dark
+                  <Moon className="mr-2 h-4 w-4" /> {t("nav.theme.dark")}
                 </DropdownMenuItem>
                 <DropdownMenuItem onClick={() => setTheme("system")}>
-                  <Monitor className="mr-2 h-4 w-4" /> System
+                  <Monitor className="mr-2 h-4 w-4" /> {t("nav.theme.system")}
                 </DropdownMenuItem>
               </DropdownMenuContent>
             </DropdownMenu>
@@ -173,14 +175,14 @@ export function Layout() {
                 </Button>
               </DropdownMenuTrigger>
               <DropdownMenuContent align="end" className="w-48">
-                <DropdownMenuLabel>Account</DropdownMenuLabel>
+                <DropdownMenuLabel>{t("nav.account")}</DropdownMenuLabel>
                 <DropdownMenuSeparator />
                 <DropdownMenuItem onClick={() => navigate("/settings")}>
-                  <Settings className="mr-2 h-4 w-4" /> Settings
+                  <Settings className="mr-2 h-4 w-4" /> {t("nav.settings")}
                 </DropdownMenuItem>
                 <DropdownMenuSeparator />
                 <DropdownMenuItem onClick={handleLogout}>
-                  <LogOut className="mr-2 h-4 w-4" /> Logout
+                  <LogOut className="mr-2 h-4 w-4" /> {t("nav.logout")}
                 </DropdownMenuItem>
               </DropdownMenuContent>
             </DropdownMenu>

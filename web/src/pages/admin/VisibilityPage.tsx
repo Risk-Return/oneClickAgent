@@ -1,4 +1,5 @@
 import { useState } from "react";
+import { useTranslation } from "react-i18next";
 import { useAdminSkills } from "@/features/useSkills";
 import { apiClient } from "@/api/client";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
@@ -21,6 +22,7 @@ import { Eye, UserPlus, Loader2, Trash2, RefreshCw } from "lucide-react";
 import type { SkillGrant } from "@/api/schemas";
 
 export function VisibilityPage() {
+  const { t } = useTranslation();
   const queryClient = useQueryClient();
   const { data: skills, isLoading } = useAdminSkills();
   const [selectedSkill, setSelectedSkill] = useState<string>("");
@@ -38,9 +40,9 @@ export function VisibilityPage() {
     try {
       await apiClient.patch(`/admin/skills/${skillId}/visibility`, { visibility });
       queryClient.invalidateQueries({ queryKey: ["admin", "skills"] });
-      toast.success(`Skill set to ${visibility}`);
+      toast.success(t("visibility.visibilitySet", { visibility }));
     } catch {
-      toast.error("Failed to update visibility");
+      toast.error(t("visibility.visibilityFailed"));
     }
   };
 
@@ -55,9 +57,9 @@ export function VisibilityPage() {
       refetchGrants();
       setGrantDialogOpen(false);
       setGrantData({ principal_type: "user", principal_id: "" });
-      toast.success("Grant created");
+      toast.success(t("visibility.grantCreated"));
     } catch (err: unknown) {
-      toast.error((err as { message?: string })?.message || "Failed to create grant");
+      toast.error((err as { message?: string })?.message || t("visibility.grantFailed"));
     } finally {
       setGranting(false);
     }
@@ -67,24 +69,24 @@ export function VisibilityPage() {
     try {
       await apiClient.delete(`/admin/skills/${selectedSkill}/grants/${principalType}/${principalId}`);
       refetchGrants();
-      toast.success("Grant revoked");
+      toast.success(t("visibility.grantRevoked"));
     } catch {
-      toast.error("Failed to revoke grant");
+      toast.error(t("visibility.revokeFailed"));
     }
   };
 
   return (
     <div className="space-y-6 p-6">
       <div>
-        <h1 className="text-2xl font-bold tracking-tight">Skill Visibility</h1>
-        <p className="text-muted-foreground">Control which skills customers can see and use.</p>
+        <h1 className="text-2xl font-bold tracking-tight">{t("visibility.title")}</h1>
+        <p className="text-muted-foreground">{t("visibility.desc")}</p>
       </div>
 
       <div className="flex items-center gap-4">
         <div className="w-64">
           <Select value={selectedSkill} onValueChange={setSelectedSkill}>
             <SelectTrigger>
-              <SelectValue placeholder="Select a skill..." />
+              <SelectValue placeholder={t("visibility.selectSkill")} />
             </SelectTrigger>
             <SelectContent>
               {skills?.map((skill) => (
@@ -99,17 +101,17 @@ export function VisibilityPage() {
           <Dialog open={grantDialogOpen} onOpenChange={setGrantDialogOpen}>
             <DialogTrigger asChild>
               <Button variant="outline">
-                <UserPlus className="mr-2 h-4 w-4" /> Grant Access
+                <UserPlus className="mr-2 h-4 w-4" /> {t("visibility.grantAccess")}
               </Button>
             </DialogTrigger>
             <DialogContent>
               <DialogHeader>
-                <DialogTitle>Grant Skill Access</DialogTitle>
-                <DialogDescription>Grant visibility to a user or organization.</DialogDescription>
+                <DialogTitle>{t("visibility.grantTitle")}</DialogTitle>
+                <DialogDescription>{t("visibility.grantDesc")}</DialogDescription>
               </DialogHeader>
               <div className="space-y-3">
                 <div className="space-y-2">
-                  <Label>Principal Type</Label>
+                  <Label>{t("visibility.principalType")}</Label>
                   <Select
                     value={grantData.principal_type}
                     onValueChange={(v) => setGrantData((d) => ({ ...d, principal_type: v as "user" | "org" }))}
@@ -122,11 +124,11 @@ export function VisibilityPage() {
                   </Select>
                 </div>
                 <div className="space-y-2">
-                  <Label>Principal ID</Label>
+                  <Label>{t("visibility.principalId")}</Label>
                   <Input
                     value={grantData.principal_id}
                     onChange={(e) => setGrantData((d) => ({ ...d, principal_id: e.target.value }))}
-                    placeholder="UUID of user or org"
+                    placeholder={t("visibility.principalIdPlaceholder")}
                   />
                 </div>
               </div>
@@ -165,7 +167,7 @@ export function VisibilityPage() {
                   <TableRow>
                     <TableCell colSpan={3} className="py-8 text-center text-muted-foreground">
                       <Eye className="mx-auto h-8 w-8 mb-2" />
-                      No skills.
+                      {t("visibility.noSkills")}
                     </TableCell>
                   </TableRow>
                 ) : (
@@ -183,12 +185,12 @@ export function VisibilityPage() {
                             variant="ghost" size="sm"
                             onClick={() => handleVisibilityChange(skill.id, "public")}
                             disabled={skill.visibility === "public"}
-                          >Public</Button>
+                          >{t("visibility.public")}</Button>
                           <Button
                             variant="ghost" size="sm"
                             onClick={() => handleVisibilityChange(skill.id, "restricted")}
                             disabled={skill.visibility === "restricted"}
-                          >Restricted</Button>
+                          >{t("visibility.restricted")}</Button>
                         </div>
                       </TableCell>
                     </TableRow>
@@ -203,7 +205,7 @@ export function VisibilityPage() {
           <Card>
             <CardContent className="p-0">
               <div className="flex items-center justify-between px-4 py-3 border-b">
-                <h3 className="text-sm font-medium">Grants</h3>
+                <h3 className="text-sm font-medium">{t("visibility.grants")}</h3>
                 <Button variant="ghost" size="icon" onClick={() => refetchGrants()}>
                   <RefreshCw className="h-4 w-4" />
                 </Button>
@@ -224,7 +226,7 @@ export function VisibilityPage() {
                   ) : !grants || grants.length === 0 ? (
                     <TableRow>
                       <TableCell colSpan={3} className="py-4 text-center text-muted-foreground text-sm">
-                        No grants yet.
+                        {t("visibility.noGrants")}
                       </TableCell>
                     </TableRow>
                   ) : (

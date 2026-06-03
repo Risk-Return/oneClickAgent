@@ -1,3 +1,4 @@
+import { useTranslation } from "react-i18next";
 import { useJobs } from "@/features/useJobs";
 import { Card, CardContent } from "@/components/ui/card";
 import { Skeleton } from "@/components/ui/skeleton";
@@ -9,13 +10,14 @@ import { formatDistanceToNow } from "date-fns";
 import { Clock, ArrowUpRight } from "lucide-react";
 
 export function JobHistoryPage() {
+  const { t } = useTranslation();
   const { data: jobs, isLoading } = useJobs();
 
   return (
     <div className="space-y-6 p-6">
       <div>
-        <h1 className="text-2xl font-bold tracking-tight">Job History</h1>
-        <p className="text-muted-foreground">Browse and review past jobs.</p>
+        <h1 className="text-2xl font-bold tracking-tight">{t("history.title")}</h1>
+        <p className="text-muted-foreground">{t("history.desc")}</p>
       </div>
 
       <Card>
@@ -43,7 +45,7 @@ export function JobHistoryPage() {
                 <TableRow>
                   <TableCell colSpan={4} className="text-center py-8 text-muted-foreground">
                     <Clock className="mx-auto h-8 w-8 mb-2" />
-                    No jobs yet.
+                    {t("history.noJobsYet")}
                   </TableCell>
                 </TableRow>
               ) : (

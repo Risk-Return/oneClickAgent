@@ -1,4 +1,5 @@
 import { useState } from "react";
+import { useTranslation } from "react-i18next";
 import { apiClient } from "@/api/client";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -22,6 +23,7 @@ interface Member {
 }
 
 export function OrganizationsPage() {
+  const { t } = useTranslation();
   const queryClient = useQueryClient();
   const [dialogOpen, setDialogOpen] = useState(false);
   const [formData, setFormData] = useState({ name: "", description: "" });
@@ -50,9 +52,9 @@ export function OrganizationsPage() {
       queryClient.invalidateQueries({ queryKey: ["admin", "orgs"] });
       setDialogOpen(false);
       setFormData({ name: "", description: "" });
-      toast.success("Organization created");
+      toast.success(t("organizations.orgCreated"));
     } catch (err: unknown) {
-      toast.error((err as { message?: string })?.message || "Failed to create organization");
+      toast.error((err as { message?: string })?.message || t("organizations.createFailed"));
     } finally {
       setCreating(false);
     }
@@ -63,9 +65,9 @@ export function OrganizationsPage() {
       await apiClient.delete(`/admin/orgs/${orgId}`);
       queryClient.invalidateQueries({ queryKey: ["admin", "orgs"] });
       if (selectedOrgId === orgId) setSelectedOrgId(null);
-      toast.success("Organization deleted");
+      toast.success(t("organizations.orgDeleted"));
     } catch {
-      toast.error("Failed to delete organization");
+      toast.error(t("organizations.deleteFailed"));
     }
   };
 
@@ -75,9 +77,9 @@ export function OrganizationsPage() {
       await apiClient.post(`/admin/orgs/${selectedOrgId}/members`, { user_id: addMemberId });
       refetchMembers();
       setAddMemberId("");
-      toast.success("Member added");
+      toast.success(t("organizations.memberAdded"));
     } catch (err: unknown) {
-      toast.error((err as { message?: string })?.message || "Failed to add member");
+      toast.error((err as { message?: string })?.message || t("organizations.addMemberFailed"));
     }
   };
 
@@ -86,9 +88,9 @@ export function OrganizationsPage() {
     try {
       await apiClient.delete(`/admin/orgs/${selectedOrgId}/members/${userId}`);
       refetchMembers();
-      toast.success("Member removed");
+      toast.success(t("organizations.memberRemoved"));
     } catch {
-      toast.error("Failed to remove member");
+      toast.error(t("organizations.removeMemberFailed"));
     }
   };
 
@@ -96,34 +98,34 @@ export function OrganizationsPage() {
     <div className="space-y-6 p-6">
       <div className="flex items-center justify-between">
         <div>
-          <h1 className="text-2xl font-bold tracking-tight">Organizations</h1>
-          <p className="text-muted-foreground">Manage customer groups for skill visibility grants.</p>
+          <h1 className="text-2xl font-bold tracking-tight">{t("organizations.title")}</h1>
+          <p className="text-muted-foreground">{t("organizations.desc")}</p>
         </div>
         <Dialog open={dialogOpen} onOpenChange={setDialogOpen}>
           <DialogTrigger asChild>
             <Button>
-              <Plus className="mr-2 h-4 w-4" /> New Organization
+              <Plus className="mr-2 h-4 w-4" /> {t("organizations.newOrg")}
             </Button>
           </DialogTrigger>
           <DialogContent>
             <DialogHeader>
-              <DialogTitle>Create Organization</DialogTitle>
-              <DialogDescription>Create a new group to manage customers together.</DialogDescription>
+              <DialogTitle>{t("organizations.createTitle")}</DialogTitle>
+              <DialogDescription>{t("organizations.createDesc")}</DialogDescription>
             </DialogHeader>
             <div className="space-y-3">
               <div className="space-y-2">
-                <Label htmlFor="org-name">Name</Label>
-                <Input id="org-name" value={formData.name} onChange={(e) => setFormData((d) => ({ ...d, name: e.target.value }))} placeholder="Engineering Team" />
+                <Label htmlFor="org-name">{t("common.name")}</Label>
+                <Input id="org-name" value={formData.name} onChange={(e) => setFormData((d) => ({ ...d, name: e.target.value }))} placeholder={t("organizations.namePlaceholder")} />
               </div>
               <div className="space-y-2">
-                <Label htmlFor="org-desc">Description</Label>
-                <Input id="org-desc" value={formData.description} onChange={(e) => setFormData((d) => ({ ...d, description: e.target.value }))} placeholder="The engineering department" />
+                <Label htmlFor="org-desc">{t("common.description")}</Label>
+                <Input id="org-desc" value={formData.description} onChange={(e) => setFormData((d) => ({ ...d, description: e.target.value }))} placeholder={t("organizations.descPlaceholder")} />
               </div>
             </div>
             <DialogFooter>
               <Button onClick={handleCreate} disabled={!formData.name || creating}>
                 {creating ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : null}
-                Create
+                {t("common.create")}
               </Button>
             </DialogFooter>
           </DialogContent>
@@ -156,8 +158,8 @@ export function OrganizationsPage() {
                 ) : orgs?.length === 0 ? (
                   <TableRow>
                     <TableCell colSpan={3} className="py-8 text-center text-muted-foreground">
-                      <Building2 className="mx-auto h-8 w-8 mb-2" />
-                      No organizations yet.
+                    <Building2 className="mx-auto h-8 w-8 mb-2" />
+                    {t("organizations.noOrgs")}
                     </TableCell>
                   </TableRow>
                 ) : (
@@ -187,17 +189,17 @@ export function OrganizationsPage() {
         {selectedOrgId && (
           <Card>
             <CardHeader className="flex flex-row items-center justify-between">
-              <CardTitle className="text-base">Members</CardTitle>
+              <CardTitle className="text-base">{t("organizations.members")}</CardTitle>
               <div className="flex items-center gap-2">
                 <Input
-                  placeholder="User UUID"
+                  placeholder={t("organizations.userUuid")}
                   value={addMemberId}
                   onChange={(e) => setAddMemberId(e.target.value)}
                   className="h-8 w-40 text-xs"
                   onKeyDown={(e) => e.key === "Enter" && handleAddMember()}
                 />
                 <Button size="sm" variant="outline" onClick={handleAddMember} disabled={!addMemberId}>
-                  <UserPlus className="mr-1 h-3 w-3" /> Add
+                  <UserPlus className="mr-1 h-3 w-3" /> {t("organizations.addMember")}
                 </Button>
               </div>
             </CardHeader>
@@ -216,8 +218,8 @@ export function OrganizationsPage() {
                   ) : !members || members.length === 0 ? (
                     <TableRow>
                       <TableCell colSpan={3} className="py-4 text-center text-muted-foreground text-sm">
-                        <Users className="mx-auto h-6 w-6 mb-1" />
-                        No members.
+                      <Users className="mx-auto h-6 w-6 mb-1" />
+                      {t("organizations.noMembers")}
                       </TableCell>
                     </TableRow>
                   ) : (

@@ -1,3 +1,4 @@
+import { useTranslation } from "react-i18next";
 import { Progress } from "@/components/ui/progress";
 import { Badge } from "@/components/ui/badge";
 import { AgentStatusBadge } from "./AgentStatusBadge";
@@ -26,6 +27,7 @@ export function JobProgressCard({
   errorCode,
   errorMessage: _errorMessage,
 }: JobProgressCardProps) {
+  const { t } = useTranslation();
   const isActive = status === "running" || status === "dispatched";
   const isExpired = errorCode === "QUEUE_TIMEOUT";
 
@@ -46,12 +48,12 @@ export function JobProgressCard({
 
       {status === "queued" && (
         <div className="flex items-center gap-2">
-          <Badge variant="warning">In Queue</Badge>
+          <Badge variant="warning">{t("jobs.inQueue")}</Badge>
           {queuePosition != null && (
             <span className="text-sm text-muted-foreground">
-              #{queuePosition} in queue
+              {t("jobs.queuePosition", { position: queuePosition })}
               {estimatedWaitSeconds != null &&
-                ` · ~${Math.ceil(estimatedWaitSeconds / 60)} min wait`}
+                ` · ${t("jobs.estWait", { minutes: Math.ceil(estimatedWaitSeconds / 60) })}`}
             </span>
           )}
         </div>
@@ -59,13 +61,13 @@ export function JobProgressCard({
 
       {isExpired && (
         <div className="rounded-md bg-destructive/10 p-3 text-sm text-destructive">
-          Job expired in queue. Cancel or resubmit.
+          {t("jobs.jobExpired")}
         </div>
       )}
 
       <div aria-live="polite" aria-atomic="true">
         <Progress value={percent} className={status === "failed" ? "[&>div]:bg-red-500" : ""} />
-        <p className="mt-2 text-sm text-muted-foreground">{progressMessage || "Waiting..."}</p>
+        <p className="mt-2 text-sm text-muted-foreground">{progressMessage || t("progress.waiting")}</p>
       </div>
     </div>
   );

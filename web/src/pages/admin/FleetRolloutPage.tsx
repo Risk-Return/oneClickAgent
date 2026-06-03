@@ -1,3 +1,4 @@
+import { useTranslation } from "react-i18next";
 import { useAdminSkills, useDisableSkillFleet, useEnableSkillFleet, useDeleteSkillFleet } from "@/features/useSkills";
 import { Card, CardContent } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -6,6 +7,7 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@
 import { Rocket, Pause, Play, Trash2 } from "lucide-react";
 
 export function FleetRolloutPage() {
+  const { t } = useTranslation();
   const { data: skills, isLoading } = useAdminSkills();
   const disableSkill = useDisableSkillFleet();
   const enableSkill = useEnableSkillFleet();
@@ -14,8 +16,8 @@ export function FleetRolloutPage() {
   return (
     <div className="space-y-6 p-6">
       <div>
-        <h1 className="text-2xl font-bold tracking-tight">Fleet Rollout</h1>
-        <p className="text-muted-foreground">Manage skills across all devices and agents in the fleet.</p>
+        <h1 className="text-2xl font-bold tracking-tight">{t("fleetRollout.title")}</h1>
+        <p className="text-muted-foreground">{t("fleetRollout.desc")}</p>
       </div>
 
       <Card>
@@ -43,7 +45,7 @@ export function FleetRolloutPage() {
                 <TableRow>
                   <TableCell colSpan={4} className="py-8 text-center text-muted-foreground">
                     <Rocket className="mx-auto h-8 w-8 mb-2" />
-                    No skills to manage.
+                    {t("fleetRollout.noSkills")}
                   </TableCell>
                 </TableRow>
               ) : (
@@ -60,7 +62,7 @@ export function FleetRolloutPage() {
                           onClick={() => disableSkill.mutate(skill.id)}
                           disabled={disableSkill.isPending}
                         >
-                          <Pause className="mr-1 h-3 w-3" /> Disable
+                          <Pause className="mr-1 h-3 w-3" /> {t("fleetRollout.disable")}
                         </Button>
                         <Button
                           variant="ghost"
@@ -68,7 +70,7 @@ export function FleetRolloutPage() {
                           onClick={() => enableSkill.mutate(skill.id)}
                           disabled={enableSkill.isPending}
                         >
-                          <Play className="mr-1 h-3 w-3" /> Enable
+                          <Play className="mr-1 h-3 w-3" /> {t("fleetRollout.enable")}
                         </Button>
                         <Button
                           variant="ghost"
@@ -76,7 +78,7 @@ export function FleetRolloutPage() {
                           onClick={() => deleteSkill.mutate(skill.id)}
                           disabled={deleteSkill.isPending}
                         >
-                          <Trash2 className="mr-1 h-3 w-3 text-destructive" /> Delete
+                          <Trash2 className="mr-1 h-3 w-3 text-destructive" /> {t("fleetRollout.delete")}
                         </Button>
                       </div>
                     </TableCell>

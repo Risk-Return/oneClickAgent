@@ -1,3 +1,4 @@
+import { useTranslation } from "react-i18next";
 import { Label } from "@/components/ui/label";
 import type { Skill } from "@/api/schemas";
 
@@ -9,9 +10,10 @@ interface SkillSelectorProps {
 }
 
 export function SkillSelector({ skills, selectedSkillId, onSkillChange, installedSkillIds }: SkillSelectorProps) {
+  const { t } = useTranslation();
   return (
     <div className="space-y-3">
-      <Label>Skill (optional, at most one)</Label>
+      <Label>{t("jobs.skillLabel")}</Label>
       <div className="flex flex-wrap gap-2">
         <button
           type="button"
@@ -22,7 +24,7 @@ export function SkillSelector({ skills, selectedSkillId, onSkillChange, installe
               : "border-muted-foreground/25 bg-transparent hover:bg-accent"
           }`}
         >
-          None
+          {t("jobs.none")}
         </button>
         {skills.map((skill) => {
           const isInstalled = !installedSkillIds || installedSkillIds.includes(skill.id);
@@ -43,7 +45,7 @@ export function SkillSelector({ skills, selectedSkillId, onSkillChange, installe
               }`}
             >
               {skill.name}
-              {!isInstalled && <span className="text-xs opacity-70">unavailable</span>}
+              {!isInstalled && <span className="text-xs opacity-70">{t("jobs.unavailable")}</span>}
             </button>
           );
         })}

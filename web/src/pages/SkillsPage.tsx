@@ -1,3 +1,4 @@
+import { useTranslation } from "react-i18next";
 import { useVisibleSkills } from "@/features/useSkills";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Skeleton } from "@/components/ui/skeleton";
@@ -5,13 +6,14 @@ import { Badge } from "@/components/ui/badge";
 import { Puzzle } from "lucide-react";
 
 export function SkillsPage() {
+  const { t } = useTranslation();
   const { data: skills, isLoading } = useVisibleSkills();
 
   return (
     <div className="space-y-6 p-6">
       <div>
-        <h1 className="text-2xl font-bold tracking-tight">Skills</h1>
-        <p className="text-muted-foreground">Skills available for your jobs. Select at most one per job. Skills must be installed on the pool's host devices to be usable.</p>
+        <h1 className="text-2xl font-bold tracking-tight">{t("skills.title")}</h1>
+        <p className="text-muted-foreground">{t("skills.desc")}</p>
       </div>
 
       {isLoading ? (
@@ -31,7 +33,7 @@ export function SkillsPage() {
         <Card>
           <CardContent className="flex flex-col items-center gap-4 py-12">
             <Puzzle className="h-12 w-12 text-muted-foreground" />
-            <p className="text-muted-foreground">No skills visible yet. An admin needs to grant you access.</p>
+            <p className="text-muted-foreground">{t("skills.noSkills")}</p>
           </CardContent>
         </Card>
       ) : (
@@ -48,9 +50,9 @@ export function SkillsPage() {
                 <CardDescription className="text-xs font-mono">{skill.key}</CardDescription>
               </CardHeader>
               <CardContent>
-                <p className="text-sm text-muted-foreground">{skill.description || "No description"}</p>
+                <p className="text-sm text-muted-foreground">{skill.description || t("skills.noDescription")}</p>
                 {skill.latest_version && (
-                  <p className="mt-2 text-xs text-muted-foreground">Version: {skill.latest_version}</p>
+                  <p className="mt-2 text-xs text-muted-foreground">{t("skills.version")} {skill.latest_version}</p>
                 )}
               </CardContent>
             </Card>

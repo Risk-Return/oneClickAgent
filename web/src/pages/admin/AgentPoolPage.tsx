@@ -1,3 +1,4 @@
+import { useTranslation } from "react-i18next";
 import { useAdminAgents, useReleaseAgent, useDrainAgent } from "@/features/useAgents";
 import { Card, CardContent } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -8,6 +9,7 @@ import { AgentStatusBadge } from "@/components/AgentStatusBadge";
 import { Bot, Unlink } from "lucide-react";
 
 export function AgentPoolPage() {
+  const { t } = useTranslation();
   const { data: agents, isLoading } = useAdminAgents();
   const releaseAgent = useReleaseAgent();
   const drainAgent = useDrainAgent();
@@ -15,8 +17,8 @@ export function AgentPoolPage() {
   return (
     <div className="space-y-6 p-6">
       <div>
-        <h1 className="text-2xl font-bold tracking-tight">Agent Pool</h1>
-        <p className="text-muted-foreground">Fleet-wide agent view. Manage idle, busy, and stuck agents.</p>
+        <h1 className="text-2xl font-bold tracking-tight">{t("agentPool.title")}</h1>
+        <p className="text-muted-foreground">{t("agentPool.desc")}</p>
       </div>
 
       <Card>
@@ -48,7 +50,7 @@ export function AgentPoolPage() {
                 <TableRow>
                   <TableCell colSpan={6} className="py-8 text-center text-muted-foreground">
                     <Bot className="mx-auto h-8 w-8 mb-2" />
-                    No agents in pool.
+                    {t("agentPool.noAgents")}
                   </TableCell>
                 </TableRow>
               ) : (
@@ -78,7 +80,7 @@ export function AgentPoolPage() {
                             onClick={() => releaseAgent.mutate(agent.id)}
                             disabled={releaseAgent.isPending}
                           >
-                            <Unlink className="mr-1 h-3 w-3" /> Release
+                            <Unlink className="mr-1 h-3 w-3" /> {t("agentPool.release")}
                           </Button>
                         )}
                         {(agent.status === "idle" || agent.status === "busy") && (
@@ -88,7 +90,7 @@ export function AgentPoolPage() {
                             onClick={() => drainAgent.mutate(agent.id)}
                             disabled={drainAgent.isPending}
                           >
-                            Drain
+                            {t("agentPool.drain")}
                           </Button>
                         )}
                       </div>

@@ -1,3 +1,4 @@
+import { useTranslation } from "react-i18next";
 import { apiClient } from "@/api/client";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { Card, CardContent } from "@/components/ui/card";
@@ -16,6 +17,7 @@ import { Users } from "lucide-react";
 import type { User } from "@/api/schemas";
 
 export function UserTiersPage() {
+  const { t } = useTranslation();
   const queryClient = useQueryClient();
 
   const { data: users, isLoading } = useQuery({
@@ -27,9 +29,9 @@ export function UserTiersPage() {
     try {
       await apiClient.patch(`/admin/users/${userId}/tier`, { tier });
       queryClient.invalidateQueries({ queryKey: ["admin", "users"] });
-      toast.success(`User tier set to ${tier}`);
+      toast.success(t("userTiers.tierSet", { tier }));
     } catch (err: unknown) {
-      toast.error((err as { message?: string })?.message || "Failed to update tier");
+      toast.error((err as { message?: string })?.message || t("userTiers.tierFailed"));
     }
   };
 
@@ -45,8 +47,8 @@ export function UserTiersPage() {
   return (
     <div className="space-y-6 p-6">
       <div>
-        <h1 className="text-2xl font-bold tracking-tight">User Management</h1>
-        <p className="text-muted-foreground">View customers and set their queue priority tier.</p>
+        <h1 className="text-2xl font-bold tracking-tight">{t("userTiers.title")}</h1>
+        <p className="text-muted-foreground">{t("userTiers.desc")}</p>
       </div>
 
       <Card>
@@ -76,7 +78,7 @@ export function UserTiersPage() {
                 <TableRow>
                   <TableCell colSpan={5} className="py-8 text-center text-muted-foreground">
                     <Users className="mx-auto h-8 w-8 mb-2" />
-                    No users found.
+                    {t("userTiers.noUsers")}
                   </TableCell>
                 </TableRow>
               ) : (

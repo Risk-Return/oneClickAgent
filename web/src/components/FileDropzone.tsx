@@ -1,4 +1,5 @@
 import { useCallback, useState } from "react";
+import { useTranslation } from "react-i18next";
 import { Card } from "@/components/ui/card";
 import { Progress } from "@/components/ui/progress";
 import { Button } from "@/components/ui/button";
@@ -19,6 +20,7 @@ interface FileDropzoneProps {
 }
 
 export function FileDropzone({ fileIds, onFilesChange, disabled }: FileDropzoneProps) {
+  const { t } = useTranslation();
   const [uploading, setUploading] = useState<UploadingFile[]>([]);
   const [dragOver, setDragOver] = useState(false);
 
@@ -60,7 +62,7 @@ export function FileDropzone({ fileIds, onFilesChange, disabled }: FileDropzoneP
         onDragLeave={() => setDragOver(false)}
       >
         <Upload className="h-8 w-8 text-muted-foreground" />
-        <p className="text-sm text-muted-foreground">Drop files here or click to upload</p>
+        <p className="text-sm text-muted-foreground">{t("fileDropzone.dropHere")}</p>
         <input
           type="file"
           className="hidden"
@@ -73,7 +75,7 @@ export function FileDropzone({ fileIds, onFilesChange, disabled }: FileDropzoneP
           }}
         />
         <Button variant="outline" size="sm" asChild>
-          <label htmlFor="file-upload" className="cursor-pointer">Choose files</label>
+          <label htmlFor="file-upload" className="cursor-pointer">{t("fileDropzone.chooseFiles")}</label>
         </Button>
       </Card>
 
@@ -82,7 +84,7 @@ export function FileDropzone({ fileIds, onFilesChange, disabled }: FileDropzoneP
           <div className="flex items-center gap-2 text-sm">
             <File className="h-4 w-4 text-muted-foreground" />
             <span className="truncate flex-1">{f.name}</span>
-            <span className="text-muted-foreground">Uploading...</span>
+            <span className="text-muted-foreground">{t("fileDropzone.uploading")}</span>
           </div>
           <Progress value={f.progress} className="h-1" />
         </div>
