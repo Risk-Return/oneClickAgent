@@ -1,6 +1,8 @@
 import { useState } from "react";
 import { useTranslation } from "react-i18next";
 import { useAdminSkills, useCreateSkill, useInstallSkillFleet, usePublishSkillVersion, useDeleteSkill } from "@/features/useSkills";
+import { apiClient } from "@/api/client";
+import { useQueryClient } from "@tanstack/react-query";
 import { Card, CardContent } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -31,6 +33,7 @@ export function SkillVaultPage() {
   const installSkill = useInstallSkillFleet();
   const publishVersion = usePublishSkillVersion();
   const deleteSkill = useDeleteSkill();
+  const queryClient = useQueryClient();
   const [dialogOpen, setDialogOpen] = useState(false);
   const [formData, setFormData] = useState({ key: "", name: "", description: "" });
   const [publishSkillId, setPublishSkillId] = useState<string | null>(null);
@@ -211,7 +214,18 @@ export function SkillVaultPage() {
                     </TableCell>
                     <TableCell className="text-muted-foreground">{skill.latest_version || "-"}</TableCell>
                     <TableCell>
-                      <Badge variant={skill.status === "active" ? "success" : "secondary"}>{skill.status}</Badge>
+                      <Badge
+                        variant={skill.status === "active" ? "success" : "secondary"}
+                        className="cursor-pointer hover:opacity-80"
+                        onClick={() => {
+                          const newStatus = skill.status === "active" ? "deprecated" : "active";
+                          apiClient.patch(`/admin/skills/${skill.id}`, { status: newStatus }).then(() => {
+                            queryClient.invalidateQueries({ queryKey: ["admin", "skills"] });
+                          });
+                        }}
+                      >
+                        {skill.status}
+                      </Badge>
                     </TableCell>
                     <TableCell className="text-right">
                       <div className="flex items-center justify-end gap-1">

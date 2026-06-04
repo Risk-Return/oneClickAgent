@@ -138,6 +138,9 @@ func (deps *Dependencies) handleUpdateSkill() http.HandlerFunc {
 		if req.Visibility != "" {
 			skill.Visibility = req.Visibility
 		}
+		if req.Status != "" {
+			skill.Status = model.SkillCatalogStatus(req.Status)
+		}
 
 		if err := deps.Vault.UpdateSkill(r.Context(), skill); err != nil {
 			writeError(w, http.StatusInternalServerError, model.ErrCodeInternalError, "failed to update skill")

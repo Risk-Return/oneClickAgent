@@ -412,6 +412,7 @@ type CreateSkillRequest struct {
 	Name        string          `json:"name" validate:"required"`
 	Description string          `json:"description"`
 	Visibility  SkillVisibility `json:"visibility" validate:"required,oneof=public restricted"`
+	Status      string          `json:"status,omitempty"`
 }
 
 type PublishSkillVersionRequest struct {
