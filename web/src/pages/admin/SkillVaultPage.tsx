@@ -218,6 +218,7 @@ export function SkillVaultPage() {
                         variant={skill.status === "active" ? "success" : "secondary"}
                         className="cursor-pointer hover:opacity-80"
                         onClick={() => {
+                          if (!skill.id) return;
                           const newStatus = skill.status === "active" ? "deprecated" : "active";
                           apiClient.patch(`/admin/skills/${skill.id}`, { status: newStatus }).then(() => {
                             queryClient.invalidateQueries({ queryKey: ["admin", "skills"] });

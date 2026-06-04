@@ -82,8 +82,8 @@ func (s *SkillStore) ListSkills(ctx context.Context, cursor *model.UUID, limit i
 func (s *SkillStore) UpdateSkill(ctx context.Context, sk *model.Skill) error {
 	sk.UpdatedAt = time.Now().UTC()
 	_, err := s.db.Pool.Exec(ctx,
-		`UPDATE skills SET key=$2, name=$3, description=$4, visibility=$5, latest_version=$6, updated_at=$7 WHERE id=$1`,
-		sk.ID, sk.Key, sk.Name, sk.Description, sk.Visibility, sk.LatestVersion, sk.UpdatedAt,
+		`UPDATE skills SET key=$2, name=$3, description=$4, visibility=$5, status=$6, latest_version=$7, updated_at=$8 WHERE id=$1`,
+		sk.ID, sk.Key, sk.Name, sk.Description, sk.Visibility, sk.Status, sk.LatestVersion, sk.UpdatedAt,
 	)
 	return err
 }
