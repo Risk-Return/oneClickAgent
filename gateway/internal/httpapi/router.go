@@ -188,6 +188,7 @@ func NewRouter(deps *Dependencies) chi.Router {
 		// User tier management (admin)
 		r.Group(func(r chi.Router) {
 			r.Use(requireAdminMiddleware)
+			r.Get("/api/v1/admin/users", deps.handleListUsers())
 			r.Patch("/api/v1/admin/users/{userID}/tier", deps.handleUpdateUserTier())
 		})
 	})

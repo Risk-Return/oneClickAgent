@@ -205,6 +205,25 @@ func (deps *Dependencies) handleListOrgMembers() http.HandlerFunc {
 	}
 }
 
+func (deps *Dependencies) handleListUsers() http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		cursor := parseCursor(r)
+		limit := parseLimit(r, 50)
+
+		users, nextCursor, err := deps.Users.List(r.Context(), cursor, limit)
+		if err != nil {
+			writeError(w, http.StatusInternalServerError, model.ErrCodeInternalError, "failed to list users")
+			return
+		}
+
+		writeJSON(w, http.StatusOK, model.PaginatedResponse[model.User]{
+			Items:      users,
+			NextCursor: nextCursor,
+			HasMore:    nextCursor != nil,
+		})
+	}
+}
+
 func (deps *Dependencies) handleUpdateUserTier() http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		userID, err := model.ParseUUID(chi.URLParam(r, "userID"))
