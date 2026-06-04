@@ -1,3 +1,4 @@
+import { useState } from "react";
 import { useTranslation } from "react-i18next";
 import { apiClient } from "@/api/client";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
@@ -13,8 +14,39 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { toast } from "sonner";
-import { Users } from "lucide-react";
+import { Users, Copy, Check } from "lucide-react";
 import type { User } from "@/api/schemas";
+
+function UUIDCell({ uuid }: { uuid: string }) {
+  const [expanded, setExpanded] = useState(false);
+  const [copied, setCopied] = useState(false);
+
+  const copy = (e: React.MouseEvent) => {
+    e.stopPropagation();
+    navigator.clipboard.writeText(uuid);
+    setCopied(true);
+    setTimeout(() => setCopied(false), 1500);
+  };
+
+  return (
+    <button
+      type="button"
+      className="font-mono text-xs text-left hover:text-foreground text-muted-foreground flex items-center gap-1 group"
+      onClick={() => setExpanded(!expanded)}
+      title={expanded ? "Click to collapse" : "Click to reveal full UUID"}
+    >
+      <span>{expanded ? uuid : uuid.slice(0, 8) + "..."}</span>
+      <button
+        type="button"
+        onClick={copy}
+        className="opacity-0 group-hover:opacity-100 transition-opacity"
+        title="Copy UUID"
+      >
+        {copied ? <Check className="h-3 w-3 text-green-500" /> : <Copy className="h-3 w-3" />}
+      </button>
+    </button>
+  );
+}
 
 export function UserTiersPage() {
   const { t } = useTranslation();
@@ -56,6 +88,7 @@ export function UserTiersPage() {
           <Table>
             <TableHeader>
               <TableRow>
+                <TableHead>UUID</TableHead>
                 <TableHead>Username</TableHead>
                 <TableHead>Email</TableHead>
                 <TableHead>Role</TableHead>
@@ -68,6 +101,7 @@ export function UserTiersPage() {
                 Array.from({ length: 3 }).map((_, i) => (
                   <TableRow key={i}>
                     <TableCell><Skeleton className="h-4 w-24" /></TableCell>
+                    <TableCell><Skeleton className="h-4 w-24" /></TableCell>
                     <TableCell><Skeleton className="h-4 w-40" /></TableCell>
                     <TableCell><Skeleton className="h-4 w-12" /></TableCell>
                     <TableCell><Skeleton className="h-4 w-16" /></TableCell>
@@ -76,7 +110,7 @@ export function UserTiersPage() {
                 ))
               ) : !users || users.length === 0 ? (
                 <TableRow>
-                  <TableCell colSpan={5} className="py-8 text-center text-muted-foreground">
+                  <TableCell colSpan={6} className="py-8 text-center text-muted-foreground">
                     <Users className="mx-auto h-8 w-8 mb-2" />
                     {t("userTiers.noUsers")}
                   </TableCell>
@@ -84,6 +118,7 @@ export function UserTiersPage() {
               ) : (
                 users.map((user) => (
                   <TableRow key={user.id}>
+                    <TableCell><UUIDCell uuid={user.id} /></TableCell>
                     <TableCell className="font-medium">{user.username}</TableCell>
                     <TableCell className="text-muted-foreground">{user.email}</TableCell>
                     <TableCell>
