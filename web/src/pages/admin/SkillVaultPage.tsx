@@ -1,6 +1,6 @@
 import { useState } from "react";
 import { useTranslation } from "react-i18next";
-import { useAdminSkills, useCreateSkill, useInstallSkillFleet, usePublishSkillVersion } from "@/features/useSkills";
+import { useAdminSkills, useCreateSkill, useInstallSkillFleet, usePublishSkillVersion, useDeleteSkill } from "@/features/useSkills";
 import { Card, CardContent } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -17,7 +17,7 @@ import {
   DialogTitle,
   DialogTrigger,
 } from "@/components/ui/dialog";
-import { Archive, Plus, Download, Loader2, Upload, HelpCircle } from "lucide-react";
+import { Archive, Plus, Download, Loader2, Upload, HelpCircle, Trash2 } from "lucide-react";
 import {
   Tooltip,
   TooltipContent,
@@ -30,6 +30,7 @@ export function SkillVaultPage() {
   const createSkill = useCreateSkill();
   const installSkill = useInstallSkillFleet();
   const publishVersion = usePublishSkillVersion();
+  const deleteSkill = useDeleteSkill();
   const [dialogOpen, setDialogOpen] = useState(false);
   const [formData, setFormData] = useState({ key: "", name: "", description: "" });
   const [publishSkillId, setPublishSkillId] = useState<string | null>(null);
@@ -248,6 +249,20 @@ export function SkillVaultPage() {
                           <TooltipContent side="top" className="max-w-xs">
                             {t("skillVault.installFleetTip")}
                           </TooltipContent>
+                        </Tooltip>
+                        <Tooltip>
+                          <TooltipTrigger asChild>
+                            <Button
+                              variant="ghost"
+                              size="icon"
+                              className="h-8 w-8 text-destructive hover:text-destructive"
+                              onClick={() => { if (confirm(`Delete "${skill.name}" from vault?`)) deleteSkill.mutate(skill.id); }}
+                              disabled={deleteSkill.isPending}
+                            >
+                              <Trash2 className="h-4 w-4" />
+                            </Button>
+                          </TooltipTrigger>
+                          <TooltipContent side="top">Remove this skill from the vault catalog. Does not affect already-installed copies on devices.</TooltipContent>
                         </Tooltip>
                       </div>
                     </TableCell>

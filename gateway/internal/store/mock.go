@@ -415,6 +415,7 @@ func (m *MockSkillStore) ListSkills(ctx context.Context, cursor *model.UUID, lim
 	return nil, nil, nil
 }
 func (m *MockSkillStore) UpdateSkill(ctx context.Context, sk *model.Skill) error                    { return nil }
+func (m *MockSkillStore) SetLatestVersion(ctx context.Context, skillID model.UUID, version string) error { return nil }
 func (m *MockSkillStore) UpdateVisibility(ctx context.Context, id model.UUID, vis model.SkillVisibility) error {
 	return nil
 }

@@ -92,3 +92,14 @@ export function useDeleteSkillFleet() {
     },
   });
 }
+
+export function useDeleteSkill() {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: (skillId: string) => apiClient.delete(`/admin/skills/${skillId}`),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["admin", "skills"] });
+      toast.success("Skill removed from vault");
+    },
+  });
+}

@@ -83,6 +83,7 @@ type SkillStoreInterface interface {
 	GetSkill(ctx context.Context, id model.UUID) (*model.Skill, error)
 	ListSkills(ctx context.Context, cursor *model.UUID, limit int) ([]model.Skill, *model.UUID, error)
 	UpdateSkill(ctx context.Context, sk *model.Skill) error
+	SetLatestVersion(ctx context.Context, skillID model.UUID, version string) error
 	UpdateVisibility(ctx context.Context, id model.UUID, vis model.SkillVisibility) error
 	DeleteSkill(ctx context.Context, id model.UUID) error
 	CreateVersion(ctx context.Context, v *model.SkillVersion) error

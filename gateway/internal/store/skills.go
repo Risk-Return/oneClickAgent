@@ -88,6 +88,14 @@ func (s *SkillStore) UpdateSkill(ctx context.Context, sk *model.Skill) error {
 	return err
 }
 
+func (s *SkillStore) SetLatestVersion(ctx context.Context, skillID model.UUID, version string) error {
+	_, err := s.db.Pool.Exec(ctx,
+		`UPDATE skills SET latest_version=$2, updated_at=$3 WHERE id=$1`,
+		skillID, version, time.Now().UTC(),
+	)
+	return err
+}
+
 func (s *SkillStore) UpdateVisibility(ctx context.Context, id model.UUID, vis model.SkillVisibility) error {
 	_, err := s.db.Pool.Exec(ctx,
 		`UPDATE skills SET visibility=$2, updated_at=$3 WHERE id=$1`,

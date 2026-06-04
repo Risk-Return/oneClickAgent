@@ -110,6 +110,9 @@ func (v *Vault) PublishVersion(ctx context.Context, skillID model.UUID, version,
 		return nil, fmt.Errorf("create version: %w", err)
 	}
 
+	// Update latest_version on the skill row.
+	_ = v.skills.SetLatestVersion(ctx, skillID, version)
+
 	return ver, nil
 }
 
