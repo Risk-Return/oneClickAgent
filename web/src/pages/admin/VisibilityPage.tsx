@@ -32,7 +32,7 @@ export function VisibilityPage() {
 
   const { data: grants, isLoading: grantsLoading, refetch: refetchGrants } = useQuery({
     queryKey: ["admin", "skills", selectedSkill, "grants"],
-    queryFn: () => apiClient.get<SkillGrant[]>(`/admin/skills/${selectedSkill}/grants`),
+    queryFn: () => apiClient.getList<SkillGrant>(`/admin/skills/${selectedSkill}/grants`),
     enabled: !!selectedSkill,
   });
 

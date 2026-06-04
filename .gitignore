@@ -9,3 +9,4 @@ __pycache__/
 *.egg-info/
 data/
 gateway/gateway
+gateway/bin/gateway

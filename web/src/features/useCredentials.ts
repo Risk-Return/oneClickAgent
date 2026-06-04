@@ -6,7 +6,7 @@ import { toast } from "sonner";
 export function useCredentials() {
   return useQuery({
     queryKey: ["credentials"],
-    queryFn: () => apiClient.get<BrowserCredential[]>("/credentials"),
+    queryFn: () => apiClient.getList<BrowserCredential>("/credentials"),
   });
 }
 

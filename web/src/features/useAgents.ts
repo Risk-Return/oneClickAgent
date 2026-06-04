@@ -6,7 +6,7 @@ import { toast } from "sonner";
 export function useAgents() {
   return useQuery({
     queryKey: ["agents"],
-    queryFn: () => apiClient.get<Agent[]>("/agents"),
+    queryFn: () => apiClient.getList<Agent>("/agents"),
   });
 }
 
@@ -21,7 +21,7 @@ export function useAgent(agentId: string) {
 export function useAdminAgents() {
   return useQuery({
     queryKey: ["admin", "agents"],
-    queryFn: () => apiClient.get<Agent[]>("/admin/agents"),
+    queryFn: () => apiClient.getList<Agent>("/admin/agents"),
   });
 }
 

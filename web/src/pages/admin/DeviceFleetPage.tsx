@@ -35,7 +35,7 @@ export function DeviceFleetPage() {
 
   const { data: devices, isLoading } = useQuery({
     queryKey: ["admin", "devices"],
-    queryFn: () => apiClient.get<Device[]>("/devices"),
+    queryFn: () => apiClient.getList<Device>("/devices"),
   });
 
   const handleCreateDevice = async () => {

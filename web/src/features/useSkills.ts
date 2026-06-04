@@ -6,14 +6,14 @@ import { toast } from "sonner";
 export function useVisibleSkills() {
   return useQuery({
     queryKey: ["skills", "visible"],
-    queryFn: () => apiClient.get<Skill[]>("/skills"),
+    queryFn: () => apiClient.getList<Skill>("/skills"),
   });
 }
 
 export function useAdminSkills() {
   return useQuery({
     queryKey: ["admin", "skills"],
-    queryFn: () => apiClient.get<Skill[]>("/admin/skills"),
+    queryFn: () => apiClient.getList<Skill>("/admin/skills"),
   });
 }
 

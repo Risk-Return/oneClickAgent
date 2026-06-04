@@ -6,7 +6,7 @@ import { toast } from "sonner";
 export function useFiles() {
   return useQuery({
     queryKey: ["files"],
-    queryFn: () => apiClient.get<FileModel[]>("/files"),
+    queryFn: () => apiClient.getList<FileModel>("/files"),
   });
 }
 

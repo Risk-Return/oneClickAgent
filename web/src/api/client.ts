@@ -124,6 +124,7 @@ export const apiClient = {
   },
 
   get: <T>(path: string) => apiClient.request<T>(path),
+  getList: <T>(path: string) => apiClient.request<{ items: T[] | null; has_more: boolean }>(path).then(r => r.items ?? []),
   post: <T>(path: string, body?: unknown) => apiClient.request<T>(path, { method: "POST", body }),
   patch: <T>(path: string, body?: unknown) => apiClient.request<T>(path, { method: "PATCH", body }),
   delete: <T>(path: string, body?: unknown) => apiClient.request<T>(path, { method: "DELETE", body }),

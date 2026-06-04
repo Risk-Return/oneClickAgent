@@ -22,7 +22,7 @@ export function UserTiersPage() {
 
   const { data: users, isLoading } = useQuery({
     queryKey: ["admin", "users"],
-    queryFn: () => apiClient.get<User[]>("/admin/users"),
+    queryFn: () => apiClient.getList<User>("/admin/users"),
   });
 
   const handleSetTier = async (userId: string, tier: string) => {
