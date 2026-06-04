@@ -77,7 +77,7 @@ export class TokenManager {
         const response = await fetch(REFRESH_URL, {
           method: "POST",
           headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ refresh: this.refreshToken }),
+          body: JSON.stringify({ refresh_token: this.refreshToken }),
           credentials: "include",
         });
 
@@ -143,7 +143,7 @@ export class TokenManager {
         await fetch(PREFIX + "/api/v1/auth/logout", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ refresh: this.refreshToken }),
+          body: JSON.stringify({ refresh_token: this.refreshToken }),
           credentials: "include",
         });
       }
