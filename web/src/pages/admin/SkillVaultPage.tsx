@@ -56,7 +56,13 @@ export function SkillVaultPage() {
     if (!publishSkillId || !publishVersion_str || !publishFile) return;
     const fd = new FormData();
     fd.append("version", publishVersion_str);
-    fd.append("manifest", publishFile);
+    fd.append("manifest", JSON.stringify({
+      name: skills?.find((s) => s.id === publishSkillId)?.key || publishSkillId,
+      version: publishVersion_str,
+      entrypoint: publishFile.name,
+      type: "claude-code",
+    }));
+    fd.append("artifact", publishFile);
     publishVersion.mutate(
       { skillId: publishSkillId, formData: fd },
       {
@@ -142,7 +148,7 @@ export function SkillVaultPage() {
                 />
               </div>
               <div className="space-y-2">
-                <Label htmlFor="artifact">{t("skillVault.manifestLabel")}</Label>
+                <Label htmlFor="artifact">{t("skillVault.artifactLabel")}</Label>
                 <Input
                   id="artifact"
                   type="file"

@@ -203,7 +203,7 @@
     "publishTitle": "Publish Version",
     "publishDesc": "Upload a new version of this skill.",
     "versionPlaceholder": "1.0.0",
-    "manifestLabel": "Manifest file",
+    "artifactLabel": "Artifact file (SKILL.md or .tar.gz)",
     "skillCreated": "Skill created"
   },
   "fleetRollout": {
