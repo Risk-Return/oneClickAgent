@@ -1,5 +1,3 @@
-# Reference docker-compose for cloud gateway + PostgreSQL.
-# TLS terminates at reverse proxy in front.
 version: "3.9"
 services:
   postgres:
@@ -12,19 +10,40 @@ services:
       - pgdata:/var/lib/postgresql/data
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U iagent"]
+    restart: unless-stopped
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "10m"
+        max-file: "3"
+
   gateway:
     build: ../../gateway
-    ports: ["8080:8080"]
+    ports: ["42080:42080"]
     environment:
-      IAGENT_HTTP_ADDR: ":8080"
-      IAGENT_DB_URL: "postgres://iagent:${IAGENT_DB_PASSWORD}@postgres:5432/iagent"
+      IAGENT_HTTP_ADDR: ":42080"
+      IAGENT_DB_URL: "postgres://iagent:${IAGENT_DB_PASSWORD}@postgres:5432/iagent?sslmode=disable"
       IAGENT_JWT_SECRET: "${IAGENT_JWT_SECRET}"
       IAGENT_FILE_STORE: "local:/data/files"
+      IAGENT_ENV: "${IAGENT_ENV:-development}"
+      IAGENT_LOG_LEVEL: "${IAGENT_LOG_LEVEL:-debug}"
+      IAGENT_LOG_FORMAT: "${IAGENT_LOG_FORMAT:-text}"
+      IAGENT_CORS_ORIGINS: "${IAGENT_CORS_ORIGINS:-*}"
+      IAGENT_QUEUE_TTL: "${IAGENT_QUEUE_TTL:-1h}"
+      IAGENT_MAX_QUEUED_PER_USER: "${IAGENT_MAX_QUEUED_PER_USER:-10}"
+      IAGENT_CRED_KEY: "${IAGENT_CRED_KEY:-AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA=}"
     depends_on:
       postgres:
         condition: service_healthy
     volumes:
       - files:/data/files
+    restart: unless-stopped
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "10m"
+        max-file: "3"
+
 volumes:
   pgdata:
   files:

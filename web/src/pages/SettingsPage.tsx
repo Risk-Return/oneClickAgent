@@ -1,4 +1,5 @@
 import { useTranslation } from "react-i18next";
+import { useNavigate } from "react-router-dom";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Label } from "@/components/ui/label";
@@ -12,6 +13,7 @@ export function SettingsPage() {
   const { t } = useTranslation();
   const { theme, setTheme } = useUIStore();
   const tokenManager = TokenManager.getInstance();
+  const navigate = useNavigate();
 
   const { data: user, isLoading } = useQuery({
     queryKey: ["auth", "me"],
@@ -20,7 +22,7 @@ export function SettingsPage() {
 
   const handleLogout = async () => {
     await tokenManager.logout();
-    window.location.href = "/login";
+    navigate("/login");
   };
 
   return (

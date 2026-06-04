@@ -1,4 +1,5 @@
-const REFRESH_URL = "/api/v1/auth/refresh";
+const PREFIX = import.meta.env.VITE_API_PREFIX || '';
+const REFRESH_URL = PREFIX + "/api/v1/auth/refresh";
 const TOKEN_REFRESH_MARGIN_MS = 60_000;
 
 export class TokenManager {
@@ -100,7 +101,7 @@ export class TokenManager {
 
   async login(email: string, password: string): Promise<boolean> {
     try {
-      const response = await fetch("/api/v1/auth/login", {
+      const response = await fetch(PREFIX + "/api/v1/auth/login", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ email, password }),
@@ -119,7 +120,7 @@ export class TokenManager {
 
   async register(email: string, username: string, password: string): Promise<boolean> {
     try {
-      const response = await fetch("/api/v1/auth/register", {
+      const response = await fetch(PREFIX + "/api/v1/auth/register", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ email, username, password }),
@@ -139,7 +140,7 @@ export class TokenManager {
   async logout(): Promise<void> {
     try {
       if (this.refreshToken) {
-        await fetch("/api/v1/auth/logout", {
+        await fetch(PREFIX + "/api/v1/auth/logout", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({ refresh: this.refreshToken }),

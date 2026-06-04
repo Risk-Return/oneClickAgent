@@ -19,6 +19,8 @@ import { VisibilityPage } from "@/pages/admin/VisibilityPage";
 import { UserTiersPage } from "@/pages/admin/UserTiersPage";
 import { AgentPoolPage } from "@/pages/admin/AgentPoolPage";
 
+const BASENAME = import.meta.env.VITE_BASE || '/';
+
 export const router = createBrowserRouter([
   {
     path: "/login",
@@ -64,4 +66,4 @@ export const router = createBrowserRouter([
     ],
   },
   { path: "*", element: <NotFoundPage /> },
-]);
+], { basename: BASENAME });

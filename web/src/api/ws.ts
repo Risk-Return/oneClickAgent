@@ -116,11 +116,13 @@ export class WSClient {
   }
 }
 
+const WS_PATH = import.meta.env.VITE_API_PREFIX ? `${import.meta.env.VITE_API_PREFIX}/ws` : '/ws';
+
 let client: WSClient | null = null;
 
 export function getWSClient(): WSClient {
   if (!client) {
-    client = new WSClient("/ws");
+    client = new WSClient(WS_PATH);
   }
   return client;
 }

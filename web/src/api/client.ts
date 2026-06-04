@@ -50,9 +50,11 @@ async function handleResponse<T>(response: Response): Promise<T> {
   return data as T;
 }
 
+const API_PREFIX = import.meta.env.VITE_API_PREFIX || '';
+
 export const apiClient = {
   async request<T>(path: string, options: RequestOptions = {}): Promise<T> {
-    const url = `/api/v1${path}`;
+    const url = `${API_PREFIX}/api/v1${path}`;
     const headers: Record<string, string> = {
       "Content-Type": "application/json",
       ...options.headers,
@@ -89,7 +91,7 @@ export const apiClient = {
   },
 
   async uploadFile(path: string, formData: FormData): Promise<unknown> {
-    const url = `/api/v1${path}`;
+    const url = `${API_PREFIX}/api/v1${path}`;
     const headers: Record<string, string> = {};
     const token = await getAccessToken();
     if (token) {
