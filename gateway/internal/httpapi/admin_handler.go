@@ -20,7 +20,13 @@ func (deps *Dependencies) handleCreateOrg() http.HandlerFunc {
 			return
 		}
 
-		org := &model.Organization{Name: req.Name}
+		org := &model.Organization{
+			Name:      req.Name,
+			CreatedBy: getUserID(r),
+		}
+		if req.Description != "" {
+			org.Description = req.Description
+		}
 		if err := deps.Orgs.Create(r.Context(), org); err != nil {
 			writeError(w, http.StatusInternalServerError, model.ErrCodeInternalError, "failed to create organization")
 			return
