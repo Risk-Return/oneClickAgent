@@ -17,7 +17,12 @@ import {
   DialogTitle,
   DialogTrigger,
 } from "@/components/ui/dialog";
-import { Archive, Plus, Download, Loader2, Upload } from "lucide-react";
+import { Archive, Plus, Download, Loader2, Upload, HelpCircle } from "lucide-react";
+import {
+  Tooltip,
+  TooltipContent,
+  TooltipTrigger,
+} from "@/components/ui/tooltip";
 
 export function SkillVaultPage() {
   const { t } = useTranslation();
@@ -203,25 +208,41 @@ export function SkillVaultPage() {
                     </TableCell>
                     <TableCell className="text-right">
                       <div className="flex items-center justify-end gap-1">
-                        <Button
-                          variant="ghost"
-                          size="sm"
-                          onClick={() => {
-                            setPublishSkillId(skill.id);
-                            setPublishVersionStr("");
-                            setPublishFile(null);
-                          }}
-                        >
-                          <Upload className="mr-1 h-3 w-3" /> {t("skillVault.publish")}
-                        </Button>
-                        <Button
-                          variant="ghost"
-                          size="sm"
-                          onClick={() => handleInstall(skill.id)}
-                          disabled={installSkill.isPending}
-                        >
-                          <Download className="mr-1 h-3 w-3" /> {t("skillVault.installFleet")}
-                        </Button>
+                        <Tooltip>
+                          <TooltipTrigger asChild>
+                            <Button
+                              variant="ghost"
+                              size="sm"
+                              onClick={() => {
+                                setPublishSkillId(skill.id);
+                                setPublishVersionStr("");
+                                setPublishFile(null);
+                              }}
+                            >
+                              <Upload className="mr-1 h-3 w-3" /> {t("skillVault.publish")}
+                              <HelpCircle className="ml-1 h-3 w-3 text-muted-foreground" />
+                            </Button>
+                          </TooltipTrigger>
+                          <TooltipContent side="top" className="max-w-xs">
+                            {t("skillVault.publishTip")}
+                          </TooltipContent>
+                        </Tooltip>
+                        <Tooltip>
+                          <TooltipTrigger asChild>
+                            <Button
+                              variant="ghost"
+                              size="sm"
+                              onClick={() => handleInstall(skill.id)}
+                              disabled={installSkill.isPending}
+                            >
+                              <Download className="mr-1 h-3 w-3" /> {t("skillVault.installFleet")}
+                              <HelpCircle className="ml-1 h-3 w-3 text-muted-foreground" />
+                            </Button>
+                          </TooltipTrigger>
+                          <TooltipContent side="top" className="max-w-xs">
+                            {t("skillVault.installFleetTip")}
+                          </TooltipContent>
+                        </Tooltip>
                       </div>
                     </TableCell>
                   </TableRow>

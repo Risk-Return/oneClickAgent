@@ -11,3 +11,6 @@ data/
 gateway/gateway
 gateway/bin/gateway
 /tmp/
+*.tar.gz
+*.tar
+*.zip
