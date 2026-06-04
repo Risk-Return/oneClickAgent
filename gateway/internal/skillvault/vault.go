@@ -31,8 +31,9 @@ func NewVault(skills *store.SkillStore, artifactDir string) *Vault {
 }
 
 // CreateSkill creates a new skill in the catalog.
-func (v *Vault) CreateSkill(ctx context.Context, name, description string, visibility model.SkillVisibility) (*model.Skill, error) {
+func (v *Vault) CreateSkill(ctx context.Context, key, name, description string, visibility model.SkillVisibility) (*model.Skill, error) {
 	skill := &model.Skill{
+		Key:         key,
 		Name:        name,
 		Description: description,
 		Visibility:  visibility,

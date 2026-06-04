@@ -152,3 +152,65 @@ Order matters: exact matches (healthz etc.) and API/WS locations must come BEFOR
 | `deploy/cloud/docker-compose.yml` | Port 42080, logging env vars |
 | `deploy/.env` | Dev credentials |
 | `/etc/nginx/conf.d/aibi.conf` | 12 location blocks for `/aiproduct` |
+
+## Skill Vault
+
+### Skill Format (Claude Code)
+
+Skills follow the Claude code support format: a single `SKILL.md` markdown file containing
+skill instructions. The file is archived as a `.tar.gz` (or `.zip` when zip support is added).
+
+### Adding a Skill via API
+
+```bash
+# 1. Create skill entry
+curl -X POST /api/v1/admin/skills \
+  -H "Authorization: Bearer <admin_token>" \
+  -d '{"key":"my-skill","name":"My Skill","description":"...","visibility":"public"}'
+
+# 2. Package the skill artifact
+tar czf skill.tar.gz SKILL.md
+
+# 3. Publish a version (multipart)
+curl -X POST /api/v1/admin/skills/{skill_id}/versions \
+  -H "Authorization: Bearer <admin_token>" \
+  -F "version=1.0.0" \
+  -F 'manifest={"name":"my-skill","version":"1.0.0","entrypoint":"SKILL.md","type":"claude-code"}' \
+  -F "artifact=@skill.tar.gz"
+
+# 4. Install fleet-wide (requires online devices)
+curl -X POST /api/v1/admin/skills/{skill_id}/install \
+  -H "Authorization: Bearer <admin_token>"
+```
+
+### Manifest Format
+
+```json
+{
+  "name": "skill-key",
+  "version": "1.0.0",
+  "entrypoint": "SKILL.md",
+  "type": "claude-code",
+  "description": "Skill description"
+}
+```
+
+### TODO: Zip Support for Skill Dispatch
+
+Current implementation uses `.tar.gz` for skill artifact storage and dispatch
+(`skillvault/vault.go` uses `tgz` writer). Device SkillManager (`device/iagent_device/skills/manager.py`)
+receives chunked bytes and writes to local cache.
+
+Zip support requires:
+1. Gateway: Change `vault.go` `PublishVersion` to accept either format, or switch to zip
+2. Device: Update `SkillManager` to handle zip extraction (currently stores raw archive)
+3. Agent: Update `skills/loader.py` to extract zip archives
+
+### Stitch Design Taste Skill
+
+- **Key**: `stitch-design-taste`
+- **Source**: `/root/.claude/skills/stitch-design-taste/SKILL.md`
+- **Version**: 1.0.0
+- **SHA256**: `7b1fc3c2036d0965b0b76cffbb76deffa6e6b5b6c30ba30e6771de935a930f12`
+- **Visibility**: public
+- **Status**: Published, visible to all customers

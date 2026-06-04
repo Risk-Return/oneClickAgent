@@ -92,7 +92,7 @@ func (deps *Dependencies) handleCreateSkill() http.HandlerFunc {
 			req.Visibility = model.VisibilityRestricted
 		}
 
-		skill, err := deps.Vault.CreateSkill(r.Context(), req.Name, req.Description, req.Visibility)
+		skill, err := deps.Vault.CreateSkill(r.Context(), req.Key, req.Name, req.Description, req.Visibility)
 		if err != nil {
 			writeError(w, http.StatusInternalServerError, model.ErrCodeInternalError, "failed to create skill")
 			return
@@ -131,6 +131,9 @@ func (deps *Dependencies) handleUpdateSkill() http.HandlerFunc {
 		}
 		if req.Description != "" {
 			skill.Description = req.Description
+		}
+		if req.Key != "" {
+			skill.Key = req.Key
 		}
 		if req.Visibility != "" {
 			skill.Visibility = req.Visibility
