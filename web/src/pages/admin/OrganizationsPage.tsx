@@ -63,6 +63,7 @@ export function OrganizationsPage() {
     queryKey: ["admin", "orgs", selectedOrgId, "members"],
     queryFn: () => apiClient.get<Member[]>(`/admin/orgs/${selectedOrgId}/members`),
     enabled: !!selectedOrgId,
+    staleTime: 0,
   });
 
   const handleCreate = async () => {
@@ -98,6 +99,7 @@ export function OrganizationsPage() {
     if (!selectedOrgId || !addMemberId) return;
     try {
       await apiClient.post(`/admin/orgs/${selectedOrgId}/members`, { user_id: addMemberId });
+      queryClient.invalidateQueries({ queryKey: ["admin", "orgs", selectedOrgId, "members"] });
       refetchMembers();
       setAddMemberId("");
       toast.success(t("organizations.memberAdded"));
