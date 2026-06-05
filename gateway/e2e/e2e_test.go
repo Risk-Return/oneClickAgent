@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"net/http"
+	"strings"
 	"testing"
 	"time"
 
@@ -567,4 +568,99 @@ func TestE2E_TunnelReconnect(t *testing.T) {
 	if h.Hub.OnlineCount() == 0 {
 		t.Error("hub should have at least 1 online device after reconnect")
 	}
+}
+
+// ─── Scenario 13: Skill fleet rollout ────────────────────────
+
+func TestE2E_SkillFleetRollout(t *testing.T) {
+	h := NewHarness(t)
+
+	admin := h.RegisterAdmin(t)
+	device, deviceToken := h.CreateDevice(t, admin.AccessToken)
+
+	// Create a skill + version in the vault
+	ctx := context.Background()
+	skill, err := h.Router.Vault.CreateSkill(ctx, "e2e-rollout", "E2E Rollout", "rollout test", model.VisibilityPublic)
+	if err != nil {
+		t.Fatalf("create skill: %v", err)
+	}
+
+	// Publish a version with a simple artifact
+	manifest := `{"name":"e2e-rollout","version":"1.0.0","entrypoint":"SKILL.md","type":"claude-code"}`
+	artifact := strings.NewReader("# E2E Rollout Skill\n\nTest skill for fleet rollout.")
+	_, err = h.Router.Vault.PublishVersion(ctx, skill.ID, "1.0.0", manifest, artifact)
+	if err != nil {
+		t.Fatalf("publish version: %v", err)
+	}
+
+	// Connect mock device
+	agentID := model.NewUUID()
+	md := mockdevice.New(mockdevice.Config{
+		DeviceID:    device.ID,
+		DeviceToken: deviceToken,
+		GatewayURL:  h.TunnelURL(),
+		Agents: []model.HelloAgent{
+			{AgentID: agentID, Status: model.AgentIdle, Port: 9001, Tags: []string{"default"}},
+		},
+	})
+
+	testCtx, cancel := context.WithTimeout(ctx, 30*time.Second)
+	defer cancel()
+
+	if err := md.Connect(testCtx); err != nil {
+		t.Fatalf("device connect: %v", err)
+	}
+	defer md.Close()
+	time.Sleep(300 * time.Millisecond)
+
+	// Track skill dispatch frames
+	dispatchStarted := make(chan struct{}, 1)
+	actionReceived := make(chan struct{}, 1)
+
+	md.On(model.FrameSkillDispatchBegin, func(dev *mockdevice.MockDevice, f model.Frame) *model.Frame {
+		dispatchStarted <- struct{}{}
+		return nil
+	})
+	md.On(model.FrameSkillAction, func(dev *mockdevice.MockDevice, f model.Frame) *model.Frame {
+		var p model.SkillActionPayload
+		json.Unmarshal(f.Payload, &p)
+		actionReceived <- struct{}{}
+		// Send back SKILL_STATE to mark as installed
+		frame := mockdevice.NewFrame(model.FrameSkillState, model.SkillStatePayload{
+			SkillID: p.SkillID,
+			Scope:   p.Scope,
+			Status:  model.SkillInstalled,
+			AgentID: p.AgentID,
+		})
+		return &frame
+	})
+
+	// Trigger fleet install via API
+	resp := h.Post(t, "/api/v1/admin/skills/"+skill.ID.String()+"/install", nil, admin.AccessToken)
+	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
+		t.Fatalf("fleet install: status=%d body=%s", resp.StatusCode, resp.Body)
+	}
+
+	// Wait for dispatch to start
+	select {
+	case <-dispatchStarted:
+		t.Log("SKILL_DISPATCH_BEGIN received")
+	case <-time.After(10 * time.Second):
+		t.Error("timeout waiting for SKILL_DISPATCH_BEGIN")
+	}
+
+	// Wait for action
+	select {
+	case <-actionReceived:
+		t.Log("SKILL_ACTION received, SKILL_STATE sent back")
+	case <-time.After(10 * time.Second):
+		t.Error("timeout waiting for SKILL_ACTION")
+	}
+
+	// Check rollout status
+	resp = h.Get(t, "/api/v1/admin/skills/"+skill.ID.String()+"/rollout", admin.AccessToken)
+	if resp.StatusCode != 200 {
+		t.Errorf("rollout status: %d", resp.StatusCode)
+	}
+	t.Logf("rollout: %s", resp.Body)
 }
