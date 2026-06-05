@@ -54,6 +54,7 @@ export function OrganizationsPage() {
   const [selectedOrgId, setSelectedOrgId] = useState<string | null>(null);
   const [addMemberId, setAddMemberId] = useState("");
   const [orgSearch, setOrgSearch] = useState("");
+  const [memberSearch, setMemberSearch] = useState("");
 
   const { data: orgs, isLoading } = useQuery({
     queryKey: ["admin", "orgs"],
@@ -228,19 +229,30 @@ export function OrganizationsPage() {
 
         {selectedOrgId && (
           <Card>
-            <CardHeader className="flex flex-row items-center justify-between">
-              <CardTitle className="text-base">{t("organizations.members")}</CardTitle>
-              <div className="flex items-center gap-2">
+            <CardHeader className="pb-2">
+              <div className="flex items-center justify-between">
+                <CardTitle className="text-base">{t("organizations.members")}</CardTitle>
+                <div className="flex items-center gap-2">
+                  <Input
+                    placeholder={t("organizations.userUuid")}
+                    value={addMemberId}
+                    onChange={(e) => setAddMemberId(e.target.value)}
+                    className="h-8 w-40 text-xs"
+                    onKeyDown={(e) => e.key === "Enter" && handleAddMember()}
+                  />
+                  <Button size="sm" variant="outline" onClick={handleAddMember} disabled={!addMemberId}>
+                    <UserPlus className="mr-1 h-3 w-3" /> {t("organizations.addMember")}
+                  </Button>
+                </div>
+              </div>
+              <div className="relative mt-2 border-t pt-2">
+                <Search className="absolute left-2 top-1/2 -translate-y-1/2 h-3 w-3 text-muted-foreground" />
                 <Input
-                  placeholder={t("organizations.userUuid")}
-                  value={addMemberId}
-                  onChange={(e) => setAddMemberId(e.target.value)}
-                  className="h-8 w-40 text-xs"
-                  onKeyDown={(e) => e.key === "Enter" && handleAddMember()}
+                  className="h-7 pl-7 text-xs"
+                  placeholder="Search members by UUID..."
+                  value={memberSearch}
+                  onChange={(e) => setMemberSearch(e.target.value)}
                 />
-                <Button size="sm" variant="outline" onClick={handleAddMember} disabled={!addMemberId}>
-                  <UserPlus className="mr-1 h-3 w-3" /> {t("organizations.addMember")}
-                </Button>
               </div>
             </CardHeader>
             <CardContent className="p-0">
@@ -263,7 +275,9 @@ export function OrganizationsPage() {
                       </TableCell>
                     </TableRow>
                   ) : (
-                    members.map((member) => (
+                    members
+                      .filter((m) => !memberSearch || m.id.includes(memberSearch))
+                      .map((member) => (
                       <TableRow key={member.id}>
                         <TableCell className="font-medium">{member.username}</TableCell>
                         <TableCell className="text-muted-foreground text-sm">{member.email}</TableCell>
