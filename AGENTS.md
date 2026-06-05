@@ -137,6 +137,27 @@ Before considering any work complete, run the project's lint and typecheck comma
 - Python: `ruff check . && mypy .`
 - Frontend: `npm run lint && npm run typecheck`
 
+### Database separation (production vs test)
+
+| Purpose | Database | Connection |
+|---------|----------|------------|
+| **Production / live deployment** | `iagent` | `postgresql://iagent:...@localhost:5432/iagent?sslmode=disable` |
+| **E2E tests** | `iagent_e2e` | `postgresql://iagent:...@localhost:5432/iagent_e2e?sslmode=disable` |
+
+- E2E tests run `truncateAll` which **deletes all rows** in every table.
+- **Never** run e2e tests against the `iagent` production database.
+- The `ONE_CLICK_DSN` env var overrides the e2e database URL. Always point it at `iagent_e2e` (or a throwaway DB), never at `iagent`.
+- The `iagent` user has SUPERUSER on `iagent_e2e` (needed for `CREATE EXTENSION citext` during migrations).
+
+```bash
+# Run e2e tests safely
+ONE_CLICK_DSN="postgresql://iagent:...@localhost:5432/iagent_e2e?sslmode=disable" \
+  go test -v -count=1 ./gateway/e2e/
+
+# Or use the default (already points to iagent_e2e)
+go test -v -count=1 ./gateway/e2e/
+```
+
 ---
 
 ## Key Design Principles
