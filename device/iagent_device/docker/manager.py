@@ -65,7 +65,7 @@ class DockerManager:
         for _ in range(desired_size - total):
             agent_id = str(uuid.uuid4())
             port = self._allocate_port()
-            name = f"agent-{agent_id[:8]}"
+            name = f"agent-{agent_id[:12]}"
             self.repo.upsert(agent_id, name, self.image, port, status="creating")
             container_id = await self._create_container(agent_id, name, port)
             self.repo.update_status(agent_id, "idle", container_id=container_id or "")
@@ -76,7 +76,7 @@ class DockerManager:
             logger.info("agent %s already exists, skipping", agent_id)
             return
         port = self._allocate_port()
-        name = f"agent-{agent_id[:12]}"
+        name = f"agent-{agent_id[:16]}"
         self.repo.upsert(agent_id, name, self.image, port, status="creating")
         container_id = await self._create_container(agent_id, name, port)
         self.repo.update_status(agent_id, "idle", container_id=container_id or "")

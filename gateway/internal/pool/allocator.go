@@ -247,7 +247,11 @@ func (a *Allocator) EnsurePoolSize(ctx context.Context, deviceID model.UUID, des
 		agent := &model.Agent{
 			ID:       agentID,
 			DeviceID: deviceID,
+			Port:     i + 42000,
+			Image:    "iagent/agent:dev",
+			Tags:     []string{"opencode", "camoufox"},
 			Status:   model.AgentCreating,
+			Limits:   &model.AgentLimits{CPU: 2, MemMB: 4096, DiskMB: 10240},
 		}
 		if err := a.agents.Create(ctx, agent); err != nil {
 			a.logger.Error("failed to create agent record", "error", err)

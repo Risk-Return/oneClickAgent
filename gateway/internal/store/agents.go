@@ -4,6 +4,7 @@ import (
 	"context"
 	"time"
 
+	"github.com/google/uuid"
 	"github.com/oneClickAgent/gateway/internal/model"
 	"github.com/jackc/pgx/v5"
 )
@@ -15,7 +16,9 @@ func NewAgentStore(db *DB) *AgentStore { return &AgentStore{db: db} }
 var agentCols = `id, device_id, user_id, name, description, image, port, tags, status, job_id, limits, allocated_at, created_at, updated_at`
 
 func (s *AgentStore) Create(ctx context.Context, a *model.Agent) error {
-	a.ID = model.NewUUID()
+	if a.ID == uuid.Nil {
+		a.ID = model.NewUUID()
+	}
 	now := time.Now().UTC()
 	a.CreatedAt = now
 	a.UpdatedAt = now
