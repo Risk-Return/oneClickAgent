@@ -109,19 +109,28 @@ class SkillManager:
                 self.skill_repo.update_device_skill_status(skill_id, "deleting")
 
             target_agents = self.agent_repo.list_all()
+            agent_results: list[dict] = []
             successes = 0
             failures = 0
             for agent in target_agents:
                 try:
                     await self._apply_skill_action(agent["agent_id"], skill_id, action, version)
                     successes += 1
-                except Exception:
+                    agent_results.append({"agent_id": agent["agent_id"], "status": "installed"})
+                except Exception as e:
                     failures += 1
+                    agent_results.append({"agent_id": agent["agent_id"], "status": "error", "error": str(e)})
                     logger.exception("skill action %s failed for agent %s", action, agent["agent_id"])
 
             if action == "install" or action == "update":
                 final_status = "installed" if failures == 0 else "error"
                 self.skill_repo.update_device_skill_status(skill_id, final_status)
+                # Persist per-agent results
+                for r in agent_results:
+                    self.skill_repo.upsert_agent_skill(
+                        r["agent_id"], skill_id,
+                        "installed" if r["status"] == "installed" else "error"
+                    )
             elif action == "disable":
                 final_status = "disabled" if failures == 0 else "error"
                 self.skill_repo.update_device_skill_status(skill_id, final_status)
@@ -162,6 +171,37 @@ class SkillManager:
             await client.disable_skill(skill_id)
         elif action == "delete":
             await client.delete_skill(skill_id)
+
+    async def handle_skill_retry(self, payload: dict):
+        skill_id = payload.get("skill_id", "")
+        agent_ids = payload.get("agent_ids", [])
+        version = payload.get("version", "")
+
+        target_agents = self.agent_repo.list_all()
+        if agent_ids:
+            target_agents = [a for a in target_agents if a["agent_id"] in agent_ids]
+
+        agent_results: list[dict] = []
+        failures = 0
+        for agent in target_agents:
+            try:
+                await self._apply_skill_action(agent["agent_id"], skill_id, "install", version)
+                agent_results.append({"agent_id": agent["agent_id"], "status": "installed"})
+            except Exception as e:
+                failures += 1
+                agent_results.append({"agent_id": agent["agent_id"], "status": "error", "error": str(e)})
+                logger.exception("skill retry failed for agent %s", agent["agent_id"])
+
+        for r in agent_results:
+            self.skill_repo.upsert_agent_skill(
+                r["agent_id"], skill_id,
+                "installed" if r["status"] == "installed" else "error"
+            )
+
+        if failures == 0:
+            self.skill_repo.update_device_skill_status(skill_id, "installed")
+
+        await self._emit_skill_state()
 
     async def handle_skill_sync(self, payload: dict):
         desired_device_skills = payload.get("device_skills", [])
@@ -208,11 +248,14 @@ class SkillManager:
         agent_skills = []
         for agent in self.agent_repo.list_all():
             for s in self.skill_repo.list_agent_skills(agent["agent_id"]):
-                agent_skills.append({
+                entry: dict = {
                     "agent_id": agent["agent_id"],
                     "skill_id": s["skill_id"],
                     "status": s.get("status", ""),
-                })
+                }
+                if s.get("error"):
+                    entry["error"] = s.get("error")
+                agent_skills.append(entry)
 
         await self.outbox.enqueue_and_send(FrameType.SKILL_STATE, {
             "device_skills": device_skills,

@@ -144,6 +144,7 @@ Separate binary WS socket (`/session/{sessionID}`, subprotocol `iagent.session.v
 
 ## Git History
 
-- 2026-06-05 — feat: FILE_PULL frames for output file relay (D→G) with chunk buffer, SHA256 verify, file store; SKILL_RETRY spec for per-agent retry
+- 2026-06-05 — feat: SKILL_RETRY frame implemented (Go model, dispatch, HTTP handler, route); device SkillManager per-agent error reporting in SKILL_STATE
+- 2026-06-05 — feat: FILE_PULL frames for output file relay (D→G) with chunk buffer, SHA256 verify, file store
 - (pending commit) — fix(tunnel): resolve all 16 audit gaps — ACK tracking, credential field names, VNC auth, cancel dispatch, G→D timestamps, HELLO/CAPTURE/CLOSE/DISPATCH/ACK/PURGED handlers, allocator payloads
 - (previous) — feat(tunnel): full spec compliance — HELLO timeout, ACK retransmit (both sides), idempotency, close codes 4004/4005/4290, WS-level ping/pong, device retransmit, tunnel endpoint, tests

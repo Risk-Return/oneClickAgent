@@ -293,3 +293,25 @@ func (d *Dispatcher) DispatchToAllDevices(ctx context.Context, skillID, versionI
 
 	return lastErr
 }
+
+// RetryFailedAgents sends SKILL_RETRY to a specific device for failed agents.
+func (d *Dispatcher) RetryFailedAgents(ctx context.Context, deviceID model.UUID, skillID model.UUID, agentIDs []model.UUID, version *string) error {
+	payload := model.SkillRetryPayload{
+		SkillID:  skillID,
+		AgentIDs: agentIDs,
+		Version:  version,
+	}
+	frame, err := tunnel.NewFrame(model.FrameSkillRetry, payload)
+	if err != nil {
+		return fmt.Errorf("create SKILL_RETRY frame: %w", err)
+	}
+	if err := d.hub.SendFrame(deviceID, frame); err != nil {
+		return fmt.Errorf("send SKILL_RETRY to device %s: %w", deviceID, err)
+	}
+	d.logger.Info("skill retry sent",
+		"device_id", deviceID,
+		"skill_id", skillID,
+		"agent_count", len(agentIDs),
+	)
+	return nil
+}

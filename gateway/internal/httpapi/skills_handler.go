@@ -317,6 +317,33 @@ func (deps *Dependencies) handleDeleteSkillFleet() http.HandlerFunc {
 	}
 }
 
+func (deps *Dependencies) handleRetrySkillFleet() http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		skillID, err := model.ParseUUID(chi.URLParam(r, "skillID"))
+		if err != nil {
+			writeError(w, http.StatusBadRequest, model.ErrCodeValidationFailed, "invalid skill_id")
+			return
+		}
+
+		var req model.SkillRetryRequest
+		if err := decodeJSON(r, &req); err != nil {
+			writeError(w, http.StatusBadRequest, model.ErrCodeValidationFailed, "invalid request body")
+			return
+		}
+
+		if err := deps.Dispatch.RetryFailedAgents(r.Context(), req.DeviceID, skillID, req.AgentIDs, nil); err != nil {
+			writeError(w, http.StatusInternalServerError, model.ErrCodeInternalError, "failed to retry skill install")
+			return
+		}
+
+		if deps.Audit != nil {
+			_ = deps.Audit.Log(r.Context(), getUserID(r), "skill.retry", "skill", &skillID, nil)
+		}
+
+		writeJSON(w, http.StatusAccepted, map[string]string{"message": "retry initiated"})
+	}
+}
+
 func (deps *Dependencies) handleUpdateSkillVisibility() http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		skillID, err := model.ParseUUID(chi.URLParam(r, "skillID"))

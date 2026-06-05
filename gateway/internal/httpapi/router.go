@@ -164,6 +164,7 @@ func NewRouter(deps *Dependencies) chi.Router {
 			r.Post("/api/v1/admin/skills/{skillID}/disable", deps.handleDisableSkillFleet())
 			r.Post("/api/v1/admin/skills/{skillID}/enable", deps.handleEnableSkillFleet())
 			r.Post("/api/v1/admin/skills/{skillID}/update", deps.handleUpdateSkillFleet())
+			r.Post("/api/v1/admin/skills/{skillID}/retry", deps.handleRetrySkillFleet())
 			r.Get("/api/v1/admin/skills/{skillID}/rollout", deps.handleGetSkillRollout())
 			r.Patch("/api/v1/admin/skills/{skillID}/visibility", deps.handleUpdateSkillVisibility())
 			r.Get("/api/v1/admin/skills/{skillID}/grants", deps.handleListSkillGrants())

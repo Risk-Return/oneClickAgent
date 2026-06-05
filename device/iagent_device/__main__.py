@@ -146,6 +146,7 @@ async def cmd_run(cfg):
         str(FrameType.SKILL_CHUNK): lambda t, p: skills.handle_chunk(p),
         str(FrameType.SKILL_DISPATCH_END): lambda t, p: skills.handle_dispatch_end(p),
         str(FrameType.SKILL_ACTION): lambda t, p: skills.handle_skill_action(p),
+        str(FrameType.SKILL_RETRY): lambda t, p: skills.handle_skill_retry(p),
         str(FrameType.VNC_OPEN): lambda t, p: vnc_bridge.handle_vnc_open(p),
         str(FrameType.VNC_CLOSE): lambda t, p: vnc_bridge.handle_vnc_close(p),
         str(FrameType.CRED_PUSH): lambda t, p: cred_relay.handle_cred_push(p),

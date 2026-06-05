@@ -424,6 +424,11 @@ type FleetSkillRequest struct {
 	Version string `json:"version" validate:"required"`
 }
 
+type SkillRetryRequest struct {
+	DeviceID UUID    `json:"device_id" validate:"required"`
+	AgentIDs []UUID  `json:"agent_ids,omitempty"`
+}
+
 type SkillVisibilityUpdate struct {
 	Visibility SkillVisibility `json:"visibility" validate:"required,oneof=public restricted"`
 }
@@ -599,6 +604,9 @@ const (
 	FrameFilePullChunk FrameType = "FILE_PULL_CHUNK"
 	FrameFilePullEnd   FrameType = "FILE_PULL_END"
 	FrameFilePullAck   FrameType = "FILE_PULL_ACK"
+
+	// Skill retry
+	FrameSkillRetry FrameType = "SKILL_RETRY"
 )
 
 const FrameMaxSize = 1 << 20
@@ -715,6 +723,12 @@ type SkillActionPayload struct {
 	SkillID UUID        `json:"skill_id"`
 	Version *string     `json:"version,omitempty"`
 	AgentID *UUID       `json:"agent_id,omitempty"`
+}
+
+type SkillRetryPayload struct {
+	SkillID  UUID    `json:"skill_id"`
+	AgentIDs []UUID  `json:"agent_ids,omitempty"`
+	Version  *string `json:"version,omitempty"`
 }
 
 type SkillStatePayload struct {

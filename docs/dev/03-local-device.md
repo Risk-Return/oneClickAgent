@@ -4,7 +4,7 @@
 |-------|-------|
 | **Spec** | `docs/spec/03-local-device.md` |
 | **Status** | Implemented |
-| **Last Updated** | 2026-06-01 |
+| **Last Updated** | 2026-06-05 |
 | **Imports** | `python -c "import iagent_device"` passes |
 
 ## Packages Implemented
@@ -54,6 +54,8 @@
 
 ## Known Gaps / TODOs
 
+- [x] Per-agent skill state: `_emit_skill_state` includes per-agent `error` messages; `_handle_skill_action` tracks `agent_results` with error details (2026-06-05)
+- [x] SKILL_RETRY handling: device receives SKILL_RETRY frame, re-runs install on specified agents (2026-06-05)
 - [ ] Unit tests for all packages
 - [ ] Integration test with real Docker daemon
 - [ ] Mock Docker client for CI testing
