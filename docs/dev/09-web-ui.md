@@ -3,8 +3,8 @@
 | Field | Value |
 |-------|-------|
 | **Spec** | `docs/spec/09-web-ui.md` |
-| **Status** | Implemented (audit fixes + i18n + artifact downloads applied) |
-| **Last Updated** | 2026-06-03 |
+| **Status** | Implemented (audit fixes + i18n + UUID search + tooltips + skill compose + session persistence) |
+| **Last Updated** | 2026-06-05 |
 | **Imports** | `npm run typecheck && npm run lint` — pass (0 errors, 0 warnings) |
 
 ## Packages Implemented
@@ -48,5 +48,17 @@
 
 - [ ] E2E Playwright tests not written (per spec §9).
 - [ ] Component unit tests not written (per spec §9).
+- [ ] Fleet Rollout page: per-agent expandable rows + Retry button (per spec update 2026-06-05 — `SKILL_RETRY` frame defined).
 - [ ] Skill install-status visibility on customer-facing pages requires backend API extension.
 - [ ] Collapsible sidebar animation requires Tailwind keyframes (not configured yet).
+
+## Recent Changes (2026-06-05)
+
+- Skill composition: command prefixed with skill prompt + output dir instructions
+- UUID search bars on User Tiers, Organizations, and Visibility pages
+- Tooltips on Device Fleet action icons (rename, rotate token, decommission)
+- Member search with visual boundary in org members panel
+- Session persistence via localStorage (survives page refresh)
+- Skill vault: publish sends correct artifact field, latest_version updated on publish
+- Status badge clickable toggle (active/deprecated) in Skill Vault
+- Delete skill button in Skill Vault

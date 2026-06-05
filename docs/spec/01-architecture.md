@@ -119,8 +119,14 @@ Admin fleet-wide install (ALL devices → ALL agents):
   Gateway: for each device → record device_skills (status=installing)
          → SKILL_DISPATCH_* (chunked package from vault) over tunnel → Device caches + verifies sha256
          → SKILL_ACTION scope=device action=install → Device installs on every agent (POST agent /skills)
-  Device → SKILL_STATE → Gateway updates device_skills (installed/error) → skill.status rollout to admins (WS)
+  Device → SKILL_STATE (per-agent: installed or error+message) → Gateway updates device_skills + agent_skills
+         → skill.status rollout to admins (WS) with per-agent granularity
   Admin disable/update/delete: same fan-out with action=disable|update|delete.
+
+Retry failed agents (per device, per agent):
+  Admin → POST /admin/skills/{id}/retry {device_id, agent_ids?:[]} → Gateway
+         → SKILL_RETRY {skill_id, agent_ids} over tunnel → Device retries install on specified agents
+  Device → SKILL_STATE per agent → Gateway updates agent_skills
 
 Admin visibility (per customer OR per organization/group):
   Admin → PATCH /admin/skills/{id}/visibility {public|restricted}
@@ -210,8 +216,11 @@ BUSY → UNHEALTHY → (job FAILED) → IDLE  (agent recycled after failure)
 INSTALLING → INSTALLED ⇄ DISABLED
 INSTALLED → UPDATING → INSTALLED
 (any) → DELETING → (removed)
-INSTALLING / UPDATING → ERROR → (retry) → INSTALLED
+INSTALLING / UPDATING → ERROR → (retry via SKILL_RETRY) → INSTALLED
 ```
+
+- A device-level `ERROR` status means one or more agents failed to install. The admin can inspect per-agent failures and trigger `SKILL_RETRY` for specific agents.
+- Per-agent status tracked in `agent_skills`: `installed`, `error {message}`, `disabled`. Absent agents at device-level `INSTALLED` are assumed `installed`.
 
 ### VNC session (`vnc_sessions`)
 

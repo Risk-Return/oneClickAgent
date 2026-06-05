@@ -123,8 +123,20 @@ Skill packages are dispatched from the **cloud skill vault** to the device, chun
 
 | Type | Payload |
 |------|---------|
-| `SKILL_STATE` | `{ device_skills:[{skill_id, version, status}], agent_skills:[{agent_id, skill_id, status}] }` |
+| `SKILL_STATE` | `{ device_skills:[{skill_id, version, status}], agent_skills:[{agent_id, skill_id, status, error?}] }` |
 
+- `device_skills` reports overall device-level status (`installing`/`installed`/`disabled`/`error`).
+- `agent_skills` reports per-agent status, including an optional `error` message when an individual agent's install fails. Only agents with non-`installed` status need to be reported; the gateway treats absent agents as `installed` when the device-level status is `installed`.
+- The device MUST send `SKILL_STATE` after each agent install attempt (success or failure), so the gateway has per-agent granularity.
+
+**Retry (G→D)**:
+
+| Type | Payload |
+|------|---------|
+| `SKILL_RETRY` | `{ skill_id, agent_ids?:[], version? }` — retry install on specific agents that failed. If `agent_ids` is omitted or empty, retry all agents on the device that are not `installed`. |
+
+- `SKILL_RETRY` is sent by the admin from the Fleet Rollout UI when individual agent installs fail. The device re-runs `POST agent /skills` for each specified agent.
+- The device responds with `SKILL_STATE` per agent as usual.
 - Chunk size and integrity follow the file rules (§5): 256 KiB chunks, `sha256` verified on `SKILL_DISPATCH_END`.
 - The device caches the skill package and applies/reapplies it to agents (incl. agents created later) per the desired state.
 

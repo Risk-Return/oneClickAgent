@@ -88,7 +88,7 @@ A distinct section, hidden entirely from customers:
 - **Device fleet**: list all devices + online status, last seen, resources, hosted agent pool. "Add device" flow → one-time enrollment code + cross-platform setup instructions (Windows/macOS). Configure pool size per device. Rotate token, rename, decommission.
 - **Agent pool (fleet-wide)**: view all agents across the fleet, their status (idle/busy/unhealthy/failed), current job if busy. Drain or force-release stuck agents.
 - **Skill vault**: browse catalog + versions; create entries; publish/deprecate/delete versions (upload manifest + artifact).
-- **Fleet rollout**: install/disable/update/delete a skill across **all** devices; per-device rollout status badges (`installing`/`installed`/`disabled`/`updating`/`error`) live via `skill.status`.
+- **Fleet rollout**: install/disble/update/delete a skill across **all** devices; per-device rollout status badges (`installing`/`installed`/`disabled`/`updating`/`error`) live via `skill.status`. Each device row is expandable to show **per-agent status** — which specific agents succeeded, failed (with error message), or are still installing. A **"Retry failed" button** appears per device (or per failed agent) to re-attempt installation on only the affected containers via `SKILL_RETRY`.
 - **User management (tiers)**: view customer list with tier (free/pro/enterprise). Set tier to control queue priority.
 - **Organizations (groups)**: create/rename/delete orgs; add/remove customer members. View an org's members + granted skills.
 - **Visibility**: set each skill `public`/`restricted` and grant/revoke to **individual customers or whole organizations** (granting an org makes the skill visible to every member).

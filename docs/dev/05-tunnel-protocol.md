@@ -3,8 +3,8 @@
 | Field | Value |
 |-------|-------|
 | **Spec** | `docs/spec/05-tunnel-protocol.md` |
-| **Status** | Implemented (audit gaps fixed 2026-06-02) |
-| **Last Updated** | 2026-06-02 |
+| **Status** | Implemented (audit gaps fixed 2026-06-02; output relay + skill retry added 2026-06-05) |
+| **Last Updated** | 2026-06-05 |
 | **Audit** | `docs/audit/05-tunnel-protocol.md` (5 critical, 8 significant, 4 minor — all resolved) |
 | **Build (Go)** | `go build ./...` passes |
 | **Vet (Go)** | `go vet ./...` passes |
@@ -144,5 +144,6 @@ Separate binary WS socket (`/session/{sessionID}`, subprotocol `iagent.session.v
 
 ## Git History
 
+- 2026-06-05 — feat: FILE_PULL frames for output file relay (D→G) with chunk buffer, SHA256 verify, file store; SKILL_RETRY spec for per-agent retry
 - (pending commit) — fix(tunnel): resolve all 16 audit gaps — ACK tracking, credential field names, VNC auth, cancel dispatch, G→D timestamps, HELLO/CAPTURE/CLOSE/DISPATCH/ACK/PURGED handlers, allocator payloads
 - (previous) — feat(tunnel): full spec compliance — HELLO timeout, ACK retransmit (both sides), idempotency, close codes 4004/4005/4290, WS-level ping/pong, device retransmit, tunnel endpoint, tests
