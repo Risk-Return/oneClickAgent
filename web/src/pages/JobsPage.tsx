@@ -115,8 +115,8 @@ export function JobsPage() {
 
     const selectedSkill = skillId ? skills?.find((s) => s.id === skillId) : null;
     const composedCommand = selectedSkill
-      ? `Please use the skill "${selectedSkill.name}" to complete the following task:\n\n${command.trim()}`
-      : command.trim();
+      ? `Please use the skill "${selectedSkill.name}" to complete the following task. Save all output files to /work/output (markdown summaries, JSON, Excel, DOCX, HTML, PDF, etc.).\n\nTask:\n${command.trim()}`
+      : `Complete the following task. Save all output files to /work/output (markdown summaries, JSON, Excel, DOCX, HTML, PDF, etc.).\n\nTask:\n${command.trim()}`;
 
     submitJob.mutate(
       { command: composedCommand, file_ids: fileIds.length > 0 ? fileIds : undefined, skill_id: skillId || undefined, credential_ids: credentialIds.length > 0 ? credentialIds : undefined },
@@ -275,8 +275,8 @@ export function JobsPage() {
           {skillId && skills && (
             <div className="rounded-md bg-muted/50 p-3 text-xs text-muted-foreground">
               <span className="font-medium">{t("jobs.skillPrefixPreview")}:</span><br />
-              Please use the skill "<strong>{skills.find((s) => s.id === skillId)?.name}</strong>" to complete the following task:<br />
-              <span className="italic">+ your command above</span>
+              Command will be prefixed with skill prompt and output instructions.<br />
+              Agent saves results to <code className="text-xs bg-muted px-1 rounded">/work/output</code> (markdown, JSON, Excel, HTML, PDF, etc.)
             </div>
           )}
 
