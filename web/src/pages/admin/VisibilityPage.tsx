@@ -18,7 +18,7 @@ import {
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { toast } from "sonner";
-import { Eye, UserPlus, Loader2, Trash2, RefreshCw } from "lucide-react";
+import { Eye, UserPlus, Loader2, Trash2, RefreshCw, Search } from "lucide-react";
 import type { SkillGrant } from "@/api/schemas";
 
 export function VisibilityPage() {
@@ -29,6 +29,7 @@ export function VisibilityPage() {
   const [grantDialogOpen, setGrantDialogOpen] = useState(false);
   const [grantData, setGrantData] = useState({ principal_type: "user" as "user" | "org", principal_id: "" });
   const [granting, setGranting] = useState(false);
+  const [grantSearch, setGrantSearch] = useState("");
 
   const { data: grants, isLoading: grantsLoading, refetch: refetchGrants } = useQuery({
     queryKey: ["admin", "skills", selectedSkill, "grants"],
@@ -206,9 +207,20 @@ export function VisibilityPage() {
             <CardContent className="p-0">
               <div className="flex items-center justify-between px-4 py-3 border-b">
                 <h3 className="text-sm font-medium">{t("visibility.grants")}</h3>
-                <Button variant="ghost" size="icon" onClick={() => refetchGrants()}>
-                  <RefreshCw className="h-4 w-4" />
-                </Button>
+                <div className="flex items-center gap-2">
+                  <div className="relative">
+                    <Search className="absolute left-2 top-1/2 -translate-y-1/2 h-3 w-3 text-muted-foreground" />
+                    <Input
+                      className="h-7 pl-7 w-40 text-xs"
+                      placeholder="Search UUID..."
+                      value={grantSearch}
+                      onChange={(e) => setGrantSearch(e.target.value)}
+                    />
+                  </div>
+                  <Button variant="ghost" size="icon" onClick={() => refetchGrants()}>
+                    <RefreshCw className="h-4 w-4" />
+                  </Button>
+                </div>
               </div>
               <Table>
                 <TableHeader>
@@ -230,7 +242,9 @@ export function VisibilityPage() {
                       </TableCell>
                     </TableRow>
                   ) : (
-                    grants.map((grant) => (
+                    grants
+                      .filter((g) => !grantSearch || g.principal_id.includes(grantSearch))
+                      .map((grant) => (
                       <TableRow key={`${grant.principal_type}-${grant.principal_id}`}>
                         <TableCell>
                           <Badge variant="outline">{grant.principal_type}</Badge>
