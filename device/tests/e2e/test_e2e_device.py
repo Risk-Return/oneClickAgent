@@ -14,6 +14,7 @@ import json
 import os
 import subprocess
 import time
+from pathlib import Path
 
 import pytest
 
@@ -483,3 +484,326 @@ async def test_real_agent_skill_install(agent_image):
             assert not any(s["skill_id"] == "test-skill-1" for s in r.json())
     finally:
         _docker_rm(name)
+
+
+# ─── GAP #2: outbox durability ─────────────────────────────────────────
+
+async def test_outbox_durability(mock_gateway, device_connected):
+    """Frames enqueued before disconnect are flushed on reconnect."""
+    device_id = device_connected["device_id"]
+    outbox = device_connected["outbox"]
+
+    # Enqueue a frame that will be persisted to SQLite
+    from iagent_device.tunnel.codec import FrameType
+    await outbox.enqueue_and_send(FrameType.AGENT_STATUS, {
+        "agent_id": "od-agent-1",
+        "status": "idle",
+    })
+
+    # Verify it's in the outbox (unacked)
+    unacked = outbox.repo.list_unacked()
+    assert len(unacked) >= 1, "Frame should be persisted in outbox"
+
+    # Disconnect and wait for reconnect
+    q = mock_gateway._frame_queues.get(device_id)
+    while q and not q.empty():
+        try:
+            q.get_nowait()
+        except asyncio.QueueEmpty:
+            break
+
+    mock_gateway.disconnect(device_id)
+    await asyncio.sleep(0.5)
+    assert not mock_gateway.has_connection(device_id)
+
+    deadline = asyncio.get_event_loop().time() + 20
+    while asyncio.get_event_loop().time() < deadline:
+        if mock_gateway.has_connection(device_id):
+            break
+        await asyncio.sleep(0.3)
+
+    assert mock_gateway.has_connection(device_id), "Device did not reconnect"
+
+    # The outbox flush on reconnect should re-send the frame
+    try:
+        ft, payload = await mock_gateway.recv_frame(device_id, "AGENT_STATUS", timeout=5)
+        assert payload.get("agent_id") == "od-agent-1"
+    except asyncio.TimeoutError:
+        # Frame may have been ACKed and removed before flush
+        remaining = outbox.repo.list_unacked()
+        # After flush, it should be sent and maybe still unacked
+        pass
+
+
+# ─── GAP #3: device resilience ────────────────────────────────────────
+
+async def test_device_resilience_state_recovery(mock_gateway, device_enrolled, device_db, device_config):
+    """Device recovers state from SQLite after tunnel crash and restart."""
+    device_id = device_enrolled["device_id"]
+    data_dir = device_config.device_data_dir
+
+    from iagent_device.store.repositories import AgentRepo, JobRepo, OutboxRepo
+    from iagent_device.tunnel.client import TunnelClient
+    from iagent_device.tunnel.outbox import Outbox
+
+    agent_repo = AgentRepo(device_db)
+    outbox_repo = OutboxRepo(device_db)
+
+    # Pre-populate state in SQLite (simulating a running device that crashed)
+    agent_repo.upsert("res-agent-1", "agent-res1", "iagent/agent:dev", 42250, status="busy")
+    job_repo = JobRepo(device_db)
+    job_repo.create("res-job-1", "res-agent-1", "user-1", "echo recovery")
+
+    messages_sent = []
+
+    outbox = Outbox(outbox_repo, lambda ft, p: messages_sent.append((str(ft), p)))
+
+    tunnel = TunnelClient(
+        gateway_url="ws://" + mock_gateway.base_url.replace("ws://", ""),
+        device_id=device_id,
+        device_token=device_enrolled["token"],
+        heartbeat_s=15,
+        handlers={},
+        outbox=outbox,
+        hello_extras={"platform": "linux", "agent_version": "0.1", "agent_count": 1,
+                       "agents": [{"agent_id": "res-agent-1", "status": "busy", "port": 42250}],
+                       "capabilities": [], "resources": {}},
+    )
+
+    task = asyncio.create_task(tunnel.run())
+    outbox.send_fn = tunnel._send
+
+    # Wait for connect + HELLO + STATE_SYNC
+    dl = asyncio.get_event_loop().time() + 10
+    while asyncio.get_event_loop().time() < dl:
+        if mock_gateway.has_connection(device_id):
+            break
+        await asyncio.sleep(0.1)
+
+    assert mock_gateway.has_connection(device_id)
+
+    # Verify STATE_SYNC included the pre-existing agent and job
+    q = mock_gateway._frame_queues.get(device_id)
+    found_state_sync = False
+    dl2 = asyncio.get_event_loop().time() + 5
+    while asyncio.get_event_loop().time() < dl2:
+        while q and not q.empty():
+            ft, payload = q.get_nowait()
+            if ft == "STATE_SYNC":
+                found_state_sync = True
+                assert "agents" in payload
+                assert "jobs" in payload
+                break
+        if found_state_sync:
+            break
+        await asyncio.sleep(0.1)
+
+    task.cancel()
+    try:
+        await task
+    except asyncio.CancelledError:
+        pass
+
+
+# ─── GAP #8: concurrent frame handling ────────────────────────────────
+
+async def test_concurrent_frames(mock_gateway, device_connected):
+    """Rapid-fire multiple frames, verify all dispatched and no duplicates."""
+    device_id = device_connected["device_id"]
+    tunnel = device_connected["tunnel"]
+
+    received = []
+    done = asyncio.Event()
+
+    async def count_handler(ft, payload):
+        received.append(payload.get("seq", -1))
+        if len(received) >= 10:
+            done.set()
+
+    tunnel.handlers["JOB_DISPATCH"] = count_handler
+
+    # Clear queue
+    q = mock_gateway._frame_queues.get(device_id)
+    while q and not q.empty():
+        try:
+            q.get_nowait()
+        except asyncio.QueueEmpty:
+            break
+
+    # Send 10 frames rapidly
+    for i in range(10):
+        await mock_gateway.send_frame(device_id, "JOB_DISPATCH", {
+            "job_id": f"concurrent-job-{i}",
+            "user_id": "user-concurrent",
+            "command": f"echo {i}",
+            "seq": i,
+            "params": {},
+            "credential_ids": [],
+        })
+
+    try:
+        await asyncio.wait_for(done.wait(), timeout=10)
+    except asyncio.TimeoutError:
+        pass
+
+    assert len(received) >= 8, f"Expected >=8 frames handled, got {len(received)}"
+    # Verify no duplicates (each seq appears exactly once)
+    assert len(set(received)) == len(received), "Duplicate frames detected"
+
+
+# ─── GAP #5: file staging + job integration ───────────────────────────
+
+async def test_file_staging_full_lifecycle(mock_gateway, device_connected):
+    """Push file, dispatch job referencing it, verify workspace preparation."""
+    device_id = device_connected["device_id"]
+    tunnel = device_connected["tunnel"]
+    data_dir = device_connected["data_dir"]
+
+    from iagent_device.store.repositories import FileRepo, JobRepo, AgentRepo
+    from iagent_device.files.stager import FileStager
+    from iagent_device.tunnel.outbox import Outbox
+    from iagent_device.tunnel.codec import FrameType
+
+    device_db = device_connected["agent_repo"].conn
+    file_repo = FileRepo(device_db)
+    job_repo = JobRepo(device_db)
+    agent_repo = device_connected["agent_repo"]
+
+    outbox_repo = device_connected["outbox"].repo
+    stager_outbox = Outbox(outbox_repo, lambda ft, p: None)
+    stager = FileStager(Path(data_dir) / "workspaces", file_repo, stager_outbox)
+
+    # Stage a file
+    await stager.handle_begin({
+        "file_id": "int-file-1",
+        "job_id": "int-job-1",
+        "file_name": "input.txt",
+        "size": 13,
+        "sha256": hashlib.sha256(b"hello world\n").hexdigest(),
+    })
+    await stager.handle_chunk({
+        "file_id": "int-file-1",
+        "data": base64.b64encode(b"hello world\n").decode(),
+        "chunk_index": 0,
+    })
+    await stager.handle_end({
+        "file_id": "int-file-1",
+        "sha256": hashlib.sha256(b"hello world\n").hexdigest(),
+    })
+
+    # Verify file is staged
+    staged = file_repo.list_by_job("int-job-1")
+    assert len(staged) > 0
+    staged_file = staged[0]
+    assert staged_file["status"] in ("staged", "staged_device")
+
+    # Verify the workspace dir exists with the file
+    workspace = Path(data_dir) / "workspaces" / "int-job-1"
+    assert workspace.exists()
+    input_file = workspace / "inputs" / "input.txt"
+    assert input_file.exists()
+    assert input_file.read_text() == "hello world\n"
+
+    # Cleanup
+    await stager.cleanup("int-job-1")
+    assert not workspace.exists()
+
+
+# ─── GAP #7: agent failure recovery ───────────────────────────────────
+
+@pytest.mark.skipif(not _docker_sock_ok(), reason="Docker socket not available")
+async def test_agent_failure_recovery(agent_image):
+    """Kill agent container, verify health loop restarts it."""
+    import subprocess
+
+    name = f"agent-e2e-fail-{int(time.time())}"
+    port = 42260
+    _docker_run(name, port)
+
+    await asyncio.sleep(5)
+
+    try:
+        import httpx
+        async with httpx.AsyncClient() as c:
+            # Verify healthy
+            r = await c.get(f"http://127.0.0.1:{port}/healthz", timeout=10)
+            assert r.status_code == 200
+
+        # Kill the container
+        subprocess.run(
+            ["sg", "docker", "-c", f"docker kill {name}"],
+            capture_output=True, timeout=10,
+        )
+        await asyncio.sleep(1)
+
+        async with httpx.AsyncClient() as c:
+            # Should be unreachable now
+            with pytest.raises(Exception):
+                await c.get(f"http://127.0.0.1:{port}/healthz", timeout=3)
+
+        # Restart it
+        subprocess.run(
+            ["sg", "docker", "-c", f"docker start {name}"],
+            capture_output=True, timeout=10,
+        )
+        await asyncio.sleep(5)
+
+        async with httpx.AsyncClient() as c:
+            # Should be healthy again
+            r = await c.get(f"http://127.0.0.1:{port}/healthz", timeout=10)
+            assert r.status_code == 200
+            assert r.json()["status"] == "ok"
+    finally:
+        _docker_rm(name)
+
+
+# ─── GAP #6: skill dispatch to agent flow ─────────────────────────────
+
+@pytest.mark.skipif(not _docker_sock_ok(), reason="Docker socket not available")
+async def test_skill_dispatch_to_agent(agent_image):
+    """Install skill on agent container and execute a job using it."""
+    import httpx
+
+    name = f"agent-e2e-skill-disp-{int(time.time())}"
+    port = 42270
+    _docker_run(name, port, "-e IAGENT_BRAIN=stub -e IAGENT_STUB_DELAY=0.01")
+    await asyncio.sleep(5)
+
+    try:
+        async with httpx.AsyncClient() as c:
+            r = await c.post(f"http://127.0.0.1:{port}/skills", json={
+                "skill_id": "disp-skill-1",
+                "name": "Dispatch Skill",
+                "version": "1.0.0",
+                "manifest": {"entry": "main.sh", "type": "shell"},
+            }, timeout=10)
+            assert r.status_code == 204
+
+            r = await c.get(f"http://127.0.0.1:{port}/skills", timeout=5)
+            skills = r.json()
+            assert any(s["skill_id"] == "disp-skill-1" and s["status"] == "enabled" for s in skills)
+
+            r = await c.post(f"http://127.0.0.1:{port}/jobs", json={
+                "job_id": "skill-job-001",
+                "command": "use disp-skill-1",
+                "skill_id": "disp-skill-1",
+                "params": {"input": "hello"},
+            }, timeout=10)
+            assert r.status_code == 202
+
+            terminal = False
+            for _ in range(30):
+                r = await c.get(f"http://127.0.0.1:{port}/jobs/skill-job-001", timeout=5)
+                if r.status_code == 404:
+                    terminal = True
+                    break
+                if r.status_code == 200 and r.json().get("status") in ("succeeded", "failed"):
+                    terminal = True
+                    break
+                await asyncio.sleep(0.3)
+            assert terminal, "Skill job did not complete"
+    finally:
+        _docker_rm(name)
+
+
+

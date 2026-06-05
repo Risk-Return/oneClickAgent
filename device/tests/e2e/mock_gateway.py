@@ -77,7 +77,7 @@ class MockGateway:
         payload = frame.get("payload", {})
 
         if ft != "ACK":
-            await self._send(device_id, {"v": 1, "type": "ACK", "ack_id": msg_id, "ts": self._ts()})
+            await self._send(device_id, {"v": 1, "type": "ACK", "msg_id": str(uuid.uuid4()), "ack_id": msg_id, "ts": self._ts()})
 
         if ft == "HELLO":
             self._last_hello[device_id] = payload
