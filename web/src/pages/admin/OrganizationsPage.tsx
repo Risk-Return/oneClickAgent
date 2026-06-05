@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useState, useCallback } from "react";
 import { useTranslation } from "react-i18next";
 import { apiClient } from "@/api/client";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
@@ -13,7 +13,30 @@ import {
   DialogHeader, DialogTitle, DialogTrigger,
 } from "@/components/ui/dialog";
 import { toast } from "sonner";
-import { Building2, Plus, Trash2, Loader2, Users, UserPlus, UserX } from "lucide-react";
+import { Building2, Plus, Trash2, Loader2, Users, UserPlus, UserX, Copy, Check } from "lucide-react";
+
+function UUIDCell({ uuid }: { uuid: string }) {
+  const [expanded, setExpanded] = useState(false);
+  const [copied, setCopied] = useState(false);
+  const copy = useCallback((e: React.MouseEvent) => {
+    e.stopPropagation();
+    navigator.clipboard.writeText(uuid);
+    setCopied(true);
+    setTimeout(() => setCopied(false), 1500);
+  }, [uuid]);
+  return (
+    <button type="button"
+      className="font-mono text-xs text-left hover:text-foreground text-muted-foreground flex items-center gap-1 group"
+      onClick={() => setExpanded(!expanded)}
+      title={expanded ? "Click to collapse" : "Click to reveal full UUID"}
+    >
+      <span>{expanded ? uuid : uuid.slice(0, 8) + "..."}</span>
+      <button type="button" onClick={copy} className="opacity-0 group-hover:opacity-100 transition-opacity" title="Copy UUID">
+        {copied ? <Check className="h-3 w-3 text-green-500" /> : <Copy className="h-3 w-3" />}
+      </button>
+    </button>
+  );
+}
 import type { Organization } from "@/api/schemas";
 
 interface Member {
@@ -140,24 +163,26 @@ export function OrganizationsPage() {
           <CardContent className="p-0">
             <Table>
               <TableHeader>
-                <TableRow>
-                  <TableHead>Name</TableHead>
-                  <TableHead>Created</TableHead>
-                  <TableHead className="text-right">Actions</TableHead>
-                </TableRow>
+              <TableRow>
+                <TableHead>UUID</TableHead>
+                <TableHead>Name</TableHead>
+                <TableHead>Created</TableHead>
+                <TableHead className="text-right">Actions</TableHead>
+              </TableRow>
               </TableHeader>
               <TableBody>
                 {isLoading ? (
                   Array.from({ length: 3 }).map((_, i) => (
                     <TableRow key={i}>
-                      <TableCell><Skeleton className="h-4 w-24" /></TableCell>
-                      <TableCell><Skeleton className="h-4 w-20" /></TableCell>
-                      <TableCell><Skeleton className="h-4 w-16" /></TableCell>
+                    <TableCell><Skeleton className="h-4 w-20" /></TableCell>
+                    <TableCell><Skeleton className="h-4 w-24" /></TableCell>
+                    <TableCell><Skeleton className="h-4 w-20" /></TableCell>
+                    <TableCell><Skeleton className="h-4 w-16" /></TableCell>
                     </TableRow>
                   ))
                 ) : orgs?.length === 0 ? (
                   <TableRow>
-                    <TableCell colSpan={3} className="py-8 text-center text-muted-foreground">
+                    <TableCell colSpan={4} className="py-8 text-center text-muted-foreground">
                     <Building2 className="mx-auto h-8 w-8 mb-2" />
                     {t("organizations.noOrgs")}
                     </TableCell>
@@ -169,6 +194,7 @@ export function OrganizationsPage() {
                       className="cursor-pointer hover:bg-muted/50"
                       onClick={() => setSelectedOrgId(org.id)}
                     >
+                      <TableCell><UUIDCell uuid={org.id} /></TableCell>
                       <TableCell className="font-medium">{org.name}</TableCell>
                       <TableCell className="text-muted-foreground text-sm">
                         {new Date(org.created_at).toLocaleDateString()}
