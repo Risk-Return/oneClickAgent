@@ -13,7 +13,7 @@ import {
   DialogHeader, DialogTitle, DialogTrigger,
 } from "@/components/ui/dialog";
 import { toast } from "sonner";
-import { Building2, Plus, Trash2, Loader2, Users, UserPlus, UserX, Copy, Check } from "lucide-react";
+import { Building2, Plus, Trash2, Loader2, Users, UserPlus, UserX, Copy, Check, Search } from "lucide-react";
 
 function UUIDCell({ uuid }: { uuid: string }) {
   const [expanded, setExpanded] = useState(false);
@@ -53,6 +53,7 @@ export function OrganizationsPage() {
   const [creating, setCreating] = useState(false);
   const [selectedOrgId, setSelectedOrgId] = useState<string | null>(null);
   const [addMemberId, setAddMemberId] = useState("");
+  const [orgSearch, setOrgSearch] = useState("");
 
   const { data: orgs, isLoading } = useQuery({
     queryKey: ["admin", "orgs"],
@@ -161,6 +162,15 @@ export function OrganizationsPage() {
         <Card>
           <CardHeader>
             <CardTitle className="text-base">Organizations</CardTitle>
+            <div className="relative mt-2">
+              <Search className="absolute left-2 top-1/2 -translate-y-1/2 h-3 w-3 text-muted-foreground" />
+              <Input
+                className="h-7 pl-7 text-xs"
+                placeholder="Search by UUID..."
+                value={orgSearch}
+                onChange={(e) => setOrgSearch(e.target.value)}
+              />
+            </div>
           </CardHeader>
           <CardContent className="p-0">
             <Table>
@@ -190,7 +200,9 @@ export function OrganizationsPage() {
                     </TableCell>
                   </TableRow>
                 ) : (
-                  orgs?.map((org) => (
+                  orgs
+                    ?.filter((org) => !orgSearch || org.id.includes(orgSearch))
+                    .map((org) => (
                     <TableRow
                       key={org.id}
                       className="cursor-pointer hover:bg-muted/50"

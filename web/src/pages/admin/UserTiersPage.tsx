@@ -14,7 +14,8 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { toast } from "sonner";
-import { Users, Copy, Check } from "lucide-react";
+import { Users, Copy, Check, Search } from "lucide-react";
+import { Input } from "@/components/ui/input";
 import type { User } from "@/api/schemas";
 
 function UUIDCell({ uuid }: { uuid: string }) {
@@ -51,6 +52,7 @@ function UUIDCell({ uuid }: { uuid: string }) {
 export function UserTiersPage() {
   const { t } = useTranslation();
   const queryClient = useQueryClient();
+  const [search, setSearch] = useState("");
 
   const { data: users, isLoading } = useQuery({
     queryKey: ["admin", "users"],
@@ -84,6 +86,15 @@ export function UserTiersPage() {
       </div>
 
       <Card>
+        <div className="flex items-center gap-2 px-4 py-3 border-b">
+          <Search className="h-4 w-4 text-muted-foreground" />
+          <Input
+            className="h-8 w-64 text-xs"
+            placeholder="Search by UUID..."
+            value={search}
+            onChange={(e) => setSearch(e.target.value)}
+          />
+        </div>
         <CardContent className="p-0">
           <Table>
             <TableHeader>
@@ -116,7 +127,9 @@ export function UserTiersPage() {
                   </TableCell>
                 </TableRow>
               ) : (
-                users.map((user) => (
+                users
+                  .filter((u) => !search || u.id.includes(search))
+                  .map((user) => (
                   <TableRow key={user.id}>
                     <TableCell><UUIDCell uuid={user.id} /></TableCell>
                     <TableCell className="font-medium">{user.username}</TableCell>
