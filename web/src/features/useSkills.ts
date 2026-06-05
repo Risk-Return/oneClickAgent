@@ -6,7 +6,7 @@ import { toast } from "sonner";
 export function useVisibleSkills() {
   return useQuery({
     queryKey: ["skills", "visible"],
-    queryFn: () => apiClient.getList<Skill>("/skills"),
+    queryFn: () => apiClient.get<Skill[]>("/skills"),
   });
 }
 
