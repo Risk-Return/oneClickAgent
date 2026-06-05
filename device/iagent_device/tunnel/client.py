@@ -96,6 +96,7 @@ class TunnelClient:
             additional_headers={"Authorization": f"Bearer {self.device_token}"},
             subprotocols=["iagent.tunnel.v1"],
             max_size=FRAME_MAX_SIZE,
+            ping_interval=None,
         ) as ws:
             self._ws = ws
             self._pending_acks.clear()
