@@ -1,0 +1,36 @@
+FROM ubuntu:24.04
+
+ENV DEBIAN_FRONTEND=noninteractive
+
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    python3 python3-pip python3-venv curl ca-certificates \
+  && rm -rf /var/lib/apt/lists/*
+
+RUN useradd --create-home --shell /bin/bash app \
+  && mkdir -p /work /tmp/.X11-unix \
+  && chown -R app:app /work /tmp/.X11-unix
+
+COPY --chown=app:app pyproject.toml /home/app/
+COPY --chown=app:app iagent_agent/ /home/app/iagent_agent/
+
+RUN python3 -m pip install --no-cache-dir --break-system-packages -e /home/app/
+
+ENV IAGENT_AGENT_PORT=8090
+ENV IAGENT_WORK_DIR=/work
+ENV IAGENT_BROWSER_PROFILE=/work/profile
+ENV IAGENT_VNC_DISPLAY=:99
+ENV IAGENT_VNC_PORT=5901
+ENV IAGENT_VNC_ENABLED=false
+ENV IAGENT_BROWSER_CMD=camoufox
+ENV IAGENT_BRAIN=stub
+
+VOLUME ["/work"]
+WORKDIR /home/app
+EXPOSE 8090
+
+USER app
+
+HEALTHCHECK --interval=15s --timeout=5s --start-period=10s --retries=3 \
+  CMD curl -sf http://localhost:8090/healthz || exit 1
+
+ENTRYPOINT ["python3", "-m", "iagent_agent"]

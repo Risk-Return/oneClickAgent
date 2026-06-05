@@ -70,6 +70,17 @@ class DockerManager:
             container_id = await self._create_container(agent_id, name, port)
             self.repo.update_status(agent_id, "idle", container_id=container_id or "")
 
+    async def create_agent_with_id(self, agent_id: str):
+        existing = self.repo.get_by_id(agent_id)
+        if existing:
+            logger.info("agent %s already exists, skipping", agent_id)
+            return
+        port = self._allocate_port()
+        name = f"agent-{agent_id[:12]}"
+        self.repo.upsert(agent_id, name, self.image, port, status="creating")
+        container_id = await self._create_container(agent_id, name, port)
+        self.repo.update_status(agent_id, "idle", container_id=container_id or "")
+
     async def _create_container(self, agent_id: str, name: str, port: int) -> str | None:
         if not self.docker:
             logger.info("mock: create container %s on port %d", name, port)
@@ -94,7 +105,6 @@ class DockerManager:
                 volumes=[workspace_mount],
                 tmpfs={"/tmp": "exec", "/run": "exec,rw"},
                 pids_limit=256,
-                user="1000:1000",
             )
             return container.id
         except Exception:

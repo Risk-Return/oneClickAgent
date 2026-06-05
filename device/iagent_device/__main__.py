@@ -190,12 +190,20 @@ async def _handle_job_query(payload: dict, job_repo: JobRepo, outbox: Outbox):
 
 
 async def _handle_agent_create(payload: dict, docker_mgr: DockerManager, outbox: Outbox):
-    count = payload.get("count", 1)
-    await docker_mgr.ensure_pool(count)
-    await outbox.enqueue_and_send(FrameType.AGENT_STATUS, {
-        "status": "created",
-        "count": count,
-    })
+    agent_id = payload.get("agent_id", "")
+    if agent_id:
+        await docker_mgr.create_agent_with_id(agent_id)
+        await outbox.enqueue_and_send(FrameType.AGENT_STATUS, {
+            "agent_id": agent_id,
+            "status": "idle",
+        })
+    else:
+        count = payload.get("count", 1)
+        await docker_mgr.ensure_pool(count)
+        await outbox.enqueue_and_send(FrameType.AGENT_STATUS, {
+            "status": "created",
+            "count": count,
+        })
 
 
 async def _handle_agent_action(payload: dict, docker_mgr: DockerManager, outbox: Outbox):
@@ -274,7 +282,11 @@ def cmd_logs(cfg, args):
 
 
 def _install_signal_handlers():
-    loop = asyncio.get_event_loop()
+    try:
+        loop = asyncio.get_running_loop()
+    except RuntimeError:
+        loop = asyncio.new_event_loop()
+        asyncio.set_event_loop(loop)
     for sig in (signal.SIGINT, signal.SIGTERM):
         loop.add_signal_handler(
             sig,

@@ -70,8 +70,9 @@ RUN apt-get update \
        > /etc/apt/sources.list.d/adoptium.list \
   && apt-get update \
   && apt-get install -y --no-install-recommends temurin-21-jdk \
+  && ln -s /usr/lib/jvm/temurin-21-jdk-$(dpkg --print-architecture) /usr/lib/jvm/java-21-temurin \
   && rm -rf /var/lib/apt/lists/*
-ENV JAVA_HOME=/usr/lib/jvm/temurin-21-jdk-$(dpkg --print-architecture)
+ENV JAVA_HOME=/usr/lib/jvm/java-21-temurin
 
 # ---------- Dependency cache warm-up ----------
 FROM java AS cache

@@ -60,9 +60,7 @@ func (deps *Dependencies) handleTunnel() http.HandlerFunc {
 			return
 		}
 
-		conn, err := tunnelUpgrader.Upgrade(w, r, http.Header{
-			"Sec-WebSocket-Protocol": {model.SubprotocolTunnel},
-		})
+		conn, err := tunnelUpgrader.Upgrade(w, r, nil)
 		if err != nil {
 			logger.Error("tunnel ws upgrade error", "error", err)
 			return

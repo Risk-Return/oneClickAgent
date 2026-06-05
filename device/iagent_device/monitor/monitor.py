@@ -76,6 +76,6 @@ class Monitor:
                 "disk_mb": 0,
             },
             "agents": agents_list,
-            "capabilities": {"vnc_enabled": vnc_enabled},
+            "capabilities": ["vnc"] if vnc_enabled else [],
             "agent_count": len(agents_list),
         }
