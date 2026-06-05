@@ -61,7 +61,7 @@ export function OrganizationsPage() {
 
   const { data: members, isLoading: membersLoading, refetch: refetchMembers } = useQuery({
     queryKey: ["admin", "orgs", selectedOrgId, "members"],
-    queryFn: () => apiClient.getList<Member>(`/admin/orgs/${selectedOrgId}/members`),
+    queryFn: () => apiClient.get<Member[]>(`/admin/orgs/${selectedOrgId}/members`),
     enabled: !!selectedOrgId,
   });
 
