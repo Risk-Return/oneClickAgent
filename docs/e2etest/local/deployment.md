@@ -26,7 +26,7 @@ Testing the local device + agent containers against a mock cloud gateway on Ubun
 - `agent_image` — checks `iagent/agent:dev` exists, skips if not built
 - `docker_required` — skips tests if Docker socket not accessible
 
-## Test Results — 15/15 passing (50s)
+## Test Results — 21/21 passing (84s)
 
 ### Tunnel Protocol (4 tests)
 
@@ -62,6 +62,17 @@ Testing the local device + agent containers against a mock cloud gateway on Ubun
 | `test_real_agent_container_health` | `docker run iagent/agent:dev` → GET /healthz (200 ok), GET /status (skills, usage, current_job) |
 | `test_real_agent_job_execution` | POST /jobs (202 accepted), stub brain executes → completes (succeeded/failed or 404 after cleanup), agent returns to idle |
 | `test_real_agent_skill_install` | POST /skills (204), verify in /status skills list, POST disable (204), POST enable (204), DELETE (204), verify removed |
+
+### Robustness / Gap Tests (7 tests)
+
+| Test | What It Validates |
+|------|-------------------|
+| `test_outbox_durability` | Frame enqueued before disconnect, flushed on reconnect, received by gateway |
+| `test_device_resilience_state_recovery` | Pre-populated SQLite state (agents+jobs) recovered after tunnel restart |
+| `test_concurrent_frames` | 10 rapid JOB_DISPATCH frames, all dispatched, no duplicates |
+| `test_file_staging_full_lifecycle` | FILE_PUSH_BEGIN→CHUNK→END stages file to workspace, verify content on disk, cleanup removes dir |
+| `test_agent_failure_recovery` | Docker kill agent container, verify unreachable, restart, verify healthy again |
+| `test_skill_dispatch_to_agent` | Install skill on container, execute job referencing skill, verify terminal state |
 
 ## Bugs Found During E2E Development
 
