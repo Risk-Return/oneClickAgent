@@ -38,7 +38,7 @@ func e2eDSN() string {
 	if d := os.Getenv("ONE_CLICK_DSN"); d != "" {
 		return d
 	}
-	return "postgresql://siyidong@localhost:5432/oneclickagent?sslmode=disable"
+	return "postgresql://iagent:iagent_dev_password@localhost:5432/iagent_e2e?sslmode=disable"
 }
 
 // e2eDB returns a connected PostgreSQL pool and runs migrations.
