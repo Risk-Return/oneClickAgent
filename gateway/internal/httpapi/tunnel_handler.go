@@ -79,8 +79,8 @@ func (deps *Dependencies) handleTunnel() http.HandlerFunc {
 		})
 		deps.Hub.Register(deviceConn)
 
-		go deviceConn.StartReadPump(r.Context())
-		go deviceConn.StartWritePump(r.Context())
-		go deviceConn.StartTokenWatcher(r.Context())
+		go deviceConn.StartReadPump(context.Background())
+		go deviceConn.StartWritePump(context.Background())
+		go deviceConn.StartTokenWatcher(context.Background())
 	}
 }

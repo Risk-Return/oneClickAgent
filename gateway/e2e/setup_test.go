@@ -57,6 +57,7 @@ func e2eDB(t *testing.T) *store.DB {
 
 func truncateAll(t *testing.T, db *store.DB) {
 	t.Helper()
+	// Order matters: circular FKs (users↔organizations) require SET NULL first
 	tables := []string{
 		"job_credentials", "vnc_sessions", "browser_credentials",
 		"job_files", "device_skills", "agent_skills", "skill_grants",
@@ -64,7 +65,6 @@ func truncateAll(t *testing.T, db *store.DB) {
 		"files",
 		"jobs", "agents", "devices",
 		"refresh_tokens", "audit_log",
-		"users", "organizations",
 	}
 	for _, tbl := range tables {
 		_, err := db.Pool.Exec(context.Background(), "DELETE FROM "+tbl)
@@ -72,6 +72,10 @@ func truncateAll(t *testing.T, db *store.DB) {
 			t.Logf("truncate %s (may be ok): %v", tbl, err)
 		}
 	}
+	// Handle circular FK: null org_id on users before deleting orgs
+	_, _ = db.Pool.Exec(context.Background(), "UPDATE users SET org_id = NULL")
+	_, _ = db.Pool.Exec(context.Background(), "DELETE FROM users")
+	_, _ = db.Pool.Exec(context.Background(), "DELETE FROM organizations")
 }
 
 // ─── E2E Test Harness ─────────────────────────────────────────

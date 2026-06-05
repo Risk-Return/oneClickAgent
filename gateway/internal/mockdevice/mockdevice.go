@@ -147,6 +147,9 @@ func (d *MockDevice) Connect(ctx context.Context) error {
 		return fmt.Errorf("dial tunnel: %w", err)
 	}
 
+	// Start read pump before sending HELLO so we can receive HELLO_ACK
+	go d.readPump(ctx)
+
 	helloAckCh := make(chan error, 1)
 	d.On(model.FrameHelloAck, func(dev *MockDevice, f model.Frame) *model.Frame {
 		helloAckCh <- nil
@@ -170,8 +173,6 @@ func (d *MockDevice) Connect(ctx context.Context) error {
 		return ctx.Err()
 	}
 
-	// Start read pump.
-	go d.readPump(ctx)
 	// Start heartbeat pinger.
 	go d.heartbeatLoop(ctx)
 

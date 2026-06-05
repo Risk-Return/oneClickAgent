@@ -636,7 +636,9 @@ func TestE2E_SkillFleetRollout(t *testing.T) {
 	})
 
 	// Trigger fleet install via API
-	resp := h.Post(t, "/api/v1/admin/skills/"+skill.ID.String()+"/install", nil, admin.AccessToken)
+	resp := h.Post(t, "/api/v1/admin/skills/"+skill.ID.String()+"/install",
+		map[string]string{"version": "1.0.0"},
+		admin.AccessToken)
 	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
 		t.Fatalf("fleet install: status=%d body=%s", resp.StatusCode, resp.Body)
 	}
@@ -663,4 +665,77 @@ func TestE2E_SkillFleetRollout(t *testing.T) {
 		t.Errorf("rollout status: %d", resp.StatusCode)
 	}
 	t.Logf("rollout: %s", resp.Body)
+}
+
+func TestE2E_SkillRetry(t *testing.T) {
+	h := NewHarness(t)
+
+	admin := h.RegisterAdmin(t)
+	device, deviceToken := h.CreateDevice(t, admin.AccessToken)
+
+	// Create skill + version
+	ctx := context.Background()
+	skill, err := h.Router.Vault.CreateSkill(ctx, "e2e-retry", "E2E Retry", "retry test", model.VisibilityPublic)
+	if err != nil {
+		t.Fatalf("create skill: %v", err)
+	}
+	manifest := `{"name":"e2e-retry","version":"1.0.0","entrypoint":"SKILL.md","type":"claude-code"}`
+	artifact := strings.NewReader("# Retry test")
+	_, err = h.Router.Vault.PublishVersion(ctx, skill.ID, "1.0.0", manifest, artifact)
+	if err != nil {
+		t.Fatalf("publish: %v", err)
+	}
+
+	// Connect mock device
+	agentID := model.NewUUID()
+	md := mockdevice.New(mockdevice.Config{
+		DeviceID:    device.ID,
+		DeviceToken: deviceToken,
+		GatewayURL:  h.TunnelURL(),
+		Agents: []model.HelloAgent{
+			{AgentID: agentID, Status: model.AgentIdle, Port: 9001, Tags: []string{"default"}},
+		},
+	})
+
+	testCtx, cancel := context.WithTimeout(ctx, 30*time.Second)
+	defer cancel()
+	if err := md.Connect(testCtx); err != nil {
+		t.Fatalf("connect: %v", err)
+	}
+	defer md.Close()
+	time.Sleep(300 * time.Millisecond)
+
+	// Track SKILL_RETRY frame
+	retryReceived := make(chan model.SkillRetryPayload, 1)
+	md.On(model.FrameSkillRetry, func(dev *mockdevice.MockDevice, f model.Frame) *model.Frame {
+		var p model.SkillRetryPayload
+		json.Unmarshal(f.Payload, &p)
+		retryReceived <- p
+		// Send back SKILL_STATE for each agent
+		frame := mockdevice.NewFrame(model.FrameSkillState, model.SkillStatePayload{
+			SkillID: p.SkillID,
+			Scope:   model.SkillScopeDevice,
+			Status:  model.SkillInstalled,
+		})
+		return &frame
+	})
+
+	// Trigger retry
+	resp := h.Post(t, "/api/v1/admin/skills/"+skill.ID.String()+"/retry",
+		model.SkillRetryRequest{DeviceID: device.ID, AgentIDs: []model.UUID{agentID}},
+		admin.AccessToken)
+	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
+		t.Fatalf("retry: status=%d body=%s", resp.StatusCode, resp.Body)
+	}
+
+	// Wait for SKILL_RETRY frame
+	select {
+	case p := <-retryReceived:
+		t.Logf("SKILL_RETRY received: skill=%s agents=%d", p.SkillID, len(p.AgentIDs))
+		if len(p.AgentIDs) != 1 || p.AgentIDs[0] != agentID {
+			t.Errorf("expected agentIDs=[%s], got %v", agentID, p.AgentIDs)
+		}
+	case <-time.After(10 * time.Second):
+		t.Error("timeout waiting for SKILL_RETRY")
+	}
 }
