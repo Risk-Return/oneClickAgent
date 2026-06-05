@@ -32,8 +32,9 @@ export function VisibilityPage() {
 
   const { data: grants, isLoading: grantsLoading, refetch: refetchGrants } = useQuery({
     queryKey: ["admin", "skills", selectedSkill, "grants"],
-    queryFn: () => apiClient.getList<SkillGrant>(`/admin/skills/${selectedSkill}/grants`),
+    queryFn: () => apiClient.get<SkillGrant[]>(`/admin/skills/${selectedSkill}/grants`),
     enabled: !!selectedSkill,
+    staleTime: 0,
   });
 
   const handleVisibilityChange = async (skillId: string, visibility: "public" | "restricted") => {
@@ -53,8 +54,7 @@ export function VisibilityPage() {
         principal_type: grantData.principal_type,
         principal_id: grantData.principal_id,
       });
-      queryClient.invalidateQueries({ queryKey: ["admin", "skills"] });
-      refetchGrants();
+      queryClient.invalidateQueries({ queryKey: ["admin", "skills", selectedSkill, "grants"] });
       setGrantDialogOpen(false);
       setGrantData({ principal_type: "user", principal_id: "" });
       toast.success(t("visibility.grantCreated"));
@@ -68,7 +68,7 @@ export function VisibilityPage() {
   const handleRevoke = async (principalType: string, principalId: string) => {
     try {
       await apiClient.delete(`/admin/skills/${selectedSkill}/grants/${principalType}/${principalId}`);
-      refetchGrants();
+      queryClient.invalidateQueries({ queryKey: ["admin", "skills", selectedSkill, "grants"] });
       toast.success(t("visibility.grantRevoked"));
     } catch {
       toast.error(t("visibility.revokeFailed"));
