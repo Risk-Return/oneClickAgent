@@ -43,8 +43,15 @@ logging.basicConfig(level=logging.INFO, format="%(asctime)s [%(name)s] %(levelna
 def _make_brain() -> AgentBrain:
     brain_key = os.getenv("IAGENT_BRAIN", "opencode")
     delay = float(os.getenv("IAGENT_STUB_DELAY", "0.1"))
-    if brain_key != "stub":
-        logger.warning("brain adapter '%s' not implemented; falling back to stub", brain_key)
+    if brain_key == "opencode":
+        import shutil
+        if shutil.which("opencode") or os.getenv("IAGENT_BRAIN_PATH"):
+            from iagent_agent.adapter.brain_opencode import OpenCodeBrain
+            logger.info("using opencode brain adapter")
+            return OpenCodeBrain()
+    if brain_key == "stub":
+        return StubBrain(delay=delay)
+    logger.warning("brain adapter '%s' not available; falling back to stub", brain_key)
     return StubBrain(delay=delay)
 
 
@@ -118,6 +125,7 @@ def create_app() -> FastAPI:
         params = body.get("params", {})
         skill_id = body.get("skill_id")
         callback_url = body.get("callback_url")
+        workspace_dir = body.get("workspace_dir", body.get("inputs_dir", ""))
 
         if skill_id:
             sk = state.skills.get_enabled_skill(skill_id)
@@ -131,6 +139,7 @@ def create_app() -> FastAPI:
             callback_url=callback_url,
             skill_id=skill_id,
             vnc_enabled=state.vnc_enabled,
+            workspace_dir=workspace_dir,
         )
         return {"job_id": job_id}
 

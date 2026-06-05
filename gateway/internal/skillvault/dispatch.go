@@ -226,10 +226,10 @@ func (d *Dispatcher) SyncSkills(ctx context.Context, deviceID model.UUID) error 
 }
 
 // UpdateDeviceSkillState handles a SKILL_STATE frame from a device.
-func (d *Dispatcher) UpdateDeviceSkillState(ctx context.Context, payload model.SkillStatePayload) error {
+func (d *Dispatcher) UpdateDeviceSkillState(ctx context.Context, deviceID model.UUID, payload model.SkillStatePayload) error {
 	switch payload.Scope {
 	case model.SkillScopeDevice:
-		return d.skills.UpdateDeviceSkillStatus(ctx, payload.SkillID, payload.SkillID, payload.Status)
+		return d.skills.UpdateDeviceSkillStatus(ctx, deviceID, payload.SkillID, payload.Status)
 
 	case model.SkillScopeAgent:
 		if payload.AgentID != nil {

@@ -201,7 +201,7 @@ func NewHarness(t *testing.T) *E2EHarness {
 			return nil
 		},
 		OnSkillState: func(ctx context.Context, deviceID model.UUID, payload model.SkillStatePayload) error {
-			return skillDispatch.UpdateDeviceSkillState(ctx, payload)
+			return skillDispatch.UpdateDeviceSkillState(ctx, deviceID, payload)
 		},
 		OnFileAck: func(ctx context.Context, deviceID model.UUID, payload model.FileAckPayload) error {
 			return fileRelay.OnFileAck(ctx, payload)

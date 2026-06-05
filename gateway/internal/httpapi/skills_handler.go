@@ -513,6 +513,17 @@ func (deps *Dependencies) handleGetSkillRollout() http.HandlerFunc {
 			return
 		}
 
+		agentSkills, err := deps.Skills.GetAgentSkillsForSkill(r.Context(), skillID)
+		if err != nil {
+			writeError(w, http.StatusInternalServerError, model.ErrCodeInternalError, "failed to get agent status")
+			return
+		}
+
+		agentsByDevice := make(map[model.UUID][]model.SkillRolloutAgentEntry)
+		for _, a := range agentSkills {
+			agentsByDevice[a.DeviceID] = append(agentsByDevice[a.DeviceID], a)
+		}
+
 		var entries []model.SkillRolloutEntry
 		for _, ds := range deviceSkills {
 			deviceName := ""
@@ -526,6 +537,7 @@ func (deps *Dependencies) handleGetSkillRollout() http.HandlerFunc {
 				Status:     ds.Status,
 				Error:      ds.ErrorMessage,
 				UpdatedAt:  ds.UpdatedAt,
+				Agents:     agentsByDevice[ds.DeviceID],
 			})
 		}
 

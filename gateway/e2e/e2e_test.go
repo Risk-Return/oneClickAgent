@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"net/http"
 	"strings"
+	"sync"
 	"testing"
 	"time"
 
@@ -615,22 +616,31 @@ func TestE2E_SkillFleetRollout(t *testing.T) {
 
 	// Track skill dispatch frames
 	dispatchStarted := make(chan struct{}, 1)
-	actionReceived := make(chan struct{}, 1)
+	dispatchEnded := make(chan struct{}, 1)
+	var chunks []model.SkillChunkPayload
+	var chunksMu sync.Mutex
 
 	md.On(model.FrameSkillDispatchBegin, func(dev *mockdevice.MockDevice, f model.Frame) *model.Frame {
 		dispatchStarted <- struct{}{}
 		return nil
 	})
-	md.On(model.FrameSkillAction, func(dev *mockdevice.MockDevice, f model.Frame) *model.Frame {
-		var p model.SkillActionPayload
+	md.On(model.FrameSkillChunk, func(dev *mockdevice.MockDevice, f model.Frame) *model.Frame {
+		var p model.SkillChunkPayload
 		json.Unmarshal(f.Payload, &p)
-		actionReceived <- struct{}{}
-		// Send back SKILL_STATE to mark as installed
+		chunksMu.Lock()
+		chunks = append(chunks, p)
+		chunksMu.Unlock()
+		return nil
+	})
+	md.On(model.FrameSkillDispatchEnd, func(dev *mockdevice.MockDevice, f model.Frame) *model.Frame {
+		var p model.SkillDispatchEndPayload
+		json.Unmarshal(f.Payload, &p)
+		dispatchEnded <- struct{}{}
+		// Report SKILL_STATE as installed
 		frame := mockdevice.NewFrame(model.FrameSkillState, model.SkillStatePayload{
 			SkillID: p.SkillID,
-			Scope:   p.Scope,
+			Scope:   model.SkillScopeDevice,
 			Status:  model.SkillInstalled,
-			AgentID: p.AgentID,
 		})
 		return &frame
 	})
@@ -643,26 +653,42 @@ func TestE2E_SkillFleetRollout(t *testing.T) {
 		t.Fatalf("fleet install: status=%d body=%s", resp.StatusCode, resp.Body)
 	}
 
-	// Wait for dispatch to start
+	// Wait for SKILL_DISPATCH_BEGIN
 	select {
 	case <-dispatchStarted:
 		t.Log("SKILL_DISPATCH_BEGIN received")
 	case <-time.After(10 * time.Second):
-		t.Error("timeout waiting for SKILL_DISPATCH_BEGIN")
+		t.Fatal("timeout waiting for SKILL_DISPATCH_BEGIN")
 	}
 
-	// Wait for action
+	// Wait for SKILL_DISPATCH_END
 	select {
-	case <-actionReceived:
-		t.Log("SKILL_ACTION received, SKILL_STATE sent back")
+	case <-dispatchEnded:
+		t.Log("SKILL_DISPATCH_END received")
 	case <-time.After(10 * time.Second):
-		t.Error("timeout waiting for SKILL_ACTION")
+		t.Fatal("timeout waiting for SKILL_DISPATCH_END")
 	}
+
+	chunksMu.Lock()
+	chunkCount := len(chunks)
+	chunksMu.Unlock()
+	t.Logf("received %d chunks", chunkCount)
+
+	// Allow SKILL_STATE to propagate
+	time.Sleep(200 * time.Millisecond)
 
 	// Check rollout status
 	resp = h.Get(t, "/api/v1/admin/skills/"+skill.ID.String()+"/rollout", admin.AccessToken)
 	if resp.StatusCode != 200 {
 		t.Errorf("rollout status: %d", resp.StatusCode)
+	}
+	var entries []model.SkillRolloutEntry
+	json.Unmarshal([]byte(resp.Body), &entries)
+	if len(entries) != 1 {
+		t.Fatalf("expected 1 rollout entry, got %d", len(entries))
+	}
+	if entries[0].Status != model.SkillInstalled {
+		t.Errorf("rollout status = %s, want installed: %s", entries[0].Status, resp.Body)
 	}
 	t.Logf("rollout: %s", resp.Body)
 }

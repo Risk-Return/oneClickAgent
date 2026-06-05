@@ -286,6 +286,31 @@ func (s *SkillStore) GetDeviceSkillsForSkill(ctx context.Context, skillID model.
 	return dss, nil
 }
 
+func (s *SkillStore) GetAgentSkillsForSkill(ctx context.Context, skillID model.UUID) ([]model.SkillRolloutAgentEntry, error) {
+	rows, err := s.db.Pool.Query(ctx,
+		`SELECT a.id, a.name, a.device_id,
+		 COALESCE(ask.status, 'pending') AS agent_status
+		 FROM agents a
+		 JOIN device_skills ds ON ds.device_id = a.device_id
+		 LEFT JOIN agent_skills ask ON ask.agent_id = a.id AND ask.skill_id = ds.skill_id
+		 WHERE ds.skill_id = $1
+		 ORDER BY a.device_id, a.name`, skillID,
+	)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var entries []model.SkillRolloutAgentEntry
+	for rows.Next() {
+		var e model.SkillRolloutAgentEntry
+		if err := rows.Scan(&e.AgentID, &e.AgentName, &e.DeviceID, &e.Status); err != nil {
+			return nil, err
+		}
+		entries = append(entries, e)
+	}
+	return entries, nil
+}
+
 // --- Skill Grants ---
 
 func (s *SkillStore) CreateGrant(ctx context.Context, g *model.SkillGrant) error {

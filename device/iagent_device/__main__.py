@@ -24,6 +24,7 @@ from iagent_device.docker.manager import DockerManager
 from iagent_device.docker.reconcile import reconcile
 from iagent_device.jobs.dispatcher import JobDispatcher
 from iagent_device.files.stager import FileStager
+from iagent_device.files.puller import FilePuller
 from iagent_device.skills.manager import SkillManager
 from iagent_device.vncbridge.bridge import VNCBridge
 from iagent_device.creds.relay import CredRelay
@@ -115,6 +116,7 @@ async def cmd_run(cfg):
 
     outbox = Outbox(outbox_repo, None)
     stager = FileStager(cfg.workspace_dir, file_repo, outbox)
+    puller = FilePuller(cfg.workspace_dir, outbox)
     skills = SkillManager(cfg.skills_dir, skill_repo, agent_repo, docker_mgr, outbox)
     vnc_bridge = VNCBridge(vnc_repo, docker_mgr, outbox, cfg.session_dial_timeout_s)
     cred_relay = CredRelay(docker_mgr, outbox)
@@ -126,6 +128,7 @@ async def cmd_run(cfg):
         docker_mgr=docker_mgr,
         outbox=outbox,
         stager=stager,
+        puller=puller,
         cred_relay=cred_relay,
     )
 
@@ -151,6 +154,7 @@ async def cmd_run(cfg):
         str(FrameType.VNC_CLOSE): lambda t, p: vnc_bridge.handle_vnc_close(p),
         str(FrameType.CRED_PUSH): lambda t, p: cred_relay.handle_cred_push(p),
         str(FrameType.CRED_CAPTURE): lambda t, p: cred_relay.handle_cred_capture(p),
+        str(FrameType.FILE_PULL_ACK): lambda t, p: puller.handle_pull_ack(p),
     }
 
     _tunnel = TunnelClient(

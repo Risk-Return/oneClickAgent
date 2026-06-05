@@ -22,6 +22,7 @@ class JobDispatcher:
         docker_mgr: DockerManager,
         outbox: Outbox,
         stager=None,
+        puller=None,
         cred_relay=None,
     ):
         self.job_repo = job_repo
@@ -29,6 +30,7 @@ class JobDispatcher:
         self.docker = docker_mgr
         self.outbox = outbox
         self.stager = stager
+        self.puller = puller
         self.cred_relay = cred_relay
 
     async def handle_job_dispatch(self, payload: dict):
@@ -63,7 +65,7 @@ class JobDispatcher:
                     }
                     await self.cred_relay.inject_credential(cred_payload)
 
-            await client.create_job(job_id, command, {}, "", skill_id)
+            await client.create_job(job_id, command, {}, "", skill_id, workspace_dir=f"/workspaces/{job_id}")
             self.job_repo.update_status(job_id, "running")
             await self.outbox.enqueue_and_send(FrameType.JOB_PROGRESS, {
                 "job_id": job_id,
@@ -130,6 +132,11 @@ class JobDispatcher:
                             "status": "succeeded",
                             "result": result_data,
                         })
+                        if self.puller:
+                            try:
+                                await self.puller.pull_outputs(job_id)
+                            except Exception:
+                                logger.exception("pull_outputs failed for job %s", job_id)
                     else:
                         await self.outbox.enqueue_and_send(FrameType.JOB_RESULT, {
                             "job_id": job_id,

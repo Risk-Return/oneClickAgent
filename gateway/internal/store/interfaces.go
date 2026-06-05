@@ -104,6 +104,7 @@ type SkillStoreInterface interface {
 	IsSkillVisibleToUser(ctx context.Context, skillID, userID model.UUID, orgID *model.UUID) (bool, error)
 	ListVisibleSkills(ctx context.Context, userID model.UUID, orgID *model.UUID) ([]model.Skill, error)
 	GetDeviceSkillsForSkill(ctx context.Context, skillID model.UUID) ([]model.DeviceSkill, error)
+	GetAgentSkillsForSkill(ctx context.Context, skillID model.UUID) ([]model.SkillRolloutAgentEntry, error)
 }
 
 type OrgStoreInterface interface {

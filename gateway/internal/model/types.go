@@ -113,6 +113,7 @@ const (
 	SkillUpdating   SkillInstallStatus = "updating"
 	SkillDeleting   SkillInstallStatus = "deleting"
 	SkillError      SkillInstallStatus = "error"
+	SkillPending    SkillInstallStatus = "pending"
 )
 
 type AgentSkillStatus string
@@ -521,13 +522,22 @@ type SkillVisible struct {
 	Enabled       *bool         `json:"enabled,omitempty"`
 }
 
+type SkillRolloutAgentEntry struct {
+	AgentID   UUID              `json:"agent_id"`
+	AgentName string            `json:"agent_name"`
+	DeviceID  UUID              `json:"device_id"`
+	Status    SkillInstallStatus `json:"status"`
+	Error     *string           `json:"error,omitempty"`
+}
+
 type SkillRolloutEntry struct {
-	DeviceID    UUID               `json:"device_id"`
-	DeviceName  string             `json:"device_name"`
-	Version     string             `json:"version,omitempty"`
-	Status      SkillInstallStatus `json:"status"`
-	Error       *string            `json:"error,omitempty"`
-	UpdatedAt   time.Time          `json:"updated_at"`
+	DeviceID   UUID                    `json:"device_id"`
+	DeviceName string                  `json:"device_name"`
+	Version    string                  `json:"version,omitempty"`
+	Status     SkillInstallStatus      `json:"status"`
+	Error      *string                 `json:"error,omitempty"`
+	UpdatedAt  time.Time               `json:"updated_at"`
+	Agents     []SkillRolloutAgentEntry `json:"agents,omitempty"`
 }
 
 type VNCStatusResponse struct {

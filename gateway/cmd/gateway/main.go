@@ -158,7 +158,7 @@ func main() {
 			return agents.UpdateStatus(ctx, payload.AgentID, payload.Status)
 		},
 		OnSkillState: func(ctx context.Context, deviceID model.UUID, payload model.SkillStatePayload) error {
-			return skillDispatch.UpdateDeviceSkillState(ctx, payload)
+			return skillDispatch.UpdateDeviceSkillState(ctx, deviceID, payload)
 		},
 		OnFileAck: func(ctx context.Context, deviceID model.UUID, payload model.FileAckPayload) error {
 			return fileRelay.OnFileAck(ctx, payload)

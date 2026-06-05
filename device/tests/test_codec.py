@@ -82,11 +82,12 @@ class TestFrameTypeEnum:
             "JOB_PROGRESS", "JOB_RESULT", "JOB_REJECTED",
             "AGENT_CREATE", "AGENT_ACTION", "AGENT_STATUS_REQ", "AGENT_STATUS",
             "SKILL_DISPATCH_BEGIN", "SKILL_CHUNK", "SKILL_DISPATCH_END",
-            "SKILL_ACTION", "SKILL_STATE", "SKILL_SYNC",
+            "SKILL_ACTION", "SKILL_RETRY", "SKILL_STATE", "SKILL_SYNC",
             "FILE_PUSH_BEGIN", "FILE_CHUNK", "FILE_PUSH_END", "FILE_ACK",
             "VNC_OPEN", "VNC_OPENED", "VNC_CLOSE",
             "CRED_PUSH", "CRED_PUSH_ACK", "CRED_CAPTURE", "CRED_CAPTURE_ACK",
             "SKILL_DISPATCH_ACK", "FILE_PURGED",
+            "FILE_PULL_BEGIN", "FILE_PULL_CHUNK", "FILE_PULL_END", "FILE_PULL_ACK",
         ]
         for name in required:
             assert FrameType[name] is not None

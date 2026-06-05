@@ -176,7 +176,7 @@ export const SkillVersionSchema = z.object({
 });
 export type SkillVersion = z.infer<typeof SkillVersionSchema>;
 
-export const SkillInstallStatus = z.enum(["installing", "installed", "disabled", "updating", "deleting", "error"]);
+export const SkillInstallStatus = z.enum(["installing", "installed", "disabled", "updating", "deleting", "error", "pending"]);
 export type SkillInstallStatus = z.infer<typeof SkillInstallStatus>;
 
 export const DeviceSkillSchema = z.object({
@@ -200,6 +200,26 @@ export const SkillGrantSchema = z.object({
   created_at: z.string().datetime(),
 });
 export type SkillGrant = z.infer<typeof SkillGrantSchema>;
+
+export const SkillRolloutAgentEntrySchema = z.object({
+  agent_id: z.string().uuid(),
+  agent_name: z.string(),
+  device_id: z.string().uuid(),
+  status: SkillInstallStatus,
+  error: z.string().nullable().optional(),
+});
+export type SkillRolloutAgentEntry = z.infer<typeof SkillRolloutAgentEntrySchema>;
+
+export const SkillRolloutEntrySchema = z.object({
+  device_id: z.string().uuid(),
+  device_name: z.string(),
+  version: z.string().optional(),
+  status: SkillInstallStatus,
+  error: z.string().nullable().optional(),
+  updated_at: z.string().datetime(),
+  agents: z.array(SkillRolloutAgentEntrySchema).optional(),
+});
+export type SkillRolloutEntry = z.infer<typeof SkillRolloutEntrySchema>;
 
 export const OrganizationSchema = z.object({
   id: z.string().uuid(),

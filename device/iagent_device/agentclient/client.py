@@ -27,12 +27,13 @@ class AgentClient:
             r = await c.get(f"{self.base_url}/status")
             return r.json()
 
-    async def create_job(self, job_id: str, command: str, params: dict | None = None, inputs_dir: str = "", skill_id: str = "") -> dict:
+    async def create_job(self, job_id: str, command: str, params: dict | None = None, inputs_dir: str = "", skill_id: str = "", workspace_dir: str = "") -> dict:
         payload = {
             "job_id": job_id,
             "command": command,
             "params": params or {},
             "inputs_dir": inputs_dir,
+            "workspace_dir": workspace_dir or inputs_dir,
         }
         if skill_id:
             payload["skill_id"] = skill_id

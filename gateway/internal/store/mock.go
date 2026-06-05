@@ -461,6 +461,10 @@ func (m *MockSkillStore) GetDeviceSkillsForSkill(ctx context.Context, skillID mo
 	return nil, nil
 }
 
+func (m *MockSkillStore) GetAgentSkillsForSkill(ctx context.Context, skillID model.UUID) ([]model.SkillRolloutAgentEntry, error) {
+	return nil, nil
+}
+
 // ─── MockTokenStore ────────────────────────────────────────
 
 type MockTokenStore struct{ mu sync.RWMutex }

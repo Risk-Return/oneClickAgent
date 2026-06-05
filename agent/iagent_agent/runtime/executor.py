@@ -3,6 +3,7 @@ from __future__ import annotations
 import asyncio
 import logging
 import time as _time
+from pathlib import Path
 
 import httpx
 
@@ -63,6 +64,7 @@ class JobExecutor:
         vnc_enabled: bool = False,
         browser_display: str = ":99",
         browser_profile: str = "",
+        workspace_dir: str = "",
     ) -> None:
         if self.busy:
             raise RuntimeError("BUSY")
@@ -75,7 +77,7 @@ class JobExecutor:
         record = JobRecord(job_id=job_id)
         self._current = record
         self._task = asyncio.create_task(
-            self._run(record, command, params, callback_url, skill_id, vnc_enabled, browser_display, browser_profile)
+            self._run(record, command, params, callback_url, skill_id, vnc_enabled, browser_display, browser_profile, workspace_dir)
         )
 
     async def cancel(self) -> None:
@@ -114,6 +116,7 @@ class JobExecutor:
         vnc_enabled: bool,
         browser_display: str,
         browser_profile: str,
+        workspace_dir: str = "",
     ) -> None:
         credentials_injected = self._credentials_pending
         self._credentials_pending = False
@@ -128,12 +131,22 @@ class JobExecutor:
 
                 from iagent_agent.adapter.protocol import JobContext
 
+                inputs_dir = self._workspace.inputs
+                output_dir = self._workspace.output
+                if workspace_dir:
+                    ws = Path(workspace_dir)
+                    ws.mkdir(parents=True, exist_ok=True)
+                    inputs_dir = str(ws / "inputs")
+                    output_dir = str(ws / "output")
+                    Path(inputs_dir).mkdir(parents=True, exist_ok=True)
+                    Path(output_dir).mkdir(parents=True, exist_ok=True)
+
                 ctx = JobContext(
                     job_id=record.job_id,
                     command=command,
                     params=params,
-                    inputs_dir=self._workspace.inputs,
-                    output_dir=self._workspace.output,
+                    inputs_dir=inputs_dir,
+                    output_dir=output_dir,
                     skill_id=skill_id,
                     credentials_injected=credentials_injected,
                     browser=BrowserContext(
