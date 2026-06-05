@@ -112,8 +112,14 @@ export function JobsPage() {
       return;
     }
     setInlineError(null);
+
+    const selectedSkill = skillId ? skills?.find((s) => s.id === skillId) : null;
+    const composedCommand = selectedSkill
+      ? `Please use the skill "${selectedSkill.name}" to complete the following task:\n\n${command.trim()}`
+      : command.trim();
+
     submitJob.mutate(
-      { command: command.trim(), file_ids: fileIds.length > 0 ? fileIds : undefined, skill_id: skillId || undefined, credential_ids: credentialIds.length > 0 ? credentialIds : undefined },
+      { command: composedCommand, file_ids: fileIds.length > 0 ? fileIds : undefined, skill_id: skillId || undefined, credential_ids: credentialIds.length > 0 ? credentialIds : undefined },
       {
         onSuccess: (job) => {
           setCommand(""); setFileIds([]); setSkillId(null); setCredentialIds([]);
@@ -264,6 +270,14 @@ export function JobsPage() {
 
           {skills && skills.length > 0 && (
             <SkillSelector skills={skills} selectedSkillId={skillId} onSkillChange={setSkillId} />
+          )}
+
+          {skillId && skills && (
+            <div className="rounded-md bg-muted/50 p-3 text-xs text-muted-foreground">
+              <span className="font-medium">{t("jobs.skillPrefixPreview")}:</span><br />
+              Please use the skill "<strong>{skills.find((s) => s.id === skillId)?.name}</strong>" to complete the following task:<br />
+              <span className="italic">+ your command above</span>
+            </div>
           )}
 
           {credentials && credentials.length > 0 && (

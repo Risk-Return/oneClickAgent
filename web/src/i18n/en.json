@@ -90,6 +90,8 @@
     "command": "Command",
     "commandPlaceholder": "e.g., Build a simple React component that...",
     "skillLabel": "Skill (optional, at most one)",
+    "skillPrefixPreview": "Command will be prefixed with skill prompt",
+    "none": "None",
     "savedLoginsDesc": "Saved Logins (attach to inject browser cookies)",
     "sendJob": "Send job",
     "jobDispatched": "Job dispatched!",
