@@ -1,6 +1,7 @@
 const PREFIX = import.meta.env.VITE_API_PREFIX || '';
 const REFRESH_URL = PREFIX + "/api/v1/auth/refresh";
 const TOKEN_REFRESH_MARGIN_MS = 60_000;
+const STORAGE_KEY = 'iagent_tokens';
 
 export class TokenManager {
   private static instance: TokenManager;
@@ -9,6 +10,20 @@ export class TokenManager {
   private expiresAt: number | null = null;
   private refreshPromise: Promise<boolean> | null = null;
   private onLogout: (() => void) | null = null;
+
+  private constructor() {
+    const stored = localStorage.getItem(STORAGE_KEY);
+    if (stored) {
+      try {
+        const data = JSON.parse(stored);
+        this.refreshToken = data.refresh || null;
+        this.accessToken = data.access || null;
+        this.expiresAt = data.expires || null;
+      } catch {
+        localStorage.removeItem(STORAGE_KEY);
+      }
+    }
+  }
 
   static getInstance(): TokenManager {
     if (!TokenManager.instance) {
@@ -25,10 +40,21 @@ export class TokenManager {
     this.accessToken = accessToken;
     this.refreshToken = refreshToken;
     this.expiresAt = Date.now() + expiresIn * 1000;
+    localStorage.setItem(STORAGE_KEY, JSON.stringify({
+      access: accessToken,
+      refresh: refreshToken,
+      expires: this.expiresAt,
+    }));
     this.scheduleAutoRefresh();
   }
 
   async getAccessToken(): Promise<string | null> {
+    // If no access token but we have a refresh token, try refresh first
+    if (!this.accessToken && this.refreshToken) {
+      const refreshed = await this.refreshAccessToken();
+      if (!refreshed) return null;
+    }
+
     if (!this.accessToken) return null;
 
     if (this.expiresAt && Date.now() > this.expiresAt - TOKEN_REFRESH_MARGIN_MS) {
@@ -158,6 +184,7 @@ export class TokenManager {
     this.accessToken = null;
     this.refreshToken = null;
     this.expiresAt = null;
+    localStorage.removeItem(STORAGE_KEY);
   }
 
   private scheduleAutoRefresh() {
