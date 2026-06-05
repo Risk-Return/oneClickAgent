@@ -144,11 +144,12 @@ func (v *Vault) OpenArtifact(version *model.SkillVersion) (io.ReadCloser, error)
 // --- Visibility Grants ---
 
 // GrantVisibility grants skill visibility to a user or organization.
-func (v *Vault) GrantVisibility(ctx context.Context, skillID model.UUID, principalType model.PrincipalType, principalID model.UUID) error {
+func (v *Vault) GrantVisibility(ctx context.Context, skillID model.UUID, principalType model.PrincipalType, principalID model.UUID, grantedBy model.UUID) error {
 	grant := &model.SkillGrant{
 		SkillID:       skillID,
 		PrincipalType: principalType,
 		PrincipalID:   principalID,
+		GrantedBy:     grantedBy,
 	}
 	return v.skills.CreateGrant(ctx, grant)
 }

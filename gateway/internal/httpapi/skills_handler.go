@@ -358,7 +358,7 @@ func (deps *Dependencies) handleCreateSkillGrant() http.HandlerFunc {
 			return
 		}
 
-		if err := deps.Vault.GrantVisibility(r.Context(), skillID, req.PrincipalType, req.PrincipalID); err != nil {
+		if err := deps.Vault.GrantVisibility(r.Context(), skillID, req.PrincipalType, req.PrincipalID, getUserID(r)); err != nil {
 			writeError(w, http.StatusInternalServerError, model.ErrCodeInternalError, "failed to create grant")
 			return
 		}
