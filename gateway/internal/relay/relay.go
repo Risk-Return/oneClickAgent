@@ -28,23 +28,37 @@ const (
 	MaxChunksInFlight = 8
 )
 
-// FileRelay handles file staging and tunnel push.
+// FileRelay handles file staging and tunnel push/pull.
 type FileRelay struct {
-	store      *store.FileStore
-	hub        *tunnel.Hub
-	baseDir    string
-	maxSize    int64
-	retention  time.Duration
+	store     store.FileStoreInterface
+	hub       *tunnel.Hub
+	baseDir   string
+	maxSize   int64
+	retention time.Duration
+
+	pullMu    sync.Mutex
+	pullBufs  map[model.UUID]*pullTransfer
+}
+
+type pullTransfer struct {
+	fileID   model.UUID
+	jobID    model.UUID
+	name     string
+	sha256   string
+	chunks   int
+	buf      [][]byte
+	received []bool
 }
 
 // NewFileRelay creates a new file relay service.
-func NewFileRelay(fileStore *store.FileStore, hub *tunnel.Hub, baseDir string, maxSize int64, retention time.Duration) *FileRelay {
+func NewFileRelay(fileStore store.FileStoreInterface, hub *tunnel.Hub, baseDir string, maxSize int64, retention time.Duration) *FileRelay {
 	return &FileRelay{
 		store:     fileStore,
 		hub:       hub,
 		baseDir:   baseDir,
 		maxSize:   maxSize,
 		retention: retention,
+		pullBufs:  make(map[model.UUID]*pullTransfer),
 	}
 }
 
@@ -261,4 +275,138 @@ func (r *FileRelay) FileStoreBackend() string {
 		return "s3"
 	}
 	return "local"
+}
+
+// ─── Output File Pull (device → gateway) ─────────────────────
+
+// OnFilePullBegin initializes a pull transfer buffer.
+func (r *FileRelay) OnFilePullBegin(ctx context.Context, deviceID model.UUID, payload model.FilePullBeginPayload) error {
+	r.pullMu.Lock()
+	defer r.pullMu.Unlock()
+
+	if payload.Size > r.maxSize {
+		r.sendPullAck(deviceID, payload.FileID, "ERROR", "file too large")
+		return fmt.Errorf("file too large: %d > %d", payload.Size, r.maxSize)
+	}
+
+	r.pullBufs[payload.FileID] = &pullTransfer{
+		fileID:   payload.FileID,
+		jobID:    payload.JobID,
+		name:     payload.Name,
+		sha256:   payload.SHA256,
+		chunks:   payload.TotalChunks,
+		buf:      make([][]byte, payload.TotalChunks),
+		received: make([]bool, payload.TotalChunks),
+	}
+	return nil
+}
+
+// OnFilePullChunk stores a chunk of an in-progress pull transfer.
+func (r *FileRelay) OnFilePullChunk(ctx context.Context, deviceID model.UUID, payload model.FilePullChunkPayload) error {
+	r.pullMu.Lock()
+	pt := r.pullBufs[payload.FileID]
+	r.pullMu.Unlock()
+
+	if pt == nil {
+		r.sendPullAck(deviceID, payload.FileID, "ERROR", "no active pull for file")
+		return fmt.Errorf("no active pull for file %s", payload.FileID)
+	}
+
+	data, err := base64.StdEncoding.DecodeString(payload.Data)
+	if err != nil {
+		r.sendPullAck(deviceID, payload.FileID, "ERROR", "invalid base64 data")
+		return fmt.Errorf("invalid base64: %w", err)
+	}
+
+	if payload.ChunkIndex < 0 || payload.ChunkIndex >= pt.chunks {
+		r.sendPullAck(deviceID, payload.FileID, "ERROR", "chunk index out of range")
+		return fmt.Errorf("chunk index %d out of range [0,%d)", payload.ChunkIndex, pt.chunks)
+	}
+
+	pt.buf[payload.ChunkIndex] = data
+	pt.received[payload.ChunkIndex] = true
+	return nil
+}
+
+// OnFilePullEnd finalizes a pull transfer, verifies SHA256, and stores the file.
+func (r *FileRelay) OnFilePullEnd(ctx context.Context, deviceID model.UUID, payload model.FilePullEndPayload) error {
+	r.pullMu.Lock()
+	pt := r.pullBufs[payload.FileID]
+	delete(r.pullBufs, payload.FileID)
+	r.pullMu.Unlock()
+
+	if pt == nil {
+		r.sendPullAck(deviceID, payload.FileID, "ERROR", "no active pull for file")
+		return fmt.Errorf("no active pull for file %s", payload.FileID)
+	}
+
+	for i, ok := range pt.received {
+		if !ok {
+			r.sendPullAck(deviceID, payload.FileID, "ERROR", fmt.Sprintf("missing chunk %d", i))
+			return fmt.Errorf("missing chunk %d for file %s", i, payload.FileID)
+		}
+	}
+
+	var total int64
+	hasher := sha256.New()
+	for _, chunk := range pt.buf {
+		total += int64(len(chunk))
+		hasher.Write(chunk)
+	}
+	computedSHA := hex.EncodeToString(hasher.Sum(nil))
+
+	if computedSHA != pt.sha256 {
+		r.sendPullAck(deviceID, payload.FileID, "ERROR", "sha256 mismatch")
+		return fmt.Errorf("sha256 mismatch for file %s", payload.FileID)
+	}
+
+	outputDir := filepath.Join(r.baseDir, "jobs", pt.jobID.String(), "output")
+	if err := os.MkdirAll(outputDir, 0o755); err != nil {
+		r.sendPullAck(deviceID, payload.FileID, "ERROR", "failed to create output dir")
+		return fmt.Errorf("create output dir: %w", err)
+	}
+
+	storagePath := filepath.Join(outputDir, pt.name)
+	f, err := os.Create(storagePath)
+	if err != nil {
+		r.sendPullAck(deviceID, payload.FileID, "ERROR", "failed to create file")
+		return fmt.Errorf("create file: %w", err)
+	}
+	defer f.Close()
+
+	for _, chunk := range pt.buf {
+		if _, err := f.Write(chunk); err != nil {
+			os.Remove(storagePath)
+			r.sendPullAck(deviceID, payload.FileID, "ERROR", "failed to write file")
+			return fmt.Errorf("write file: %w", err)
+		}
+	}
+
+	file := &model.File{
+		ID:         pt.fileID,
+		Name:       pt.name,
+		Size:       total,
+		SHA256:     pt.sha256,
+		Status:     model.FileStagedCloud,
+		StorageURI: storagePath,
+	}
+	if err := r.store.Create(ctx, file); err != nil {
+		// Non-fatal: file is on disk
+	}
+
+	r.sendPullAck(deviceID, payload.FileID, "RECEIVED", "")
+	return nil
+}
+
+func (r *FileRelay) sendPullAck(deviceID model.UUID, fileID model.UUID, status string, errMsg string) {
+	ack := model.FilePullAckPayload{
+		FileID: fileID,
+		Status: status,
+		Error:  errMsg,
+	}
+	frame, err := tunnel.NewFrame(model.FrameFilePullAck, ack)
+	if err != nil {
+		return
+	}
+	_ = r.hub.SendFrame(deviceID, frame)
 }

@@ -76,6 +76,9 @@ type Hub struct {
 	onCredCaptureAck func(ctx context.Context, deviceID model.UUID, payload model.CredCaptureAckPayload) error
 	onSkillDispatchAck func(ctx context.Context, deviceID model.UUID, payload json.RawMessage) error
 	onFilePurged       func(ctx context.Context, deviceID model.UUID, payload json.RawMessage) error
+	onFilePullBegin    func(ctx context.Context, deviceID model.UUID, payload model.FilePullBeginPayload) error
+	onFilePullChunk    func(ctx context.Context, deviceID model.UUID, payload model.FilePullChunkPayload) error
+	onFilePullEnd      func(ctx context.Context, deviceID model.UUID, payload model.FilePullEndPayload) error
 
 	heartbeatInterval      time.Duration
 	heartbeatMissThreshold time.Duration
@@ -103,6 +106,9 @@ type HubConfig struct {
 	OnCredCaptureAck        func(ctx context.Context, deviceID model.UUID, payload model.CredCaptureAckPayload) error
 	OnSkillDispatchAck      func(ctx context.Context, deviceID model.UUID, payload json.RawMessage) error
 	OnFilePurged            func(ctx context.Context, deviceID model.UUID, payload json.RawMessage) error
+	OnFilePullBegin         func(ctx context.Context, deviceID model.UUID, payload model.FilePullBeginPayload) error
+	OnFilePullChunk         func(ctx context.Context, deviceID model.UUID, payload model.FilePullChunkPayload) error
+	OnFilePullEnd           func(ctx context.Context, deviceID model.UUID, payload model.FilePullEndPayload) error
 }
 
 // NewHub creates a new tunnel Hub.
@@ -136,6 +142,9 @@ func NewHub(cfg HubConfig) *Hub {
 		onCredCaptureAck:       cfg.OnCredCaptureAck,
 		onSkillDispatchAck:     cfg.OnSkillDispatchAck,
 		onFilePurged:           cfg.OnFilePurged,
+		onFilePullBegin:        cfg.OnFilePullBegin,
+		onFilePullChunk:        cfg.OnFilePullChunk,
+		onFilePullEnd:          cfg.OnFilePullEnd,
 		heartbeatInterval:      cfg.HeartbeatInterval,
 		heartbeatMissThreshold: cfg.HeartbeatMissThreshold,
 		logger:                 obs.Logger("tunnel"),
@@ -162,6 +171,9 @@ func (h *Hub) SetHandlers(cfg HubConfig) {
 	h.onCredCaptureAck = cfg.OnCredCaptureAck
 	h.onSkillDispatchAck = cfg.OnSkillDispatchAck
 	h.onFilePurged = cfg.OnFilePurged
+	h.onFilePullBegin = cfg.OnFilePullBegin
+	h.onFilePullChunk = cfg.OnFilePullChunk
+	h.onFilePullEnd = cfg.OnFilePullEnd
 }
 
 // Register adds a new device connection, superseding any existing one.
@@ -352,6 +364,39 @@ func (h *Hub) HandleSkillDispatchAck(ctx context.Context, deviceID model.UUID, p
 func (h *Hub) HandleFilePurged(ctx context.Context, deviceID model.UUID, payload json.RawMessage) error {
 	if h.onFilePurged != nil {
 		return h.onFilePurged(ctx, deviceID, payload)
+	}
+	return nil
+}
+
+func (h *Hub) HandleFilePullBegin(ctx context.Context, deviceID model.UUID, payload json.RawMessage) error {
+	var p model.FilePullBeginPayload
+	if err := json.Unmarshal(payload, &p); err != nil {
+		return err
+	}
+	if h.onFilePullBegin != nil {
+		return h.onFilePullBegin(ctx, deviceID, p)
+	}
+	return nil
+}
+
+func (h *Hub) HandleFilePullChunk(ctx context.Context, deviceID model.UUID, payload json.RawMessage) error {
+	var p model.FilePullChunkPayload
+	if err := json.Unmarshal(payload, &p); err != nil {
+		return err
+	}
+	if h.onFilePullChunk != nil {
+		return h.onFilePullChunk(ctx, deviceID, p)
+	}
+	return nil
+}
+
+func (h *Hub) HandleFilePullEnd(ctx context.Context, deviceID model.UUID, payload json.RawMessage) error {
+	var p model.FilePullEndPayload
+	if err := json.Unmarshal(payload, &p); err != nil {
+		return err
+	}
+	if h.onFilePullEnd != nil {
+		return h.onFilePullEnd(ctx, deviceID, p)
 	}
 	return nil
 }

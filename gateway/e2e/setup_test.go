@@ -215,6 +215,15 @@ func NewHarness(t *testing.T) *E2EHarness {
 			}
 			return nil
 		},
+		OnFilePullBegin: func(ctx context.Context, deviceID model.UUID, payload model.FilePullBeginPayload) error {
+			return fileRelay.OnFilePullBegin(ctx, deviceID, payload)
+		},
+		OnFilePullChunk: func(ctx context.Context, deviceID model.UUID, payload model.FilePullChunkPayload) error {
+			return fileRelay.OnFilePullChunk(ctx, deviceID, payload)
+		},
+		OnFilePullEnd: func(ctx context.Context, deviceID model.UUID, payload model.FilePullEndPayload) error {
+			return fileRelay.OnFilePullEnd(ctx, deviceID, payload)
+		},
 	})
 
 	deps := &httpapi.Dependencies{

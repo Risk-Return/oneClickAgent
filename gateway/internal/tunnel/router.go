@@ -148,4 +148,14 @@ func (r *Router) RegisterAll(hub *Hub) {
 	r.Register(model.FrameFilePurged, func(ctx context.Context, deviceID model.UUID, payload json.RawMessage) error {
 		return hub.HandleFilePurged(ctx, deviceID, payload)
 	})
+
+	r.Register(model.FrameFilePullBegin, func(ctx context.Context, deviceID model.UUID, payload json.RawMessage) error {
+		return hub.HandleFilePullBegin(ctx, deviceID, payload)
+	})
+	r.Register(model.FrameFilePullChunk, func(ctx context.Context, deviceID model.UUID, payload json.RawMessage) error {
+		return hub.HandleFilePullChunk(ctx, deviceID, payload)
+	})
+	r.Register(model.FrameFilePullEnd, func(ctx context.Context, deviceID model.UUID, payload json.RawMessage) error {
+		return hub.HandleFilePullEnd(ctx, deviceID, payload)
+	})
 }

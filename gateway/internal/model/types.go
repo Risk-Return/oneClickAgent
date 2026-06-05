@@ -593,6 +593,12 @@ const (
 
 	FrameSkillDispatchAck FrameType = "SKILL_DISPATCH_ACK"
 	FrameFilePurged       FrameType = "FILE_PURGED"
+
+	// Output file relay (device → gateway)
+	FrameFilePullBegin FrameType = "FILE_PULL_BEGIN"
+	FrameFilePullChunk FrameType = "FILE_PULL_CHUNK"
+	FrameFilePullEnd   FrameType = "FILE_PULL_END"
+	FrameFilePullAck   FrameType = "FILE_PULL_ACK"
 )
 
 const FrameMaxSize = 1 << 20
@@ -747,6 +753,35 @@ type FileAckPayload struct {
 	FileID UUID       `json:"file_id"`
 	Status FileStatus `json:"status"`
 	Error  *string    `json:"error,omitempty"`
+}
+
+// FilePullBeginPayload is sent by the device to start an output file transfer.
+type FilePullBeginPayload struct {
+	FileID      UUID   `json:"file_id"`
+	JobID       UUID   `json:"job_id"`
+	Name        string `json:"name"`
+	Size        int64  `json:"size"`
+	SHA256      string `json:"sha256"`
+	TotalChunks int    `json:"chunks"`
+}
+
+// FilePullChunkPayload carries a chunk of an output file.
+type FilePullChunkPayload struct {
+	FileID     UUID   `json:"file_id"`
+	ChunkIndex int    `json:"index"`
+	Data       string `json:"data_b64"`
+}
+
+// FilePullEndPayload signals the end of an output file transfer.
+type FilePullEndPayload struct {
+	FileID UUID `json:"file_id"`
+}
+
+// FilePullAckPayload acknowledges receipt of an output file.
+type FilePullAckPayload struct {
+	FileID UUID   `json:"file_id"`
+	Status string `json:"status"` // "RECEIVED" | "ERROR"
+	Error  string `json:"error,omitempty"`
 }
 
 type StateSyncPayload struct {

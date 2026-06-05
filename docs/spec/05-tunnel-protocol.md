@@ -159,12 +159,29 @@ Login storage-state (cookies + localStorage) moved between the encrypted cloud v
 | `CRED_CAPTURE` | D→G | `{ session_id, job_id, label, origin, storage_state, sha256 }` — a login captured from a VNC session, to be encrypted + stored |
 | `CRED_CAPTURE_ACK` | G→D | `{ credential_id, status:"STORED"|"ERROR", message? }` |
 
+### 4.10 Output file relay (§11)
+
+Job result files (generated in `/work/output` on the agent container) flow **device → gateway** using `FILE_PULL_*` frames. Symmetrical to `FILE_PUSH_*` (§4.7) but in the reverse direction. Triggered when a job completes with files in the output directory.
+
+| Type | Dir | Payload |
+|------|-----|---------|
+| `FILE_PULL_BEGIN` | D→G | `{ file_id, job_id, name, size, sha256, chunks }` |
+| `FILE_PULL_CHUNK` | D→G | `{ file_id, index, data_b64 }` |
+| `FILE_PULL_END` | D→G | `{ file_id }` |
+| `FILE_PULL_ACK` | G→D | `{ file_id, status:"RECEIVED"|"ERROR", message? }` |
+
+- Device reads files from the agent container's `/work/output` directory after job completion.
+- Chunk size and backpressure mirror §5 (256 KiB, ≤ 8 in-flight).
+- Gateway stores received files in the file store under `jobs/{job_id}/output/` and records metadata in `files` table.
+- Files are available for download via `GET /jobs/{job_id}/output/{file_id}`.
+
 ## 5. File Transfer
 
-- Inputs flow **gateway → device** only (user uploads). Results are returned in `JOB_RESULT` (small) or, for large artifacts, via a result-file flow mirroring §4.7 in the device→gateway direction (`FILE_PULL_*`, reserved).
+- Inputs flow **gateway → device** (user uploads, `FILE_PUSH_*`).
+- Outputs flow **device → gateway** (agent results, `FILE_PULL_*`).
 - Chunk size: **256 KiB** base64-encoded payload (keeps frame < 1 MiB).
-- Integrity: `sha256` verified on `FILE_PUSH_END`; mismatch → `FILE_ACK status=ERROR` and the gateway retries the whole file.
-- Backpressure: device ACKs each `FILE_CHUNK`; gateway keeps ≤ 8 chunks in flight per file.
+- Integrity: `sha256` verified on `FILE_*_END`; mismatch → `FILE_*_ACK status=ERROR` and the sender retries the whole file.
+- Backpressure: receiver ACKs each `FILE_*_CHUNK`; sender keeps ≤ 8 chunks in flight per file.
 
 ## 6. Close Codes
 
