@@ -217,6 +217,9 @@ func (c *DeviceConn) StartWritePump(ctx context.Context) {
 		case <-c.done:
 			return
 		case <-wsPingTicker.C:
+			if c.closed.Load() {
+				return
+			}
 			if err := c.ws.WriteMessage(websocket.PingMessage, nil); err != nil {
 				return
 			}
@@ -225,6 +228,9 @@ func (c *DeviceConn) StartWritePump(ctx context.Context) {
 				return
 			}
 
+			if c.closed.Load() {
+				return
+			}
 			data, err := json.Marshal(frame)
 			if err != nil {
 				c.logger.Error("frame encode error", "error", err)
@@ -512,7 +518,7 @@ func (c *DeviceConn) checkRateLimit() bool {
 	}
 
 	count := c.frameCount.Add(1)
-	return count <= 100
+	return count <= 500
 }
 
 // StartTokenWatcher periodically verifies the device token has not been
