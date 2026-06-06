@@ -262,6 +262,40 @@ func (a *Allocator) EnsurePoolSize(ctx context.Context, deviceID model.UUID, des
 	return nil
 }
 
+// ReconcilePool deletes stuck "creating" agents not reported by the device
+// and re-triggers AGENT_CREATE frames for the missing count.
+// Called from OnHello after device reconnect.
+func (a *Allocator) ReconcilePool(ctx context.Context, deviceID model.UUID, helloAgents []model.HelloAgent) error {
+	dbAgents, err := a.agents.ListByDevice(ctx, deviceID)
+	if err != nil {
+		return err
+	}
+
+	helloIDs := make(map[model.UUID]bool, len(helloAgents))
+	for _, ha := range helloAgents {
+		helloIDs[ha.AgentID] = true
+	}
+
+	deleted := 0
+	for _, da := range dbAgents {
+		if !helloIDs[da.ID] && da.Status == model.AgentCreating {
+			if err := a.agents.Delete(ctx, da.ID); err != nil {
+				a.logger.Error("failed to delete stuck agent", "agent_id", da.ID, "error", err)
+				continue
+			}
+			deleted++
+		}
+	}
+
+	if deleted > 0 {
+		a.logger.Info("pool reconciled: deleted stuck agents, re-creating",
+			"device_id", deviceID, "deleted", deleted, "remaining", len(dbAgents)-deleted)
+		return a.EnsurePoolSize(ctx, deviceID, len(dbAgents))
+	}
+
+	return nil
+}
+
 // DrainAgent marks an agent for drain (finish current job then remove).
 func (a *Allocator) DrainAgent(ctx context.Context, agentID model.UUID) error {
 	agent, err := a.agents.GetByID(ctx, agentID)

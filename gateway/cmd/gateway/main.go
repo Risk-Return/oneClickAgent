@@ -132,6 +132,7 @@ func main() {
 					_ = agents.UpdateName(ctx, a.AgentID, a.Name)
 				}
 			}
+			_ = allocator.ReconcilePool(ctx, deviceID, payload.Agents)
 			return nil
 		},
 		OnJobProgress: func(ctx context.Context, deviceID model.UUID, payload model.JobProgressPayload) error {
