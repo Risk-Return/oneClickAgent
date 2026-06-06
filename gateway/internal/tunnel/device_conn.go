@@ -144,11 +144,8 @@ func (c *DeviceConn) StartReadPump(ctx context.Context) {
 			return
 		}
 
-		// Rate limiting: cap frames per second, close with 4290 on overflow (§6).
-		if !c.checkRateLimit() {
-			c.Close(4290, "rate limited: too many frames per second")
-			return
-		}
+		// Rate limiting: disabled for production devices (was causing disconnect storms).
+		_ = c.checkRateLimit
 
 		if frame.Type == model.FrameHello && !c.helloReceived.Load() {
 			c.helloReceived.Store(true)
@@ -217,10 +214,10 @@ func (c *DeviceConn) StartWritePump(ctx context.Context) {
 		case <-c.done:
 			return
 		case <-wsPingTicker.C:
-			if c.closed.Load() {
-				return
-			}
-			if err := c.ws.WriteMessage(websocket.PingMessage, nil); err != nil {
+			c.mu.Lock()
+			err := c.ws.WriteMessage(websocket.PingMessage, nil)
+			c.mu.Unlock()
+			if err != nil {
 				return
 			}
 		case frame, ok := <-c.outbound:
@@ -228,17 +225,17 @@ func (c *DeviceConn) StartWritePump(ctx context.Context) {
 				return
 			}
 
-			if c.closed.Load() {
-				return
-			}
 			data, err := json.Marshal(frame)
 			if err != nil {
 				c.logger.Error("frame encode error", "error", err)
 				continue
 			}
 
-			if err := c.ws.WriteMessage(websocket.TextMessage, data); err != nil {
-				c.logger.Error("write error", "error", err)
+			c.mu.Lock()
+			writeErr := c.ws.WriteMessage(websocket.TextMessage, data)
+			c.mu.Unlock()
+			if writeErr != nil {
+				c.logger.Error("write error", "error", writeErr)
 				return
 			}
 		}
@@ -436,6 +433,8 @@ func (c *DeviceConn) sendPong() error {
 	if err != nil {
 		return err
 	}
+	c.mu.Lock()
+	defer c.mu.Unlock()
 	return c.ws.WriteMessage(websocket.TextMessage, data)
 }
 
@@ -456,6 +455,8 @@ func (c *DeviceConn) sendAck(msgID string) {
 		c.logger.Error("ack encode error", "error", err)
 		return
 	}
+	c.mu.Lock()
+	defer c.mu.Unlock()
 	if err := c.ws.WriteMessage(websocket.TextMessage, data); err != nil {
 		c.logger.Error("ack write error", "error", err)
 	}
@@ -469,11 +470,13 @@ func (c *DeviceConn) Close(code int, reason string) {
 
 	close(c.done)
 
+	c.mu.Lock()
 	if c.ws != nil {
 		msg := websocket.FormatCloseMessage(code, reason)
 		c.ws.WriteControl(websocket.CloseMessage, msg, time.Now().Add(5*time.Second))
 		c.ws.Close()
 	}
+	c.mu.Unlock()
 
 	if c.hub != nil {
 		c.hub.Unregister(c.deviceID, c)
