@@ -222,29 +222,9 @@ func (a *Allocator) EnsurePoolSize(ctx context.Context, deviceID model.UUID, des
 
 	for i := currentCount; i < desiredSize; i++ {
 		agentID := model.NewUUID()
-		payload := model.AgentCreatePayload{
-			AgentID: agentID,
-			Image:   "iagent/agent:dev",
-			Tags:    []string{"opencode", "camoufox"},
-			Limits: model.AgentLimits{
-				CPU:    2,
-				MemMB:  4096,
-				DiskMB: 10240,
-			},
-		}
-
-		frame, err := tunnel.NewFrame(model.FrameAgentCreate, payload)
-		if err != nil {
-			return err
-		}
-
-		if err := a.hub.SendFrame(deviceID, frame); err != nil {
-			a.logger.Error("failed to send AGENT_CREATE", "device_id", deviceID, "error", err)
-			return err
-		}
-
-		// Create agent record in DB (CREATING status)
 		agentIDStr := agentID.String()
+
+		// Create agent record first (so it survives offline device)
 		agent := &model.Agent{
 			ID:       agentID,
 			DeviceID: deviceID,
@@ -258,6 +238,26 @@ func (a *Allocator) EnsurePoolSize(ctx context.Context, deviceID model.UUID, des
 		if err := a.agents.Create(ctx, agent); err != nil {
 			a.logger.Error("failed to create agent record", "error", err)
 			return err
+		}
+
+		// Send AGENT_CREATE to device (best-effort; ReconcilePool handles retry)
+		payload := model.AgentCreatePayload{
+			AgentID: agentID,
+			Image:   "iagent/agent:dev",
+			Tags:    []string{"opencode", "camoufox"},
+			Limits: model.AgentLimits{
+				CPU:    2,
+				MemMB:  4096,
+				DiskMB: 10240,
+			},
+		}
+		frame, err := tunnel.NewFrame(model.FrameAgentCreate, payload)
+		if err != nil {
+			return err
+		}
+		if err := a.hub.SendFrame(deviceID, frame); err != nil {
+			a.logger.Warn("AGENT_CREATE not delivered (device offline, will reconcile on reconnect)",
+				"agent_id", agentID, "device_id", deviceID)
 		}
 	}
 
