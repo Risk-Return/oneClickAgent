@@ -110,6 +110,7 @@ func (deps *Dependencies) handleSubmitJob() http.HandlerFunc {
 			frame, _ := tunnel.NewFrame(model.FrameCredPush, model.CredPushPayload{
 				JobID:        job.ID,
 				CredentialID: cred.ID,
+				AgentID:      agent.ID,
 				Origin:       cred.Origin,
 				StorageState: base64.StdEncoding.EncodeToString(plaintext),
 				SHA256:       cred.SHA256,

@@ -115,9 +115,10 @@ class CredRelay:
             await self.outbox.enqueue_and_send(FrameType.CRED_CAPTURE, {
                 "session_id": session_id,
                 "job_id": job_id,
+                "agent_id": agent_id,
                 "label": label,
                 "origin": origin,
-                "storage_state": encoded,
+                "data": encoded,
                 "sha256": sha256,
             })
         except Exception as e:

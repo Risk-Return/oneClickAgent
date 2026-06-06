@@ -962,6 +962,7 @@ type VNCClosePayload struct {
 type CredPushPayload struct {
 	JobID        UUID   `json:"job_id"`
 	CredentialID UUID   `json:"credential_id"`
+	AgentID      UUID   `json:"agent_id"`
 	Origin       string `json:"origin"`
 	StorageState string `json:"storage_state"`
 	SHA256       string `json:"sha256"`

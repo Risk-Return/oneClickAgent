@@ -18,7 +18,7 @@ Connect a local device to the IAgent cloud gateway at `https://deepwitai.cn/aipr
 
 ## Enrollment codes
 ### available
-- (none)
+- 019e9c59-1d82-7a17-a03e-e505e5d010b3
 
 ### used
 - 019e9b14-c82b-738a-a6bb-42bfc2b425b6 (first attempt, WS header bug)
