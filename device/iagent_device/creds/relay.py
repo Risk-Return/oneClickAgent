@@ -103,6 +103,11 @@ class CredRelay:
         try:
             result = await client.get_browser_state(origin)
             storage_state = result.get("storage_state", "")
+            if isinstance(storage_state, dict):
+                import json as _json
+                storage_state = _json.dumps(storage_state)
+            if not storage_state:
+                storage_state = ""
             sha256 = hashlib.sha256(storage_state.encode()).hexdigest()
             import base64
             encoded = base64.b64encode(storage_state.encode()).decode()
