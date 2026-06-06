@@ -44,7 +44,7 @@ docker build -f Dockerfile.camoufox -t iagent/agent:camoufox .
 |-------|-----------|------|----------|----------|
 | `iagent/agent:dev` | `Dockerfile.dev` | ~200MB | Python + stub brain | Quick testing |
 | `iagent/agent:vnc` | `Dockerfile.vnc` | ~400MB | + Xvfb, x11vnc, chromium | Interactive VNC login |
-| `iagent/agent:camoufox` | `Dockerfile.camoufox` | ~2GB | + Node.js, camofox-browser API | Browser automation with anti-detection |
+| `iagent/agent:camoufox` | `Dockerfile.camoufox` | ~2GB | + Node.js, camofox-browser API (lite Camoufox) | Browser automation with anti-detection |
 | `iagent/agent:latest` | `Dockerfile` | ~4GB | + all toolchains, opencode | Full production |
 
 ### Camofox Browser Pipeline
@@ -53,10 +53,10 @@ The `camoufox` variant provides a REST API server (`@askjo/camofox-browser`) on 
 that agents use to control an anti-detection Camoufox browser:
 
 ```bash
-# Build the image (Node.js + camofox-browser pre-installed)
+# Build the image (Node.js + camofox-browser pre-installed with lite Camoufox)
 docker build -f Dockerfile.camoufox -t iagent/agent:camoufox .
 
-# First run downloads Camoufox binary (~300MB, ~5 min). Use a volume to persist:
+# Run the container (camoufox API on :9377, agent API on :8090)
 docker run -d --name agent-camofox -p 8090:8090 -p 9377:9377 \
   -v camoufox-cache:/home/app/.cache \
   iagent/agent:camoufox
@@ -73,6 +73,14 @@ curl http://localhost:9377/health
 # POST /tabs/:id/navigate - Navigate to URL or search macro
 # GET  /sessions/:uid/storage_state - Export cookies/localStorage
 ```
+
+> **IMPORTANT — Camoufox Binary:** The `camofox-browser` npm package includes a
+> **lite version of Camoufox**. There is **no need** to separately download the
+> `camoufox` Python binary (`pip install camoufox`) or run `camoufox-js fetch`.
+> The npm package bundles its own lightweight Camoufox engine. Installing
+> `@askjo/camofox-browser` via npm is sufficient — the server handles browser
+> launch internally. Do NOT run `npx camoufox-js fetch` or `pip install camoufox`
+> separately; these are different packages and will conflict with the lite version.
 
 ### AGENTS.md — Agent Skill Instructions
 
