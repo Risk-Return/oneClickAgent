@@ -40,7 +40,7 @@ RUN add-apt-repository -y ppa:deadsnakes/ppa \
   && rm -rf /var/lib/apt/lists/* \
   && update-alternatives --install /usr/bin/python3 python3 /usr/bin/python3.12 1 \
   && update-alternatives --install /usr/bin/python python /usr/bin/python3.12 1 \
-  && curl -sS https://bootstrap.pypa.io/get-pip.py | python3.12
+  && PIP_BREAK_SYSTEM_PACKAGES=1 curl -sS https://bootstrap.pypa.io/get-pip.py | python3.12
 
 # ---------- Go 1.22 ----------
 FROM python AS golang
@@ -114,7 +114,7 @@ COPY --chown=app:app pyproject.toml /home/app/
 COPY --chown=app:app iagent_agent/ /home/app/iagent_agent/
 COPY --chown=app:app vnc/ /home/app/vnc/
 
-RUN python3.12 -m pip install --no-cache-dir -e /home/app/
+RUN PIP_BREAK_SYSTEM_PACKAGES=1 python3.12 -m pip install --no-cache-dir -e /home/app/
 
 ENV IAGENT_AGENT_PORT=8090
 ENV IAGENT_WORK_DIR=/work

@@ -1,0 +1,28 @@
+FROM iagent/agent:dev
+
+USER root
+
+ENV DEBIAN_FRONTEND=noninteractive
+
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    xvfb x11vnc x11-utils fluxbox \
+  && rm -rf /var/lib/apt/lists/*
+
+ENV IAGENT_VNC_DISPLAY=:99
+ENV IAGENT_VNC_PORT=5901
+ENV IAGENT_VNC_ENABLED=true
+ENV IAGENT_BROWSER_CMD=chromium-browser
+
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    chromium-browser chromium-codecs-ffmpeg-extra \
+  && rm -rf /var/lib/apt/lists/*
+
+RUN mkdir -p /home/app/.vnc /tmp/.X11-unix \
+  && chown -R app:app /home/app/.vnc /tmp/.X11-unix
+
+EXPOSE 5901
+
+VOLUME ["/work"]
+
+WORKDIR /home/app
+USER app
