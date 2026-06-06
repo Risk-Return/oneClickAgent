@@ -17,11 +17,12 @@ Connect a local device to the IAgent cloud gateway at `https://deepwitai.cn/aipr
 | Gateway health | `https://deepwitai.cn/aiproduct/healthz` |
 
 ## Enrollment codes
-### availabel
-- 019e9b14-c82b-738a-a6bb-42bfc2b425b6
+### available
+- (none)
 
 ### used
-none
+- 019e9b14-c82b-738a-a6bb-42bfc2b425b6 (first attempt, WS header bug)
+- 019e9b49-fa7d-7617-9472-429bfaf317e5 (tunnel connected successfully)
 
 ## 1. Obtain Enrollment Code
 

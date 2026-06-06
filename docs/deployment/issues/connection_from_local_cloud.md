@@ -73,3 +73,17 @@ The device cannot establish the tunnel connection. All three reconnect attempts 
 3. Restart the gateway service on deepwitai.cn
 4. The device will auto-reconnect after the gateway restarts (exponential backoff up to 30s max)
 5. No changes needed on the device side
+
+## Verification (2026-06-06 12:59 CST)
+
+Cloud gateway deployed fix. Re-tested with new enrollment code:
+
+```
+Enrollment: 019e9b49-fa7d-7617-9472-429bfaf317e5
+Device ID:   019e9b49-fa7d-761e-a0d6-f171648d57da
+Tunnel:      wss://deepwitai.cn/aiproduct/tunnel → CONNECTED
+HELLO_ACK:   received (session_id=019e9b4c-852d-7f3a-a35b-5189fe833a43, heartbeat_s=15)
+Stability:   no disconnects after 10s+
+```
+
+**Status: RESOLVED.** Device is online on the cloud gateway.
