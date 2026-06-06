@@ -174,6 +174,10 @@ func (c *DeviceConn) handleHello(ctx context.Context, frame *model.Frame) {
 	c.helloReceived.Store(true)
 	c.logger.Info("received HELLO", "agents", payload.AgentCount)
 
+	if c.hub != nil && c.hub.onHello != nil {
+		_ = c.hub.onHello(ctx, c.deviceID, payload)
+	}
+
 	ack := model.Frame{
 		Version: model.FrameVersion,
 		Type:    model.FrameHelloAck,

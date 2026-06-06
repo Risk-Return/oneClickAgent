@@ -71,6 +71,13 @@ func (s *DeviceStore) UpdateStatus(ctx context.Context, id model.UUID, status mo
 	return err
 }
 
+func (s *DeviceStore) UpdatePlatform(ctx context.Context, id model.UUID, platform string) error {
+	_, err := s.db.Pool.Exec(ctx,
+		`UPDATE devices SET platform=$2 WHERE id=$1`, id, platform,
+	)
+	return err
+}
+
 func (s *DeviceStore) List(ctx context.Context, cursor *model.UUID, limit int) ([]model.Device, *model.UUID, error) {
 	if limit <= 0 {
 		limit = 50

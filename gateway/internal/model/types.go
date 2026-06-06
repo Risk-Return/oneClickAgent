@@ -636,6 +636,7 @@ type HelloPayload struct {
 type HelloAgent struct {
 	AgentID     UUID        `json:"agent_id"`
 	ContainerID string      `json:"container_id,omitempty"`
+	Name        string      `json:"name,omitempty"`
 	Status      AgentStatus `json:"status"`
 	Port        int         `json:"port,omitempty"`
 	Tags        []string    `json:"tags,omitempty"`

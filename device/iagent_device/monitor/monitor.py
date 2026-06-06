@@ -62,6 +62,7 @@ class Monitor:
         for a in agent_repo.list_all():
             agents_list.append({
                 "agent_id": a["agent_id"],
+                "name": a.get("name", ""),
                 "status": a.get("status", ""),
                 "port": a.get("port", 0),
                 "tags": a.get("tags", ""),

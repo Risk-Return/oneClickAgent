@@ -122,6 +122,18 @@ func main() {
 
 	// Wire tunnel hub handlers
 	tunnelHub.SetHandlers(tunnel.HubConfig{
+		OnHello: func(ctx context.Context, deviceID model.UUID, payload model.HelloPayload) error {
+			_ = devices.UpdateStatus(ctx, deviceID, model.DeviceOnline)
+			if payload.Platform != "" {
+				_ = devices.UpdatePlatform(ctx, deviceID, payload.Platform)
+			}
+			for _, a := range payload.Agents {
+				if a.Name != "" {
+					_ = agents.UpdateName(ctx, a.AgentID, a.Name)
+				}
+			}
+			return nil
+		},
 		OnJobProgress: func(ctx context.Context, deviceID model.UUID, payload model.JobProgressPayload) error {
 			if err := jobs.UpdateProgress(ctx, payload.JobID, payload.Percent, payload.Message); err != nil {
 				return err

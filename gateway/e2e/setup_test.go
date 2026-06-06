@@ -163,6 +163,10 @@ func NewHarness(t *testing.T) *E2EHarness {
 	vncRelay := vncrelay.NewRelay(tunnelHub.NodeID(), cfg.VNCSessionBufBytes, cfg.VNCMaxSessionsPerUser)
 
 	tunnelHub.SetHandlers(tunnel.HubConfig{
+		OnHello: func(ctx context.Context, deviceID model.UUID, payload model.HelloPayload) error {
+			_ = devices.UpdateStatus(ctx, deviceID, model.DeviceOnline)
+			return nil
+		},
 		OnJobProgress: func(ctx context.Context, deviceID model.UUID, payload model.JobProgressPayload) error {
 			_ = jobs.UpdateProgress(ctx, payload.JobID, payload.Percent, payload.Message)
 			if payload.Status == model.JobRunning {

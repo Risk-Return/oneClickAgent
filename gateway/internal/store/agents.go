@@ -85,6 +85,14 @@ func (s *AgentStore) UpdateStatus(ctx context.Context, agentID model.UUID, statu
 	return err
 }
 
+func (s *AgentStore) UpdateName(ctx context.Context, agentID model.UUID, name string) error {
+	_, err := s.db.Pool.Exec(ctx,
+		`UPDATE agents SET name=$2, updated_at=$3 WHERE id=$1`,
+		agentID, name, time.Now().UTC(),
+	)
+	return err
+}
+
 func (s *AgentStore) UpdateContainerID(ctx context.Context, agentID model.UUID, containerID string) error {
 	// Note: container_id is not a column in the spec schema. Stored as name suffix for now.
 	_ = ctx; _ = agentID; _ = containerID

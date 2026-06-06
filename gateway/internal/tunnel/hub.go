@@ -61,6 +61,7 @@ type Hub struct {
 	pending map[string]*PendingAck
 
 	// Handlers for incoming frames
+	onHello       func(ctx context.Context, deviceID model.UUID, payload model.HelloPayload) error
 	onJobProgress func(ctx context.Context, deviceID model.UUID, payload model.JobProgressPayload) error
 	onJobResult   func(ctx context.Context, deviceID model.UUID, payload model.JobResultPayload) error
 	onJobAccepted func(ctx context.Context, deviceID model.UUID, jobID model.UUID) error
@@ -91,6 +92,7 @@ type HubConfig struct {
 	Registry                Registry
 	HeartbeatInterval       time.Duration
 	HeartbeatMissThreshold  time.Duration
+	OnHello                 func(ctx context.Context, deviceID model.UUID, payload model.HelloPayload) error
 	OnJobProgress           func(ctx context.Context, deviceID model.UUID, payload model.JobProgressPayload) error
 	OnJobResult             func(ctx context.Context, deviceID model.UUID, payload model.JobResultPayload) error
 	OnJobAccepted           func(ctx context.Context, deviceID model.UUID, jobID model.UUID) error
@@ -127,6 +129,7 @@ func NewHub(cfg HubConfig) *Hub {
 		nodeID:                 nodeID,
 		devices:                make(map[model.UUID]*DeviceConn),
 		pending:                make(map[string]*PendingAck),
+		onHello:                cfg.OnHello,
 		onJobProgress:          cfg.OnJobProgress,
 		onJobResult:            cfg.OnJobResult,
 		onJobAccepted:          cfg.OnJobAccepted,
@@ -156,6 +159,7 @@ func (h *Hub) NodeID() string { return h.nodeID }
 
 // SetHandlers sets handler callbacks on an existing Hub.
 func (h *Hub) SetHandlers(cfg HubConfig) {
+	h.onHello = cfg.OnHello
 	h.onJobProgress = cfg.OnJobProgress
 	h.onJobResult = cfg.OnJobResult
 	h.onJobAccepted = cfg.OnJobAccepted
