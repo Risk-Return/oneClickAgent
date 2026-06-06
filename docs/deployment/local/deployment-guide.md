@@ -32,7 +32,71 @@ docker build -f Dockerfile.vnc -t iagent/agent:vnc .
 # Full production image (opencode, camoufox, all toolchains, ~4GB, ~60 min)
 # Requires: PEP 668 fix already applied in Dockerfile
 docker build -t iagent/agent:latest .
+
+# Camofox browser image (Node.js 20 + camofox-browser API server, ~2GB, ~15 min)
+# Provides REST API on port 9377 for AI agents to control an anti-detection browser
+docker build -f Dockerfile.camoufox -t iagent/agent:camoufox .
 ```
+
+### Image Variant Comparison
+
+| Image | Dockerfile | Size | Contents | Use Case |
+|-------|-----------|------|----------|----------|
+| `iagent/agent:dev` | `Dockerfile.dev` | ~200MB | Python + stub brain | Quick testing |
+| `iagent/agent:vnc` | `Dockerfile.vnc` | ~400MB | + Xvfb, x11vnc, chromium | Interactive VNC login |
+| `iagent/agent:camoufox` | `Dockerfile.camoufox` | ~2GB | + Node.js, camofox-browser API | Browser automation with anti-detection |
+| `iagent/agent:latest` | `Dockerfile` | ~4GB | + all toolchains, opencode | Full production |
+
+### Camofox Browser Pipeline
+
+The `camoufox` variant provides a REST API server (`@askjo/camofox-browser`) on port 9377
+that agents use to control an anti-detection Camoufox browser:
+
+```bash
+# Build the image (Node.js + camofox-browser pre-installed)
+docker build -f Dockerfile.camoufox -t iagent/agent:camoufox .
+
+# First run downloads Camoufox binary (~300MB, ~5 min). Use a volume to persist:
+docker run -d --name agent-camofox -p 8090:8090 -p 9377:9377 \
+  -v camoufox-cache:/home/app/.cache \
+  iagent/agent:camoufox
+
+# Verify the browser server is ready
+curl http://localhost:9377/health
+# {"ok":true,"engine":"camoufox","browserConnected":true}
+
+# The browser API endpoints:
+# POST /tabs              - Create a new browser tab
+# GET  /tabs/:id/snapshot - Get accessibility tree + optional screenshot
+# POST /tabs/:id/click    - Click element by ref
+# POST /tabs/:id/type     - Type text into element
+# POST /tabs/:id/navigate - Navigate to URL or search macro
+# GET  /sessions/:uid/storage_state - Export cookies/localStorage
+```
+
+### AGENTS.md — Agent Skill Instructions
+
+The opencode brain reads skill instructions from `~/.claude/skills/{skill_name}/SKILL.md`
+inside the agent container. The `Dockerfile.camoufox` automatically copies
+`docs/reference/camoufox_browser/AGENTS.md` to `~/.claude/skills/default/SKILL.md`.
+
+To add custom skill instructions for a specific website:
+
+```bash
+# Copy the AGENTS.md reference to the default skill
+mkdir -p ~/.claude/skills/default
+cp docs/reference/camoufox_browser/AGENTS.md ~/.claude/skills/default/SKILL.md
+
+# For a named skill (e.g., "xiaohongshu"):
+mkdir -p ~/.claude/skills/xiaohongshu
+cp your-custom-instructions.md ~/.claude/skills/xiaohongshu/SKILL.md
+```
+
+The agent reads SKILL.md at job execution time. It contains:
+- Browser API reference (create tab, navigate, snapshot, click, type)
+- Search macros (@google_search, @youtube_search, etc.)
+- Session management commands
+- VNC login instructions for interactive authentication
 
 ### Verify the image
 
