@@ -244,9 +244,11 @@ func (a *Allocator) EnsurePoolSize(ctx context.Context, deviceID model.UUID, des
 		}
 
 		// Create agent record in DB (CREATING status)
+		agentIDStr := agentID.String()
 		agent := &model.Agent{
 			ID:       agentID,
 			DeviceID: deviceID,
+			Name:     "agent-" + agentIDStr[:8],
 			Port:     i + 42000,
 			Image:    "iagent/agent:dev",
 			Tags:     []string{"opencode", "camoufox"},
