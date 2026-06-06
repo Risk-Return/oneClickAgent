@@ -1,0 +1,29 @@
+FROM iagent/agent:vnc
+
+USER root
+
+# Install Node.js 20
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    ca-certificates curl gnupg imagemagick \
+  && mkdir -p /etc/apt/keyrings \
+  && curl -fsSL https://deb.nodesource.com/gpgkey/nodesource-repo.gpg.key | gpg --dearmor -o /etc/apt/keyrings/nodesource.gpg \
+  && echo "deb [signed-by=/etc/apt/keyrings/nodesource.gpg] https://deb.nodesource.com/node_20.x nodistro main" > /etc/apt/sources.list.d/nodesource.list \
+  && apt-get update \
+  && apt-get install -y --no-install-recommends nodejs \
+  && rm -rf /var/lib/apt/lists/*
+
+# Install camofox-browser globally (camoufox browser downloaded on first run)
+RUN npm install -g @askjo/camofox-browser 2>&1 | tail -3
+
+# Set up default skill instructions for the agent
+RUN mkdir -p /home/app/.claude/skills/default \
+  && chown -R app:app /home/app/.claude /home/app/.npm
+
+COPY --chown=app:app docs/reference/camoufox_browser/AGENTS.md /home/app/.claude/skills/default/SKILL.md
+
+ENV PATH="/home/app/.local/bin:/usr/local/bin:$PATH"
+
+# Camofox-browser runs on port 9377
+EXPOSE 9377
+
+USER app
