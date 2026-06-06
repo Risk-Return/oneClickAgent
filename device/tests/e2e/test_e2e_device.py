@@ -443,6 +443,43 @@ async def test_real_agent_job_execution(agent_image):
         _docker_rm(name)
 
 
+# ─── C2: credential push integration ──────────────────────────────────
+
+@pytest.mark.skipif(not _docker_sock_ok(), reason="Docker socket not available")
+async def test_credential_push_integration(agent_image):
+    """Push credential to agent, verify browser state is injected."""
+    import httpx
+
+    name = f"agent-e2e-cred-{int(time.time())}"
+    port = 42280
+    _docker_run(name, port, "-e IAGENT_BRAIN=stub")
+    await asyncio.sleep(5)
+
+    try:
+        async with httpx.AsyncClient() as c:
+            import base64, hashlib, json as _json
+            storage = _json.dumps({"cookies": [{"name": "session", "value": "abc123"}], "origins": ["https://example.com"]})
+            storage_b64 = base64.b64encode(storage.encode()).decode()
+            sha = hashlib.sha256(storage.encode()).hexdigest()
+
+            r = await c.post(f"http://127.0.0.1:{port}/browser/state", json={
+                "storage_state_b64": storage_b64,
+                "sha256": sha,
+            }, timeout=10)
+            assert r.status_code == 200
+
+            data = r.json()
+            assert data.get("status") == "injected"
+
+            r = await c.get(f"http://127.0.0.1:{port}/browser/state", timeout=5)
+            state = r.json()
+            assert "storage_state" in state
+            recovered = state["storage_state"]
+            assert isinstance(recovered, dict) or isinstance(recovered, str)
+    finally:
+        _docker_rm(name)
+
+
 @pytest.mark.skipif(not _docker_sock_ok(), reason="Docker socket not available")
 async def test_real_agent_skill_install(agent_image):
     """Install skill on agent, verify it appears, disable/enable/delete."""
@@ -802,6 +839,34 @@ async def test_skill_dispatch_to_agent(agent_image):
                     break
                 await asyncio.sleep(0.3)
             assert terminal, "Skill job did not complete"
+    finally:
+        _docker_rm(name)
+
+
+# ─── C2: credential push integration ──────────────────────────────────
+
+@pytest.mark.skipif(not _docker_sock_ok(), reason="Docker socket not available")
+async def test_credential_push_integration(agent_image):
+    """Push credential to agent, verify browser state is injected."""
+    import httpx, json as _json
+
+    name = f"agent-e2e-cred-{int(time.time())}"
+    port = 42280
+    _docker_run(name, port, "-e IAGENT_BRAIN=stub")
+    await asyncio.sleep(5)
+
+    try:
+        async with httpx.AsyncClient() as c:
+            storage = {"cookies": [{"name": "session", "value": "abc123"}], "origins": ["https://example.com"]}
+
+            r = await c.post(f"http://127.0.0.1:{port}/browser/state", json={
+                "storage_state": storage,
+            }, timeout=10)
+            assert r.status_code in (200, 204)
+
+            r = await c.get(f"http://127.0.0.1:{port}/browser/state", timeout=5)
+            state = r.json()
+            assert "storage_state" in state
     finally:
         _docker_rm(name)
 

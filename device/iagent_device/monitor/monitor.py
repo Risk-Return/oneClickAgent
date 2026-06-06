@@ -66,16 +66,51 @@ class Monitor:
                 "port": a.get("port", 0),
                 "tags": a.get("tags", ""),
             })
+        import shutil
+
         return {
             "platform": platform.system(),
             "agent_version": "0.1.0",
             "resources": {
-                "cpu": 0,
-                "cpu_logical": 0,
-                "mem_mb": 0,
-                "disk_mb": 0,
+                "cpu": _cpu_count(),
+                "cpu_logical": _cpu_count_logical(),
+                "mem_mb": _mem_total_mb(),
+                "disk_mb": _disk_free_mb(),
             },
             "agents": agents_list,
             "capabilities": ["vnc"] if vnc_enabled else [],
             "agent_count": len(agents_list),
         }
+
+
+def _cpu_count() -> int:
+    try:
+        import os
+        return len(os.sched_getaffinity(0))
+    except Exception:
+        return 0
+
+
+def _cpu_count_logical() -> int:
+    try:
+        import os
+        return os.cpu_count() or 0
+    except Exception:
+        return 0
+
+
+def _mem_total_mb() -> int:
+    try:
+        import psutil
+        return int(psutil.virtual_memory().total / (1024 * 1024))
+    except Exception:
+        return 0
+
+
+def _disk_free_mb() -> int:
+    try:
+        import shutil
+        usage = shutil.disk_usage("/")
+        return int(usage.free / (1024 * 1024))
+    except Exception:
+        return 0

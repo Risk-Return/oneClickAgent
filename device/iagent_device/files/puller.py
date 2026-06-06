@@ -55,7 +55,7 @@ class FilePuller:
         with open(path, "rb") as f:
             for idx in range(total_chunks):
                 data = f.read(CHUNK_SIZE)
-            await self.outbox.enqueue_and_send(FrameType.FILE_PULL_CHUNK, {
+                await self.outbox.enqueue_and_send(FrameType.FILE_PULL_CHUNK, {
                     "file_id": file_id,
                     "index": idx,
                     "data_b64": base64.b64encode(data).decode(),

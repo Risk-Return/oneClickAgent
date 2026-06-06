@@ -181,6 +181,13 @@ class FileRepo:
         rows = self.conn.execute("SELECT * FROM files WHERE job_id=?", (job_id,)).fetchall()
         return [dict(r) for r in rows]
 
+    def count_pending(self, job_id: str) -> int:
+        rows = self.conn.execute(
+            "SELECT COUNT(*) FROM files WHERE job_id=? AND status NOT IN ('staged','staged_device','purged')",
+            (job_id,),
+        ).fetchone()
+        return rows[0] if rows else 0
+
     def purge(self, file_id: str):
         now = time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime())
         self.conn.execute("UPDATE files SET status='purged', purged_at=? WHERE file_id=?", (now, file_id))

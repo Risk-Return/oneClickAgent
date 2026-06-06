@@ -122,6 +122,10 @@ async def cmd_run(cfg):
     cred_relay = CredRelay(docker_mgr, outbox)
     monitor = Monitor(agent_repo, outbox, docker_mgr)
 
+    from iagent_device.jobs.callback_server import CallbackServer
+    callback_server = CallbackServer("127.0.0.1", 0, outbox)
+    await callback_server.start()
+
     dispatcher = JobDispatcher(
         job_repo=job_repo,
         agent_repo=agent_repo,
@@ -130,6 +134,7 @@ async def cmd_run(cfg):
         stager=stager,
         puller=puller,
         cred_relay=cred_relay,
+        callback_url=callback_server.callback_url,
     )
 
     hello_extras = monitor.build_hello_extras(agent_repo, vnc_enabled=True)
@@ -176,6 +181,8 @@ async def cmd_run(cfg):
         t4 = tg.create_task(_outbox_pruner(outbox))
         _tasks = [t1, t2, t3, t4]
         await _shutdown_event.wait()
+
+    await callback_server.stop()
 
 
 async def _handle_job_query(payload: dict, job_repo: JobRepo, outbox: Outbox):

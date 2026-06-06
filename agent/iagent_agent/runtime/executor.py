@@ -121,6 +121,8 @@ class JobExecutor:
         credentials_injected = self._credentials_pending
         self._credentials_pending = False
 
+        self._workspace.check_quota()
+
         try:
             async with httpx.AsyncClient() as client:
                 callback = None

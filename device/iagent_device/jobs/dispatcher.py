@@ -24,6 +24,7 @@ class JobDispatcher:
         stager=None,
         puller=None,
         cred_relay=None,
+        callback_url: str = "",
     ):
         self.job_repo = job_repo
         self.agent_repo = agent_repo
@@ -32,6 +33,20 @@ class JobDispatcher:
         self.stager = stager
         self.puller = puller
         self.cred_relay = cred_relay
+        self.callback_url = callback_url
+
+    async def _wait_for_files(self, job_id: str, timeout: float = 30.0):
+        if not self.stager:
+            return
+        start = asyncio.get_event_loop().time()
+        while asyncio.get_event_loop().time() - start < timeout:
+            files = self.stager.repo.list_by_job(job_id)
+            if not files:
+                return
+            pending = self.stager.repo.count_pending(job_id)
+            if pending == 0:
+                return
+            await asyncio.sleep(0.5)
 
     async def handle_job_dispatch(self, payload: dict):
         job_id = payload["job_id"]
@@ -65,7 +80,9 @@ class JobDispatcher:
                     }
                     await self.cred_relay.inject_credential(cred_payload)
 
-            await client.create_job(job_id, command, {}, "", skill_id, workspace_dir=f"/workspaces/{job_id}")
+            await self._wait_for_files(job_id)
+
+            await client.create_job(job_id, command, {}, self.callback_url, skill_id, workspace_dir=f"/workspaces/{job_id}")
             self.job_repo.update_status(job_id, "running")
             await self.outbox.enqueue_and_send(FrameType.JOB_PROGRESS, {
                 "job_id": job_id,
