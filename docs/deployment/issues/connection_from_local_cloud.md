@@ -1,7 +1,7 @@
 # Connection from Local Device to Cloud Gateway
 
 **Date:** 2026-06-06  
-**Status:** Blocked — cloud gateway needs redeployment with fix  
+**Status:** Fixed — deployed to cloud gateway on 2026-06-06  
 **Gateway:** `https://deepwitai.cn/aiproduct`  
 **Enrollment code used:** `019e9b14-c82b-738a-a6bb-42bfc2b425b6`  
 **Enrolled device ID:** `019e9b14-c82b-7390-8555-481e0cf6fb3a`
