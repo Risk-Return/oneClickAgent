@@ -16,6 +16,13 @@ Connect a local device to the IAgent cloud gateway at `https://deepwitai.cn/aipr
 | VNC binary relay (WSS) | `wss://deepwitai.cn/aiproduct/ws/vnc/{id}` |
 | Gateway health | `https://deepwitai.cn/aiproduct/healthz` |
 
+## Enrollment codes
+### availabel
+- 019e9b14-c82b-738a-a6bb-42bfc2b425b6
+
+### used
+none
+
 ## 1. Obtain Enrollment Code
 
 1. Log into the admin portal: **https://deepwitai.cn/aiproduct/**
