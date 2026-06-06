@@ -216,7 +216,15 @@ async def _handle_agent_create(payload: dict, docker_mgr: DockerManager, outbox:
 async def _handle_agent_action(payload: dict, docker_mgr: DockerManager, outbox: Outbox):
     agent_id = payload.get("agent_id", "")
     action = payload.get("action", "")
-    if action == "restart" and agent_id:
+    if not agent_id:
+        return
+    if action == "drain":
+        logger.info("draining agent %s", agent_id)
+        agent = docker_mgr.repo.get_by_id(agent_id)
+        if agent:
+            docker_mgr._remove_container(agent)
+        docker_mgr.repo.delete(agent_id)
+    elif action == "restart":
         docker_mgr._restart_container(agent_id)
 
 

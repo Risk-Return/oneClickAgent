@@ -699,6 +699,11 @@ type AgentCreatePayload struct {
 	Env     []string    `json:"env,omitempty"`
 }
 
+type AgentActionPayload struct {
+	AgentID UUID   `json:"agent_id"`
+	Action  string `json:"action"`
+}
+
 type AgentStatusPayload struct {
 	AgentID     UUID        `json:"agent_id"`
 	Status      AgentStatus `json:"status"`

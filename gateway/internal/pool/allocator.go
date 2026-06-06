@@ -298,7 +298,7 @@ func (a *Allocator) ReconcilePool(ctx context.Context, deviceID model.UUID, hell
 	return nil
 }
 
-// DrainAgent marks an agent for drain (finish current job then remove).
+// DrainAgent marks an agent for drain (stop container and remove).
 func (a *Allocator) DrainAgent(ctx context.Context, agentID model.UUID) error {
 	agent, err := a.agents.GetByID(ctx, agentID)
 	if err != nil {
@@ -306,6 +306,15 @@ func (a *Allocator) DrainAgent(ctx context.Context, agentID model.UUID) error {
 	}
 	if agent == nil {
 		return ErrAgentNotFound
+	}
+
+	// Send AGENT_ACTION to device to stop the container
+	actionFrame, err := tunnel.NewFrame(model.FrameAgentAction, model.AgentActionPayload{
+		AgentID: agentID,
+		Action:  "drain",
+	})
+	if err == nil {
+		_ = a.hub.SendFrame(agent.DeviceID, actionFrame)
 	}
 
 	if agent.Status == model.AgentIdle {
