@@ -86,7 +86,7 @@ class OpenCodeBrain:
         config_dir = Path(os.environ.get("XDG_CONFIG_HOME", Path.home() / ".config"))
         config_dir = config_dir / "opencode"
         config_dir.mkdir(parents=True, exist_ok=True)
-        config_path = config_dir / "config.json"
+        config_path = config_dir / "opencode.json"
         model_str = f"{provider}/{model}"
         try:
             config_path.write_text(json.dumps({"model": model_str}))
