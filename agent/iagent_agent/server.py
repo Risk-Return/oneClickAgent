@@ -30,7 +30,7 @@ from fastapi import FastAPI, HTTPException, Query, Request, status as http_statu
 
 from iagent_agent.adapter.brain_stub import StubBrain
 from iagent_agent.adapter.protocol import AgentBrain
-from iagent_agent.browser.manager import BrowserManager, VNCStack
+from iagent_agent.browser.manager import BrowserManager, CloakBrowserManager, VNCStack
 from iagent_agent.runtime.executor import JobExecutor
 from iagent_agent.skills.loader import SkillManager
 from iagent_agent.workspace import Workspace
@@ -75,7 +75,14 @@ def create_app() -> FastAPI:
         state.agent_id = os.getenv("IAGENT_AGENT_ID", "")
         state.workspace = Workspace(work_dir)
         state.skills = SkillManager(skills_dir)
-        state.browser = BrowserManager(browser_cmd=browser_cmd, display=display, profile_dir=profile_dir)
+
+        if browser_cmd == "cloakbrowser":
+            state.browser = CloakBrowserManager(display=display, profile_dir=profile_dir)
+            state.browser_type = "cloakbrowser"
+        else:
+            state.browser = BrowserManager(browser_cmd=browser_cmd, display=display, profile_dir=profile_dir)
+            state.browser_type = "camoufox"
+
         state.vnc = VNCStack(display=display, rfb_port=rfb_port)
         state.executor = JobExecutor(
             brain=_make_brain(),
@@ -227,6 +234,8 @@ def create_app() -> FastAPI:
     @app.post("/vnc/stop", status_code=http_status.HTTP_204_NO_CONTENT)
     async def vnc_stop(request: Request):
         state = request.app.state
+        if getattr(state, "browser_type", "") == "cloakbrowser":
+            state.browser.save_storage_state()
         state.browser.kill()
         state.vnc.stop()
 

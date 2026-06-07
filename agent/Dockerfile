@@ -4,7 +4,7 @@
 #
 # Image layout (spec 04-agent-container §10):
 #   - Base: ubuntu:24.04, non-root user 'app'
-#   - Bundled: opencode, camoufox, Node 20, Python 3.12, Go 1.22, Rust, Temurin 21 JDK
+#   - Bundled: opencode, camoufox, cloakbrowser, Node 20, Python 3.12, Go 1.22, Rust, Temurin 21 JDK
 #   - VNC stack: Xvfb + x11vnc (on-demand, loopback-only, never host-published)
 #   - HEALTHCHECK hitting /healthz
 #   - Multi-arch: linux/amd64, linux/arm64
@@ -24,6 +24,24 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     wget \
     x11vnc \
     xvfb \
+    libatk-bridge2.0-0 \
+    libatk1.0-0 \
+    libcups2 \
+    libdrm2 \
+    libgbm1 \
+    libnss3 \
+    libxcomposite1 \
+    libxdamage1 \
+    libxfixes3 \
+    libxkbcommon0 \
+    libxrandr2 \
+    libpango-1.0-0 \
+    libcairo2 \
+    libasound2t64 \
+    libx11-xcb1 \
+    fonts-noto-color-emoji \
+    fonts-freefont-ttf \
+    fonts-unifont \
   && rm -rf /var/lib/apt/lists/*
 
 # ---------- Node.js 20 LTS ----------
@@ -100,6 +118,12 @@ FROM cache AS tools
 RUN npm install -g opencode-ai@latest 2>/dev/null || true
 RUN npx --yes @askjo/camofox-browser 2>/dev/null || true
 
+RUN PIP_BREAK_SYSTEM_PACKAGES=1 python3.12 -m pip install --no-cache-dir cloakbrowser playwright
+
+RUN python3.12 -m playwright install-deps chromium 2>/dev/null || true
+
+RUN python3.12 -m cloakbrowser install
+
 # ---------- Final image ----------
 FROM tools AS final
 
@@ -107,6 +131,7 @@ RUN useradd --create-home --shell /bin/bash app \
   && mkdir -p /work /tmp/.X11-unix \
   && chown -R app:app /work /tmp/.X11-unix \
   && rm -rf /root/.cargo/registry/cache /root/.cargo/git \
+  && if [ -d /root/.cloakbrowser ]; then cp -a /root/.cloakbrowser /home/app/.cloakbrowser && chown -R app:app /home/app/.cloakbrowser; fi \
   && apt-get clean \
   && rm -rf /var/lib/apt/lists/*
 
@@ -122,8 +147,9 @@ ENV IAGENT_BROWSER_PROFILE=/work/profile
 ENV IAGENT_VNC_DISPLAY=:99
 ENV IAGENT_VNC_PORT=5901
 ENV IAGENT_VNC_ENABLED=true
-ENV IAGENT_BROWSER_CMD=camoufox
+ENV IAGENT_BROWSER_CMD=cloakbrowser
 ENV IAGENT_BRAIN=opencode
+ENV CLOAKBROWSER_CACHE_DIR=/home/app/.cloakbrowser
 
 VOLUME ["/work"]
 WORKDIR /home/app

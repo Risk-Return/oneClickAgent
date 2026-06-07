@@ -10,6 +10,8 @@ dependencies = [
     "pydantic>=2.5",
     "typing-extensions>=4.10",
     "psutil>=5.9",
+    "cloakbrowser>=0.3",
+    "playwright>=1.40",
 ]
 
 [tool.setuptools.packages.find]

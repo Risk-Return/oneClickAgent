@@ -6,7 +6,7 @@ Each agent is one Docker container built on an **Ubuntu base image** with a **pr
 
 **Goals**
 - Stable, minimal HTTP API the device can rely on regardless of the agent implementation.
-- Ship a **ready-to-run image**: default agent (`opencode`), a headless stealth browser (`camoufox`), and pre-installed language runtimes + warmed dependency caches, so jobs need no on-the-fly installs.
+- Ship a **ready-to-run image**: default agent (`opencode`), headless stealth browsers (`camoufox` and `cloakbrowser`), and pre-installed language runtimes + warmed dependency caches, so jobs need no on-the-fly installs.
 - Execute exactly one job at a time, emit progress, return a progress-level result.
 - Offer an **interactive VNC view** of the headless browser so a human can log in / take control live (relayed to the web UI through the device → gateway tunnel).
 - Accept **injected login credentials** (cookies / browser storage state) for a job; never persist them — wipe with all other user data when the job ends.
@@ -46,6 +46,7 @@ agent/
 |-----------|----------------------|---------|
 | Default agent: **opencode** | `npm i -g opencode-ai@latest` | the default coding/agent brain available to every container |
 | Headless browser: **camoufox** | `npx @askjo/camofox-browser` | stealth Firefox-based browser driven headlessly; rendered to the Xvfb display for VNC |
+| Headless browser: **cloakbrowser** | `pip install cloakbrowser` + `python -m cloakbrowser install` | stealth Chromium-based browser with 58 C++ source-level fingerprint patches; Playwright-compatible Python API; pre-downloaded binary (~206MB) |
 | **Node.js 20 LTS** | nodesource / apt | JS/TS runtime + npm |
 | **Python 3.12** | apt + `pip` | scripting + agent supervisor |
 | **Go 1.22** | tarball to `/usr/local/go` | Go builds |
@@ -53,6 +54,8 @@ agent/
 | **Java (Temurin 21 JDK)** | apt (adoptium) | JVM builds |
 | Build basics | `build-essential`, `git`, `curl`, `ca-certificates` | common tooling |
 | VNC stack | `xvfb`, `x11vnc` (+ minimal fonts/`fluxbox`) | virtual display + RFB server for §6 |
+| Chromium system deps | `libatk-bridge2.0-0`, `libnss3`, `libgbm1`, etc. | system libraries required by cloakbrowser's Chromium binary |
+| Emoji/Unicode fonts | `fonts-noto-color-emoji`, `fonts-freefont-ttf`, `fonts-unifont` | required for anti-bot canvas fingerprinting checks |
 
 **Dependency pre-install (warm cache):** at build time the Dockerfile reads the manifests under `agent/deps/` and pre-installs them into the image (`npm ci`, `pip install -r`, `go mod download`, `cargo fetch`, `mvn dependency:go-offline`). This means jobs start with a warm dependency cache instead of downloading at runtime. The manifest set is the contract; updating a manifest + rebuilding the image refreshes the cache. Runtime installs are still possible but discouraged (slower, may need egress).
 
@@ -142,9 +145,9 @@ When a job benefits from a human-in-the-loop (e.g. logging into a site, solving 
 ### Stack inside the container
 
 ```
-camoufox (headless) ── renders to ──► Xvfb virtual display :99
-                                          ▲
-                                   x11vnc (RFB server) ── binds 127.0.0.1:5901 (loopback only)
+camoufox / cloakbrowser (headless) ── renders to ──► Xvfb virtual display :99
+                                                          ▲
+                                                   x11vnc (RFB server) ── binds 127.0.0.1:5901 (loopback only)
 ```
 
 - `Xvfb :99` provides a virtual framebuffer; `camoufox` is launched against `DISPLAY=:99`; `x11vnc` exports that display as an RFB stream on `127.0.0.1:<IAGENT_VNC_PORT>` (default `5901`).
@@ -184,15 +187,16 @@ Logins captured during a VNC session are stored **encrypted in the cloud gateway
 | `IAGENT_VNC_ENABLED` | `true` | allow interactive VNC sessions for jobs |
 | `IAGENT_VNC_PORT` | `5901` | loopback RFB port for x11vnc (never host-published) |
 | `IAGENT_VNC_DISPLAY` | `:99` | Xvfb virtual display |
-| `IAGENT_BROWSER_CMD` | `camoufox` | headless browser launcher (bundled camoufox) |
+| `IAGENT_BROWSER_CMD` | `camoufox` | headless browser launcher: `camoufox` (Firefox-based) or `cloakbrowser` (Chromium-based, Playwright API) |
 | `IAGENT_BROWSER_PROFILE` | `/work/profile` | ephemeral browser profile dir (wiped per job) |
+| `CLOAKBROWSER_CACHE_DIR` | `/home/app/.cloakbrowser` | cloakbrowser Chromium binary cache directory |
 | (LLM creds) | impl-specific | provided as secrets at create time, never logged |
 
 ## 10. Dockerfile Requirements
 
 - **Base: `ubuntu:24.04`** (LTS) per the goal's Docker requirements (Linux, ideally Ubuntu). Non-root user `app`; `HEALTHCHECK` hitting `/healthz`.
 - **Multi-stage build** to keep the final image lean despite the toolchain: a `builder` stage warms language/dependency caches (§2), the final stage copies the warmed caches + installs runtimes.
-- Bundled toolchain installed at build (see §2 table): opencode, camoufox, Node 20, Python 3.12, Go 1.22, Rust stable, Temurin 21, plus the Xvfb/x11vnc VNC stack.
+- Bundled toolchain installed at build (see §2 table): opencode, camoufox, cloakbrowser, Node 20, Python 3.12, Go 1.22, Rust stable, Temurin 21, plus the Xvfb/x11vnc VNC stack and Chromium system libraries.
 - Pre-installed dependency caches from `agent/deps/` manifests (warm `npm`/`pip`/`go`/`cargo`/`maven`).
 - Writable areas limited to `/work` (volume) + tmpfs `/tmp`; the browser profile and X runtime dirs live under `/work` so the rest of the root fs can stay read-only-friendly. (A full `read_only` root is best-effort given the browser; X/profile writable dirs are confined to `/work`.)
 - No SSH, no internet-exposed daemons. Processes: uvicorn supervisor (always) + on-demand Xvfb/x11vnc/browser (only during a VNC-enabled job).

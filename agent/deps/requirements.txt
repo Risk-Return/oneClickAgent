@@ -4,3 +4,5 @@ pydantic>=2.5
 click>=8.1
 pandas>=2.2
 pillow>=10.4
+cloakbrowser>=0.3
+playwright>=1.40

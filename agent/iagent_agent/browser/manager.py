@@ -7,7 +7,7 @@ import secrets
 import subprocess
 import time
 from pathlib import Path
-from typing import Optional
+from typing import Any, Optional
 
 logger = logging.getLogger(__name__)
 
@@ -84,6 +84,104 @@ class BrowserManager:
                 self._process.kill()
             logger.info("browser killed pid=%s", self._process.pid)
         self._process = None
+
+
+class CloakBrowserManager:
+    def __init__(
+        self,
+        display: str = ":99",
+        profile_dir: str = "/work/profile",
+    ):
+        self._display = display
+        self._profile_dir = profile_dir
+        self._browser: Any = None
+        self._page: Any = None
+
+    @property
+    def profile_dir(self) -> str:
+        return self._profile_dir
+
+    def set_profile_dir(self, path: str) -> None:
+        self._profile_dir = path
+
+    def _storage_state_path(self) -> Path:
+        return Path(self._profile_dir) / "storage_state.json"
+
+    def inject_state(self, storage_state: dict) -> None:
+        profile = Path(self._profile_dir)
+        profile.mkdir(parents=True, exist_ok=True)
+        self._storage_state_path().write_text(json.dumps(storage_state, indent=2))
+        logger.info("storage-state injected into %s", self._storage_state_path())
+
+    def export_state(self, origin: str = "") -> dict:
+        state_file = self._storage_state_path()
+        if not state_file.exists():
+            return {}
+        try:
+            full_state = json.loads(state_file.read_text())
+        except (json.JSONDecodeError, OSError):
+            return {}
+
+        if not origin:
+            return full_state
+
+        origin = origin.rstrip("/")
+        filtered_cookies = [
+            c for c in full_state.get("cookies", [])
+            if c.get("domain", "") in origin or origin.endswith(c.get("domain", ""))
+        ]
+        filtered_origins = [
+            o for o in full_state.get("origins", [])
+            if o.get("origin", "").rstrip("/") == origin
+        ]
+        return {"cookies": filtered_cookies, "origins": filtered_origins}
+
+    def launch_headless(self) -> None:
+        os.environ["DISPLAY"] = self._display
+        profile = Path(self._profile_dir)
+        profile.mkdir(parents=True, exist_ok=True)
+
+        from cloakbrowser import launch  # type: ignore[import-untyped]
+
+        launch_kwargs: dict = {
+            "headless": False,
+            "humanize": True,
+            "args": [
+                "--fingerprint-platform=linux",
+            ],
+        }
+
+        state_file = self._storage_state_path()
+        if state_file.exists():
+            try:
+                stored = json.loads(state_file.read_text())
+                if stored:
+                    launch_kwargs["storage_state"] = stored
+            except (json.JSONDecodeError, OSError):
+                pass
+
+        self._browser = launch(**launch_kwargs)
+        self._page = self._browser.new_page()
+        logger.info("cloakbrowser launched display=%s profile=%s", self._display, self._profile_dir)
+
+    def kill(self) -> None:
+        if self._browser is not None:
+            try:
+                self._browser.close()
+            except Exception:
+                pass
+            self._browser = None
+            self._page = None
+            logger.info("cloakbrowser killed")
+
+    def save_storage_state(self) -> None:
+        if self._page is not None and self._browser is not None:
+            try:
+                state = self._page.context.storage_state()
+                self._storage_state_path().write_text(json.dumps(state, indent=2))
+                logger.info("cloakbrowser storage state saved")
+            except Exception as exc:
+                logger.warning("failed to save cloakbrowser storage state: %s", exc)
 
 
 class VNCStack:

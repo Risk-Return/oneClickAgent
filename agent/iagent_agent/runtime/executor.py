@@ -100,6 +100,8 @@ class JobExecutor:
 
     def _teardown(self) -> None:
         if self._browser:
+            if hasattr(self._browser, "save_storage_state"):
+                self._browser.save_storage_state()
             self._browser.kill()
         if self._vnc:
             self._vnc.stop()

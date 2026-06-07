@@ -11,6 +11,7 @@ def main():
         host=host,
         port=port,
         log_level="info",
+        loop="asyncio",
     )
 
 
