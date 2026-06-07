@@ -105,7 +105,6 @@ class JobExecutor:
             self._browser.kill()
         if self._vnc:
             self._vnc.stop()
-        self._workspace.wipe()
         self._credentials_pending = False
 
     async def _run(
