@@ -36,6 +36,7 @@ class OpenCodeBrain:
             proc = await asyncio.create_subprocess_exec(
                 OPENDIR or "opencode",
                 "run",
+                "--dangerously-skip-permissions",
                 prompt,
                 stdout=asyncio.subprocess.PIPE,
                 stderr=asyncio.subprocess.PIPE,
