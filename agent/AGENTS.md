@@ -245,3 +245,67 @@ The X11 display runs on `:99`. When VNC is enabled, x11vnc shares it on loopback
 ### Save login state
 After successful login, the browser state is stored in `/work/profile/storage_state.json`.
 This will be captured by the credential relay for future reuse.
+
+---
+
+## Site-Specific Patterns
+
+### Xiaohongshu (小红书) Login
+
+Xiaohongshu uses a QR code login system. The site blocks headless browsers with a captcha.
+Use persistent context + HTTP/1.1 + headed mode to bypass.
+
+```python
+from cloakbrowser import launch_persistent_context
+import time
+
+ctx = launch_persistent_context(
+    "/work/profile",
+    headless=False,
+    humanize=True,
+    human_preset="careful",
+    args=[
+        "--fingerprint-noise=false",
+        "--fingerprint=42069",
+        "--disable-http2",
+    ],
+)
+page = ctx.new_page()
+page.set_viewport_size({"width": 1920, "height": 1080})
+
+page.goto("https://www.xiaohongshu.com", timeout=30000, wait_until="networkidle")
+time.sleep(5)
+
+title = page.title()
+url = page.url
+print(f"Title: {title}\nURL: {url}")
+
+if "captcha" in url.lower():
+    print("Captcha blocked — try again with a different fingerprint seed")
+elif "login" in url.lower():
+    print("On login page")
+
+page.screenshot(path="/work/output/xiaohongshu_login.png", full_page=True)
+print("Login page screenshot saved")
+
+ctx.close()
+```
+
+**QR Code Extraction:** Xiaohongshu login QR codes are rendered as base64 `<img>` with class `.qrcode-img`. In headed mode via VNC, the QR code is displayed directly in the browser window for the user to scan. To extract and save separately:
+
+```python
+import base64
+qr = page.locator(".qrcode-img").first
+src = qr.get_attribute("src")
+if src and src.startswith("data:image"):
+    b64 = src.split(",", 1)[1]
+    with open("/work/output/xiaohongshu_qr.png", "wb") as f:
+        f.write(base64.b64decode(b64))
+```
+
+**Key flags for xiaohongshu:**
+- `--disable-http2` — required to bypass captcha challenge
+- `headless=False` — captcha detects headless mode
+- `launch_persistent_context` — keeps cookies between visits
+- `humanize=True` + `human_preset="careful"` — avoids behavioral detection
+- `--fingerprint=NNNNN` — consistent fingerprint for returning visitor
