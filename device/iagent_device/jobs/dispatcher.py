@@ -82,7 +82,7 @@ class JobDispatcher:
 
             await self._wait_for_files(job_id)
 
-            await client.create_job(job_id, command, {}, self.callback_url, skill_id, workspace_dir=f"/workspaces/{job_id}")
+            await client.create_job(job_id, command, {}, self.callback_url, skill_id, workspace_dir=f"/work/workspaces/{job_id}")
             self.job_repo.update_status(job_id, "running")
             await self.outbox.enqueue_and_send(FrameType.JOB_PROGRESS, {
                 "job_id": job_id,
