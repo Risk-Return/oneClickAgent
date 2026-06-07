@@ -355,6 +355,24 @@ func (c *DeviceConn) handleFrame(ctx context.Context, frame model.Frame) error {
 		}
 		return nil
 
+	case model.FrameFilePullBegin:
+		if c.hub != nil {
+			return c.hub.HandleFilePullBegin(ctx, c.deviceID, frame.Payload)
+		}
+		return nil
+
+	case model.FrameFilePullChunk:
+		if c.hub != nil {
+			return c.hub.HandleFilePullChunk(ctx, c.deviceID, frame.Payload)
+		}
+		return nil
+
+	case model.FrameFilePullEnd:
+		if c.hub != nil {
+			return c.hub.HandleFilePullEnd(ctx, c.deviceID, frame.Payload)
+		}
+		return nil
+
 	case model.FrameVNCOpened:
 		var payload model.VNCOpenedPayload
 		if err := json.Unmarshal(frame.Payload, &payload); err != nil {
