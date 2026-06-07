@@ -213,6 +213,18 @@ func (m *MockJobStore) ListByUser(ctx context.Context, userID model.UUID, cursor
 	return jobs, nil, nil
 }
 
+func (m *MockJobStore) ListByAgent(ctx context.Context, agentID model.UUID) ([]model.Job, error) {
+	m.mu.RLock()
+	defer m.mu.RUnlock()
+	var jobs []model.Job
+	for _, j := range m.jobs {
+		if j.AgentID != nil && *j.AgentID == agentID {
+			jobs = append(jobs, *j)
+		}
+	}
+	return jobs, nil
+}
+
 // ─── MockAgentStore ────────────────────────────────────────
 
 type MockAgentStore struct {

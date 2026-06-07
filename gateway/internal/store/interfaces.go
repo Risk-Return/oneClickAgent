@@ -64,6 +64,7 @@ type JobStoreInterface interface {
 	CountQueuedByUser(ctx context.Context, userID model.UUID) (int, error)
 	GetQueuePosition(ctx context.Context, jobID model.UUID) (int, error)
 	ListByUser(ctx context.Context, userID model.UUID, cursor *model.UUID, limit int) ([]model.Job, *model.UUID, error)
+	ListByAgent(ctx context.Context, agentID model.UUID) ([]model.Job, error)
 }
 
 type FileStoreInterface interface {

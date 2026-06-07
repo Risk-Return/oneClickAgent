@@ -3,9 +3,11 @@ package pool
 
 import (
 	"context"
+	"fmt"
 	"log/slog"
 	"time"
 
+	"github.com/google/uuid"
 	"github.com/oneClickAgent/gateway/internal/model"
 	"github.com/oneClickAgent/gateway/internal/obs"
 	"github.com/oneClickAgent/gateway/internal/pubsub"
@@ -299,6 +301,7 @@ func (a *Allocator) ReconcilePool(ctx context.Context, deviceID model.UUID, hell
 }
 
 // DrainAgent marks an agent for drain (stop container and remove).
+// If all referencing jobs are in terminal state, nulls the FK and deletes.
 func (a *Allocator) DrainAgent(ctx context.Context, agentID model.UUID) error {
 	agent, err := a.agents.GetByID(ctx, agentID)
 	if err != nil {
@@ -317,12 +320,37 @@ func (a *Allocator) DrainAgent(ctx context.Context, agentID model.UUID) error {
 		_ = a.hub.SendFrame(agent.DeviceID, actionFrame)
 	}
 
-	if agent.Status == model.AgentIdle {
-		return a.agents.Delete(ctx, agentID)
+	if agent.Status == model.AgentIdle || agent.Status == model.AgentFailed {
+		if delErr := a.agents.Delete(ctx, agentID); delErr != nil {
+			// FK constraint likely — check if all referencing jobs are terminal
+			if err := a.nullTerminalJobsForAgent(ctx, agentID); err != nil {
+				return err
+			}
+			return a.agents.Delete(ctx, agentID)
+		}
+		return nil
 	}
 
 	// If busy, mark for drain - it will be removed after job completion
 	return a.agents.UpdateStatus(ctx, agentID, model.AgentFailed)
+}
+
+// nullTerminalJobsForAgent nulls the agent_id FK on all terminal jobs for this agent.
+// Returns error if any job is non-terminal (still active).
+func (a *Allocator) nullTerminalJobsForAgent(ctx context.Context, agentID model.UUID) error {
+	jobs, err := a.jobs.ListByAgent(ctx, agentID)
+	if err != nil {
+		return err
+	}
+	for _, j := range jobs {
+		if !j.Status.IsTerminal() {
+			return fmt.Errorf("agent has active job %s (status=%s)", j.ID, j.Status)
+		}
+	}
+	for _, j := range jobs {
+		_ = a.jobs.SetAgent(ctx, j.ID, uuid.Nil, uuid.Nil)
+	}
+	return nil
 }
 
 // ForceRelease releases a stuck BUSY agent back to IDLE.

@@ -180,6 +180,17 @@ func (s *JobStore) ListByUser(ctx context.Context, userID model.UUID, cursor *mo
 	return jobs, nextCursor, nil
 }
 
+func (s *JobStore) ListByAgent(ctx context.Context, agentID model.UUID) ([]model.Job, error) {
+	rows, err := s.db.Pool.Query(ctx,
+		`SELECT `+jobCols+` FROM jobs WHERE agent_id=$1 ORDER BY created_at`, agentID,
+	)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	return scanJobs(rows)
+}
+
 func scanJobs(rows pgx.Rows) ([]model.Job, error) {
 	var jobs []model.Job
 	for rows.Next() {
