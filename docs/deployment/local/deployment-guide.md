@@ -159,6 +159,69 @@ IAGENT_POOL_SIZE=4
 IAGENT_DEVICE_DATA_DIR="/var/lib/iagent-device"
 ```
 
+### 3.1 LLM Provider Configuration
+
+The device reads LLM API credentials from `llm_provider.json` in the device data directory
+and passes them as environment variables to agent containers. This file is local only and
+should NOT be committed to version control.
+
+**File location:** `$IAGENT_DEVICE_DATA_DIR/llm_provider.json`
+
+**File format:**
+
+```json
+{
+  "provider": "hboom",
+  "api": "openai",
+  "model": "deepseek-v4-pro",
+  "api_key": "sk-...",
+  "base_url": "https://api.example.com/v1",
+  "limits": {
+    "max_tokens": 200000,
+    "max_input_tokens": 180000
+  },
+  "compaction_ratio": 0.8
+}
+```
+
+**Fields:**
+
+| Field | Required | Description |
+|-------|----------|-------------|
+| `provider` | No | Display name of the provider (informational only) |
+| `api` | Yes | Protocol: `"openai"` or `"anthropic"` |
+| `model` | Yes | Model name to use (e.g., `"deepseek-v4-pro"`, `"claude-sonnet-4-20250514"`) |
+| `api_key` | Yes | API key for the provider |
+| `base_url` | No | Custom API endpoint (omit to use provider default) |
+| `limits` | No | Token limits: `max_tokens`, `max_input_tokens` (reserved for future use) |
+| `compaction_ratio` | No | Conversation compaction ratio, 0.0–1.0 (reserved for future use) |
+
+**Protocol mapping to container env vars:**
+
+| `api` value | Env vars set |
+|-------------|-------------|
+| `"openai"` | `OPENAI_API_KEY`, `OPENAI_MODEL`, `OPENAI_BASE_URL` |
+| `"anthropic"` | `ANTHROPIC_API_KEY`, `ANTHROPIC_MODEL`, `ANTHROPIC_BASE_URL` |
+
+**Setup:**
+
+```bash
+# Create from the example template
+cp device/llm_provider.example.json $IAGENT_DEVICE_DATA_DIR/llm_provider.json
+
+# Edit with your credentials
+nano $IAGENT_DEVICE_DATA_DIR/llm_provider.json
+
+# Set restrictive permissions (contains API key)
+chmod 600 $IAGENT_DEVICE_DATA_DIR/llm_provider.json
+```
+
+The device reads this file on startup. Changes require a device restart.
+The `api_key` is never logged or exposed.
+
+> **Security:** Never commit `llm_provider.json` to version control.
+> It is listed in `device/.gitignore`. The file permissions should be `600`.
+
 ## 4. Enroll with the Gateway
 
 Get an enrollment code from the gateway admin:
