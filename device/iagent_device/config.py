@@ -1,8 +1,10 @@
 """Env + file config loader with OS-aware defaults.
 Reads IAGENT_GATEWAY_URL, IAGENT_DEVICE_DATA_DIR, IAGENT_DOCKER_HOST,
-IAGENT_MAX_RESTARTS, IAGENT_HEARTBEAT_S, IAGENT_AGENT_IMAGE, IAGENT_PORT_RANGE, etc.
+IAGENT_MAX_RESTARTS, IAGENT_HEARTBEAT_S, IAGENT_AGENT_IMAGE, IAGENT_PORT_RANGE,
+IAGENT_AGENT_ENV (JSON dict of env vars to pass to agent containers), etc.
 """
 
+import json
 import os
 import sys
 from pathlib import Path
@@ -34,6 +36,7 @@ class Config:
     port_range_end: int = 42999
     session_dial_timeout_s: int = 15
     pool_size: int = 4
+    agent_env: dict = field(default_factory=dict)
 
     _device_id: str | None = None
     _device_token: str | None = None
@@ -69,6 +72,12 @@ def load() -> Config:
     cfg.prepull_image = os.getenv("IAGENT_PREPULL_IMAGE", str(cfg.prepull_image)).lower() != "false"
     cfg.session_dial_timeout_s = int(os.getenv("IAGENT_SESSION_DIAL_TIMEOUT_S", str(cfg.session_dial_timeout_s)))
     cfg.pool_size = int(os.getenv("IAGENT_POOL_SIZE", str(cfg.pool_size)))
+
+    if agent_env_raw := os.getenv("IAGENT_AGENT_ENV"):
+        try:
+            cfg.agent_env = json.loads(agent_env_raw)
+        except json.JSONDecodeError:
+            pass
 
     if port_range := os.getenv("IAGENT_PORT_RANGE"):
         parts = port_range.split("-")

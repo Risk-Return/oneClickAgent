@@ -27,6 +27,7 @@ class DockerManager:
         max_restarts: int = 3,
         docker_client=None,
         data_dir: str = "",
+        agent_env: dict | None = None,
     ):
         self.repo = agent_repo
         self.image = image
@@ -35,6 +36,7 @@ class DockerManager:
         self.max_restarts = max_restarts
         self.docker = docker_client
         self.data_dir = data_dir
+        self.agent_env = agent_env or {}
         self._allocated_ports: set[int] = set()
 
     async def prepull_image(self):
@@ -105,6 +107,7 @@ class DockerManager:
                 volumes=[workspace_mount],
                 tmpfs={"/tmp": "exec", "/run": "exec,rw"},
                 pids_limit=256,
+                environment=self.agent_env,
             )
             return container.id
         except Exception:

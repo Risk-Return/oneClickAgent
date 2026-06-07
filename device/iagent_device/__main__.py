@@ -83,6 +83,7 @@ def _make_docker_mgr(cfg, conn) -> DockerManager:
         max_restarts=cfg.max_restarts,
         docker_client=dc,
         data_dir=str(cfg.device_data_dir),
+        agent_env=cfg.agent_env,
     )
 
 
