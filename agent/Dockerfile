@@ -133,7 +133,7 @@ RUN useradd --create-home --shell /bin/bash app \
   && mkdir -p /work /tmp/.X11-unix \
   && chown -R app:app /work /tmp/.X11-unix \
   && rm -rf /root/.cargo/registry/cache /root/.cargo/git \
-  && if [ -d /root/.cloakbrowser ]; then cp -a /root/.cloakbrowser /home/app/.cloakbrowser && chown -R app:app /home/app/.cloakbrowser; fi \
+  && if [ -d /root/.cloakbrowser ]; then cp -a /root/.cloakbrowser /work/.cloakbrowser && chown -R app:app /work/.cloakbrowser; fi \
   && apt-get clean \
   && rm -rf /var/lib/apt/lists/*
 
@@ -155,7 +155,13 @@ ENV IAGENT_VNC_PORT=5901
 ENV IAGENT_VNC_ENABLED=true
 ENV IAGENT_BROWSER_CMD=cloakbrowser
 ENV IAGENT_BRAIN=opencode
-ENV CLOAKBROWSER_CACHE_DIR=/home/app/.cloakbrowser
+ENV CLOAKBROWSER_CACHE_DIR=/work/.cloakbrowser
+ENV XDG_CACHE_HOME=/work/.cache
+ENV XDG_CONFIG_HOME=/work/.config
+ENV XDG_DATA_HOME=/work/.local/share
+ENV XDG_STATE_HOME=/work/.local/state
+ENV BUN_INSTALL=/work/.bun
+ENV NPM_CONFIG_CACHE=/work/.npm
 
 VOLUME ["/work"]
 WORKDIR /home/app
