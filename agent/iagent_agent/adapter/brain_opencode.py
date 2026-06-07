@@ -1,4 +1,5 @@
 import asyncio
+import json
 import logging
 import os
 import shutil
@@ -26,6 +27,7 @@ class OpenCodeBrain:
         Path(ctx.output_dir).mkdir(parents=True, exist_ok=True)
 
         prompt = self._build_prompt(ctx)
+        self._write_model_config()
 
         await emit(5, "starting opencode")
         logger.info("opencode[%s]: %s", ctx.job_id, ctx.command)
@@ -73,6 +75,24 @@ class OpenCodeBrain:
 
     async def cancel(self, job_id: str) -> None:
         self._kill(job_id)
+
+    def _write_model_config(self) -> None:
+        model = os.environ.get("OPENAI_MODEL", "")
+        if not model:
+            return
+        provider = os.environ.get("OPENAI_API_KEY", "") and "openai" or ""
+        if not provider:
+            return
+        config_dir = Path(os.environ.get("XDG_CONFIG_HOME", Path.home() / ".config"))
+        config_dir = config_dir / "opencode"
+        config_dir.mkdir(parents=True, exist_ok=True)
+        config_path = config_dir / "config.json"
+        model_str = f"{provider}/{model}"
+        try:
+            config_path.write_text(json.dumps({"model": model_str}))
+            logger.info("opencode model configured: %s", model_str)
+        except OSError:
+            pass
 
     def _build_prompt(self, ctx: JobContext) -> str:
         skill_name = ""
