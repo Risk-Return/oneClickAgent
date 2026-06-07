@@ -40,13 +40,16 @@ class OpenCodeBrain:
                 env={**os.environ, "OPENCODE_OUTPUT_DIR": ctx.output_dir},
             )
             self._procs[ctx.job_id] = proc
+            self._stderr = proc.stderr
         except FileNotFoundError:
             self._procs.pop(ctx.job_id, None)
             raise RuntimeError("opencode not found in PATH or IAGENT_BRAIN_PATH")
 
         try:
             await emit(10, "processing")
+            stderr_task = asyncio.create_task(self._stream_stderr(ctx.job_id))
             await self._stream_output(ctx.job_id, proc, emit)
+            stderr_task.cancel()
             await emit(95, "finalizing")
 
             stdout, stderr = await asyncio.wait_for(
@@ -66,6 +69,7 @@ class OpenCodeBrain:
             raise
         finally:
             self._procs.pop(ctx.job_id, None)
+            self._stderr = None
 
     async def cancel(self, job_id: str) -> None:
         self._kill(job_id)
@@ -99,6 +103,15 @@ class OpenCodeBrain:
             if pct is not None and pct > last_pct:
                 last_pct = min(pct, 90)
                 await emit(last_pct, text[:200])
+
+    async def _stream_stderr(self, job_id: str) -> None:
+        try:
+            async for line in self._read_lines(self._stderr):
+                text = line.decode(errors="replace").strip()
+                if text:
+                    logger.info("opencode[%s][stderr]: %s", job_id, text[:500])
+        except asyncio.CancelledError:
+            pass
 
     async def _read_lines(self, stream):
         while True:
