@@ -13,7 +13,7 @@ OPENDIR = shutil.which("opencode", path=os.environ.get("PATH", ""))
 CLAUDE_SKILLS_DIR = Path.home() / ".claude" / "skills"
 
 SKILL_PROMPT_TEMPLATE = """\
-Use the skill instructions from ~/.claude/skills/{skill_name}/SKILL.md to complete this task.
+Use the skill instructions from {skill_path} to complete this task.
 {command}
 
 Write all output files to {output_dir}. Create a summary at {output_dir}/summary.md when done."""
@@ -117,19 +117,9 @@ class OpenCodeBrain:
             pass
 
     def _build_prompt(self, ctx: JobContext) -> str:
-        skill_name = ""
-        if ctx.skill_id:
-            skill_dir = CLAUDE_SKILLS_DIR / ctx.skill_id
-            if not skill_dir.exists():
-                for d in CLAUDE_SKILLS_DIR.iterdir():
-                    if d.is_dir() and d.name == ctx.skill_id:
-                        skill_dir = d
-                        break
-            if skill_dir.exists():
-                skill_name = skill_dir.name
-
+        skill_path = os.path.expanduser(f"~/.claude/skills/{ctx.skill_id or 'default'}/SKILL.md")
         return SKILL_PROMPT_TEMPLATE.format(
-            skill_name=skill_name or "default",
+            skill_path=skill_path,
             command=ctx.command,
             output_dir=ctx.output_dir,
         )
