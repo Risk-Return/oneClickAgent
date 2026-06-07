@@ -1,0 +1,12 @@
+{
+  "_comment": "LLM provider config for agent containers. Copy to llm_provider.json and fill in.",
+  "provider": "anthropic",
+  "model": "claude-sonnet-4-20250514",
+  "api_key": "sk-ant-...",
+  "base_url": "",
+  "limits": {
+    "max_tokens": 200000,
+    "max_input_tokens": 180000
+  },
+  "compaction_ratio": 0.8
+}

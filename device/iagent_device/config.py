@@ -59,7 +59,38 @@ class Config:
         return self.device_data_dir / "token"
 
 
-def load() -> Config:
+def _load_llm_provider(data_dir: Path) -> dict:
+    provider_file = data_dir / "llm_provider.json"
+    if not provider_file.exists():
+        return {}
+
+    try:
+        with open(provider_file) as f:
+            cfg = json.load(f)
+    except (json.JSONDecodeError, OSError):
+        return {}
+
+    provider = cfg.get("provider", "").lower()
+    api_key = cfg.get("api_key", "")
+    base_url = cfg.get("base_url", "")
+    model = cfg.get("model", "")
+
+    env: dict = {}
+
+    if provider == "anthropic":
+        env["ANTHROPIC_API_KEY"] = api_key
+        if base_url:
+            env["ANTHROPIC_BASE_URL"] = base_url
+        if model:
+            env["ANTHROPIC_MODEL"] = model
+    elif provider == "openai":
+        env["OPENAI_API_KEY"] = api_key
+        if base_url:
+            env["OPENAI_BASE_URL"] = base_url
+        if model:
+            env["OPENAI_MODEL"] = model
+
+    return env
     cfg = Config()
 
     cfg.gateway_url = os.getenv("IAGENT_GATEWAY_URL", cfg.gateway_url)
@@ -78,6 +109,9 @@ def load() -> Config:
             cfg.agent_env = json.loads(agent_env_raw)
         except json.JSONDecodeError:
             pass
+
+    if not cfg.agent_env:
+        cfg.agent_env = _load_llm_provider(cfg.device_data_dir)
 
     if port_range := os.getenv("IAGENT_PORT_RANGE"):
         parts = port_range.split("-")
