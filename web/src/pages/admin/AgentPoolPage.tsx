@@ -83,7 +83,7 @@ export function AgentPoolPage() {
                             <Unlink className="mr-1 h-3 w-3" /> {t("agentPool.release")}
                           </Button>
                         )}
-                        {(agent.status === "idle" || agent.status === "busy") && (
+                        {(agent.status === "idle" || agent.status === "busy" || agent.status === "failed" || agent.status === "unhealthy") && (
                           <Button
                             variant="ghost"
                             size="sm"
