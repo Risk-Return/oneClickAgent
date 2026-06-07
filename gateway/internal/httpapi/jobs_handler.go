@@ -7,6 +7,7 @@ import (
 
 	"github.com/go-chi/chi/v5"
 	"github.com/oneClickAgent/gateway/internal/model"
+	"github.com/oneClickAgent/gateway/internal/obs"
 	"github.com/oneClickAgent/gateway/internal/pubsub"
 	"github.com/oneClickAgent/gateway/internal/tunnel"
 )
@@ -92,6 +93,28 @@ func (deps *Dependencies) handleSubmitJob() http.HandlerFunc {
 		// Agent allocated - update job
 		_ = deps.Jobs.SetAgent(r.Context(), job.ID, agent.ID, agent.DeviceID)
 		_ = deps.PushFilesToDevice(r.Context(), job, agent.DeviceID)
+
+		// Send JOB_DISPATCH frame to device
+		dispatchPayload := model.JobDispatchPayload{
+			JobID:       job.ID,
+			UserID:      job.UserID,
+			AgentID:     agent.ID,
+			Command:     job.Command,
+			SkillID:     job.SkillID,
+			SubmittedAt: job.SubmittedAt.UnixMilli(),
+		}
+		if job.Params != nil {
+			dispatchPayload.Params = *job.Params
+		}
+		if dispatchFrame, err := tunnel.NewFrame(model.FrameJobDispatch, dispatchPayload); err == nil {
+			if sendErr := deps.Hub.SendFrame(agent.DeviceID, dispatchFrame); sendErr != nil {
+				obs.Logger("http.jobs").Error("failed to send JOB_DISPATCH frame",
+					"job_id", job.ID.String(),
+					"agent_id", agent.ID.String(),
+					"error", sendErr,
+				)
+			}
+		}
 
 		// Push credentials if requested
 		for _, credID := range req.CredentialIDs {
