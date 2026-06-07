@@ -71,19 +71,20 @@ def _load_llm_provider(data_dir: Path) -> dict:
         return {}
 
     provider = cfg.get("provider", "").lower()
+    api = cfg.get("api", "").lower()
     api_key = cfg.get("api_key", "")
     base_url = cfg.get("base_url", "")
     model = cfg.get("model", "")
 
     env: dict = {}
 
-    if provider == "anthropic":
+    if api == "anthropic":
         env["ANTHROPIC_API_KEY"] = api_key
         if base_url:
             env["ANTHROPIC_BASE_URL"] = base_url
         if model:
             env["ANTHROPIC_MODEL"] = model
-    elif provider == "openai":
+    elif api == "openai":
         env["OPENAI_API_KEY"] = api_key
         if base_url:
             env["OPENAI_BASE_URL"] = base_url

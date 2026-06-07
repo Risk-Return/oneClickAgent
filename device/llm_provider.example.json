@@ -1,9 +1,10 @@
 {
   "_comment": "LLM provider config for agent containers. Copy to llm_provider.json and fill in.",
-  "provider": "anthropic",
+  "provider": "hboom",
+  "api": "openai",
   "model": "claude-sonnet-4-20250514",
-  "api_key": "sk-ant-...",
-  "base_url": "",
+  "api_key": "sk-...",
+  "base_url": "https://api.example.com/v1",
   "limits": {
     "max_tokens": 200000,
     "max_input_tokens": 180000
