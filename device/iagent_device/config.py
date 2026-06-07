@@ -92,6 +92,9 @@ def _load_llm_provider(data_dir: Path) -> dict:
             env["OPENAI_MODEL"] = model
 
     return env
+
+
+def load() -> Config:
     cfg = Config()
 
     cfg.gateway_url = os.getenv("IAGENT_GATEWAY_URL", cfg.gateway_url)
