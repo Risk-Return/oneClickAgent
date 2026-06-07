@@ -228,7 +228,11 @@ def create_app() -> FastAPI:
             raise HTTPException(status_code=409, detail={"code": "NO_ACTIVE_JOB"})
 
         rfb_password = state.vnc.start()
-        state.browser.launch_headless()
+        if getattr(state, "browser_type", "") == "cloakbrowser":
+            import asyncio
+            await asyncio.to_thread(state.browser.launch_headless)
+        else:
+            state.browser.launch_headless()
         return {"rfb_port": state.vnc.rfb_port, "rfb_password": rfb_password}
 
     @app.post("/vnc/stop", status_code=http_status.HTTP_204_NO_CONTENT)
