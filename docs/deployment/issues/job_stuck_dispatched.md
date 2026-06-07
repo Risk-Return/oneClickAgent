@@ -112,18 +112,70 @@ if dispatchFrame, err := tunnel.NewFrame(model.FrameJobDispatch, dispatchPayload
 
 | Step | Status |
 |------|--------|
-| Code fix | Committed & pushed to `main` |
+| Code fix (dispatch) | Committed & pushed to `main` |
+| Code fix (workspace) | Committed & pushed to `main` |
 | `go build` | Pass |
 | `go vet` | Pass |
 | Deploy to `deepwitai.cn` | **Pending** — cloud-side deployment needed |
 | Stuck job cleanup | Cancel `019ea0ea-4d46` manually after deploy |
 
-## Verification
+## Cloud-Side Action Items
 
-After deploying the fix, the fix can be verified by:
+### 1. Deploy gateway fix
+
+Build and deploy commit `3f099ab` (or later) to `deepwitai.cn`:
+
+```bash
+cd gateway && git pull && go build -o bin/gateway ./cmd/gateway && go vet ./...
+# Restart gateway service
+```
+
+This adds the missing `JOB_DISPATCH` frame send in `handleSubmitJob`.
+
+### 2. Restart device
+
+After gateway deploy, restart the device process on the local machine so it picks up the workspace path fix (`7478c93`):
+
+```bash
+# On the local device machine:
+pkill -f iagent_device
+IAGENT_DEVICE_DATA_DIR=/tmp/iagent-cloud \
+  IAGENT_GATEWAY_URL=https://deepwitai.cn/aiproduct \
+  nohup venv/bin/python -m iagent_device run &>/tmp/device-cloud4.log &
+```
+
+### 3. Cancel stuck job
+
+Via the cloud gateway API or DB:
+
+```sql
+UPDATE jobs SET status='cancelled' WHERE id='019ea0ea-4d46-7b0f-9266-f51c584d019b';
+UPDATE agents SET status='idle', job_id=NULL WHERE job_id='019ea0ea-4d46-7b0f-9266-f51c584d019b';
+```
+
+## Verification
 
 1. Cancel the stuck job (`019ea0ea-4d46-7b0f-9266-f51c584d019b`)
 2. Submit a new test job from the web UI
-3. Confirm `JOB_DISPATCH` appears in gateway logs
-4. Confirm device receives the frame and responds with `JOB_ACCEPTED`
+3. Confirm `JOB_DISPATCH` appears in gateway tunnel logs
+4. Confirm device receives the frame, sends `JOB_ACCEPTED`, `JOB_PROGRESS`
 5. Job progresses from `dispatched` → `running` → `succeeded`
+
+## Second Issue: Workspace Permission Denied
+
+After the dispatch fix allowed a job to reach the agent, it failed immediately with:
+
+```
+PermissionError: [Errno 13] Permission denied: '/workspaces/019ea122-b0d7...'
+```
+
+**Cause:** `device/iagent_device/jobs/dispatcher.py:85` hard-codes `workspace_dir=/workspaces/{job_id}`. The container user `app` only has write access to `/work`.
+
+**Fix:** Commit `7478c93` — changed to `/work/workspaces/{job_id}`.
+
+## Commit Summary
+
+| Commit | File | Fix |
+|--------|------|-----|
+| `3f099ab` | `gateway/internal/httpapi/jobs_handler.go` | Send `JOB_DISPATCH` frame on immediate allocation |
+| `7478c93` | `device/iagent_device/jobs/dispatcher.py` | Use `/work/workspaces/` instead of `/workspaces/` |
