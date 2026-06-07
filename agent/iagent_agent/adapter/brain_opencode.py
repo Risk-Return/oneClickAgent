@@ -77,20 +77,41 @@ class OpenCodeBrain:
         self._kill(job_id)
 
     def _write_model_config(self) -> None:
-        model = os.environ.get("OPENAI_MODEL", "")
-        if not model:
+        api_key = os.environ.get("OPENAI_API_KEY", "") or os.environ.get("ANTHROPIC_API_KEY", "")
+        model = os.environ.get("OPENAI_MODEL", "") or os.environ.get("ANTHROPIC_MODEL", "")
+        base_url = os.environ.get("OPENAI_BASE_URL", "") or os.environ.get("ANTHROPIC_BASE_URL", "")
+        if not api_key or not model:
             return
-        provider = os.environ.get("OPENAI_API_KEY", "") and "openai" or ""
-        if not provider:
-            return
+
+        is_openai = bool(os.environ.get("OPENAI_API_KEY"))
+        provider_id = "hboom"
+        api_protocol = "openai" if is_openai else "anthropic"
+
         config_dir = Path(os.environ.get("XDG_CONFIG_HOME", Path.home() / ".config"))
         config_dir = config_dir / "opencode"
         config_dir.mkdir(parents=True, exist_ok=True)
-        config_path = config_dir / "opencode.json"
-        model_str = f"{provider}/{model}"
+
+        config: dict = {
+            "model": f"{provider_id}/{model}",
+            "provider": {
+                provider_id: {
+                    "id": provider_id,
+                    "api": api_protocol,
+                    "env": ["OPENAI_API_KEY"] if is_openai else ["ANTHROPIC_API_KEY"],
+                    "models": {
+                        model: {"name": model, "id": model},
+                    },
+                }
+            },
+        }
+
+        if base_url:
+            config["provider"][provider_id]["options"] = {"baseURL": base_url}
+
+        config_path = config_dir / "opencode.jsonc"
         try:
-            config_path.write_text(json.dumps({"model": model_str}))
-            logger.info("opencode model configured: %s", model_str)
+            config_path.write_text(json.dumps(config))
+            logger.info("opencode provider configured: %s/%s", provider_id, model)
         except OSError:
             pass
 
