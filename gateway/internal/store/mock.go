@@ -167,6 +167,16 @@ func (m *MockJobStore) SetAgent(ctx context.Context, jobID, agentID, deviceID mo
 	return nil
 }
 
+func (m *MockJobStore) ClearAgent(ctx context.Context, jobID model.UUID) error {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	if j, ok := m.jobs[jobID]; ok {
+		j.AgentID = nil
+		j.DeviceID = nil
+	}
+	return nil
+}
+
 func (m *MockJobStore) Cancel(ctx context.Context, id, userID model.UUID) error {
 	m.mu.Lock()
 	defer m.mu.Unlock()

@@ -86,6 +86,13 @@ func (s *JobStore) SetAgent(ctx context.Context, jobID, agentID, deviceID model.
 	return err
 }
 
+func (s *JobStore) ClearAgent(ctx context.Context, jobID model.UUID) error {
+	_, err := s.db.Pool.Exec(ctx,
+		`UPDATE jobs SET agent_id=NULL, device_id=NULL WHERE id=$1`, jobID,
+	)
+	return err
+}
+
 func (s *JobStore) Cancel(ctx context.Context, id, userID model.UUID) error {
 	now := time.Now().UTC()
 	result, err := s.db.Pool.Exec(ctx,

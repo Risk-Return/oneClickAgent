@@ -7,7 +7,6 @@ import (
 	"log/slog"
 	"time"
 
-	"github.com/google/uuid"
 	"github.com/oneClickAgent/gateway/internal/model"
 	"github.com/oneClickAgent/gateway/internal/obs"
 	"github.com/oneClickAgent/gateway/internal/pubsub"
@@ -348,7 +347,7 @@ func (a *Allocator) nullTerminalJobsForAgent(ctx context.Context, agentID model.
 		}
 	}
 	for _, j := range jobs {
-		_ = a.jobs.SetAgent(ctx, j.ID, uuid.Nil, uuid.Nil)
+		_ = a.jobs.ClearAgent(ctx, j.ID)
 	}
 	return nil
 }

@@ -58,6 +58,7 @@ type JobStoreInterface interface {
 	UpdateProgress(ctx context.Context, id model.UUID, percent int, message string) error
 	UpdateResult(ctx context.Context, id model.UUID, status model.JobStatus, result *json.RawMessage) error
 	SetAgent(ctx context.Context, jobID, agentID, deviceID model.UUID) error
+	ClearAgent(ctx context.Context, jobID model.UUID) error
 	Cancel(ctx context.Context, id, userID model.UUID) error
 	DequeueNext(ctx context.Context) (*model.Job, error)
 	ExpireQueued(ctx context.Context) (int64, error)
