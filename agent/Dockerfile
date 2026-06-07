@@ -139,6 +139,10 @@ COPY --chown=app:app pyproject.toml /home/app/
 COPY --chown=app:app iagent_agent/ /home/app/iagent_agent/
 COPY --chown=app:app vnc/ /home/app/vnc/
 
+RUN mkdir -p /home/app/.claude/skills/default /home/app/.claude/skills/xiaohongshu-login
+COPY --chown=app:app skills/default/SKILL.md /home/app/.claude/skills/default/SKILL.md
+COPY --chown=app:app skills/xiaohongshu-login/SKILL.md /home/app/.claude/skills/xiaohongshu-login/SKILL.md
+
 RUN PIP_BREAK_SYSTEM_PACKAGES=1 python3.12 -m pip install --no-cache-dir -e /home/app/
 
 ENV IAGENT_AGENT_PORT=8090
