@@ -94,7 +94,7 @@ class OpenCodeBrain:
             text = line.decode(errors="replace").strip()
             if not text:
                 continue
-            logger.debug("opencode[%s]: %s", job_id, text[:200])
+            logger.info("opencode[%s]: %s", job_id, text[:500])
             pct = self._guess_progress(text)
             if pct is not None and pct > last_pct:
                 last_pct = min(pct, 90)
