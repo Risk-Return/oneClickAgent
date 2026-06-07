@@ -1,7 +1,7 @@
 # Job Stuck at "Dispatched" Status
 
 **Date:** 2026-06-07 15:09  
-**Status:** Open — device-side investigation needed  
+**Status:** Resolved — root cause identified, fix committed  
 **Gateway:** `https://deepwitai.cn/aiproduct`  
 **Job ID:** `019ea0ea-4d46-7b0f-9266-f51c584d019b`
 
@@ -36,36 +36,94 @@ port:     42000
 
 **Tunnel status:** Device is connected and stable.
 
-### Conclusion
+### Device-side (confirmed healthy)
 
-The cloud side is working correctly — the allocator found an idle agent, updated the job to `dispatched`, and sent a `JOB_DISPATCH` frame to the device. The device received it but never responded with `JOB_ACCEPTED`.
-
-## Device-Side Diagnosis
-
-Run these commands on the local device machine:
+Run on the device machine:
 
 ```bash
-# 1. Check if the container is running
+# Agent container is running and healthy
 docker ps --filter 'label=iagent.pool=true'
+# → agent-019ea0d0-a592-75, Up, healthy, port 42000
 
-# 2. Test agent HTTP API directly
-curl -s http://localhost:42000/healthz
-# Expected: {"status":"ok","busy":false}
+# Agent HTTP API responds correctly
+curl http://localhost:42000/healthz
+# → {"status":"ok","busy":false}
 
-# 3. Check device logs for dispatch errors
-journalctl -u iagent-device --since "10 minutes ago" | grep -i 'job\|dispatch\|error'
+# Agent has no current job — never received one
+curl http://localhost:42000/status
+# → {"agent_id":"","current_job":null}
 
-# 4. Check container logs for crashes
-docker logs agent-019ea0d0
+# Agent container logs — only healthchecks, no POST /jobs
+docker logs agent-019ea0d0-a592-75
+# → Only GET /healthz entries
 ```
 
-## Likely Causes
+**Device logs:** No `JOB_DISPATCH` frame handling logged. Only health checks against agent containers. No tunnel frame for this job was ever received.
 
-1. **Agent container crashed** — Docker container exists but the internal FastAPI process died
-2. **Agent HTTP API not responding** — network issue between device and agent container
-3. **OpenCode CLI not installed** — agent container missing `opencode` binary, causing job submission to fail
-4. **Disk/CPU/memory limit** — container resource limits preventing startup
+## Root Cause
 
-## Resolution
+**The bug is in the gateway, not the device.**
 
-Once the device-side issue is fixed, the stuck job will need to be cancelled and a new one submitted (no auto-retry for dispatched jobs).
+`gateway/internal/httpapi/jobs_handler.go:handleSubmitJob()` calls `Allocate()` which updates the job status to `dispatched` in PostgreSQL and allocates the agent, but **never sends the `JOB_DISPATCH` tunnel frame** to the device.
+
+The frame-sending logic (`dispatchJob()` → `hub.SendFrame()`) is only called from `dequeueNext()` for queued jobs. When an agent is immediately available (no queue), the dispatch is skipped entirely.
+
+**Affected code** (`gateway/internal/httpapi/jobs_handler.go`, lines 92-95):
+
+```go
+// Agent allocated — updated DB but NEVER sent the frame:
+_ = deps.Jobs.SetAgent(r.Context(), job.ID, agent.ID, agent.DeviceID)
+_ = deps.PushFilesToDevice(r.Context(), job, agent.DeviceID)
+// Missing: hub.SendFrame(FrameJobDispatch, ...)
+```
+
+The device never knew the job existed — its logs show zero evidence of any `JOB_DISPATCH` frame.
+
+## Fix
+
+Commit: `3f099ab` — `fix(gateway): send JOB_DISPATCH frame on immediate agent allocation`
+
+Added dispatch logic after agent allocation, mirroring the pattern from `dequeueNext()`:
+
+```go
+dispatchPayload := model.JobDispatchPayload{
+    JobID:       job.ID,
+    UserID:      job.UserID,
+    AgentID:     agent.ID,
+    Command:     job.Command,
+    SkillID:     job.SkillID,
+    SubmittedAt: job.SubmittedAt.UnixMilli(),
+}
+if job.Params != nil {
+    dispatchPayload.Params = *job.Params
+}
+if dispatchFrame, err := tunnel.NewFrame(model.FrameJobDispatch, dispatchPayload); err == nil {
+    if sendErr := deps.Hub.SendFrame(agent.DeviceID, dispatchFrame); sendErr != nil {
+        obs.Logger("http.jobs").Error("failed to send JOB_DISPATCH frame",
+            "job_id", job.ID.String(),
+            "agent_id", agent.ID.String(),
+            "error", sendErr,
+        )
+    }
+}
+```
+
+## Deployment
+
+| Step | Status |
+|------|--------|
+| Code fix | Committed & pushed to `main` |
+| `go build` | Pass |
+| `go vet` | Pass |
+| Deploy to `deepwitai.cn` | **Pending** — cloud-side deployment needed |
+| Stuck job cleanup | Cancel `019ea0ea-4d46` manually after deploy |
+
+## Verification
+
+After deploying the fix, the fix can be verified by:
+
+1. Cancel the stuck job (`019ea0ea-4d46-7b0f-9266-f51c584d019b`)
+2. Submit a new test job from the web UI
+3. Confirm `JOB_DISPATCH` appears in gateway logs
+4. Confirm device receives the frame and responds with `JOB_ACCEPTED`
+5. Job progresses from `dispatched` → `running` → `succeeded`
