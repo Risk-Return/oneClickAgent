@@ -14,10 +14,10 @@ logger = logging.getLogger(__name__)
 
 
 class JobState:
-    RUNNING = "RUNNING"
-    SUCCEEDED = "SUCCEEDED"
-    FAILED = "FAILED"
-    CANCELLED = "CANCELLED"
+    RUNNING = "running"
+    SUCCEEDED = "succeeded"
+    FAILED = "failed"
+    CANCELLED = "cancelled"
 
     TERMINAL = {SUCCEEDED, FAILED, CANCELLED}
 
@@ -62,6 +62,7 @@ class CallbackClient:
             "percent": record.percent,
             "message": record.message,
             "ts": _time.time(),
+            "terminal": record.status in JobState.TERMINAL,
         }
         if record.result is not None:
             payload["result"] = record.result.model_dump()

@@ -168,7 +168,7 @@ def create_app() -> FastAPI:
         if current != job_id:
             raise HTTPException(status_code=404)
         await state.executor.cancel()
-        return {"job_id": job_id, "status": "CANCELLED"}
+        return {"job_id": job_id, "status": "cancelled"}
 
     @app.get("/skills")
     async def get_skills(request: Request):
