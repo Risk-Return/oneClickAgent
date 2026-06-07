@@ -248,16 +248,16 @@ This will be captured by the credential relay for future reuse.
 
 ---
 
-## Site-Specific Patterns
+## QR Code Login Pattern (General)
 
-### Xiaohongshu (小红书) Login
+Many sites (e.g. Xiaohongshu, WeChat, Taobao) use QR code login.
+The flow: render QR to VNC display → user scans with phone → session is captured.
 
-Xiaohongshu uses a QR code login system. The site blocks headless browsers with a captcha.
-Use persistent context + HTTP/1.1 + headed mode to bypass.
+### Step 1: Launch Browser with Anti-Bot Config
 
 ```python
 from cloakbrowser import launch_persistent_context
-import time
+import time, base64
 
 ctx = launch_persistent_context(
     "/work/profile",
@@ -267,45 +267,72 @@ ctx = launch_persistent_context(
     args=[
         "--fingerprint-noise=false",
         "--fingerprint=42069",
-        "--disable-http2",
     ],
 )
 page = ctx.new_page()
 page.set_viewport_size({"width": 1920, "height": 1080})
+```
 
-page.goto("https://www.xiaohongshu.com", timeout=30000, wait_until="networkidle")
+### Step 2: Navigate and Detect Login Requirement
+
+```python
+page.goto("https://target-site.com", timeout=30000, wait_until="networkidle")
 time.sleep(5)
 
-title = page.title()
-url = page.url
-print(f"Title: {title}\nURL: {url}")
+if "login" in page.url.lower() or "captcha" in page.url.lower():
+    print("Login/captcha required — redirecting to login page")
+    page.goto("https://target-site.com/login", timeout=30000, wait_until="networkidle")
+    time.sleep(3)
+```
 
-if "captcha" in url.lower():
-    print("Captcha blocked — try again with a different fingerprint seed")
-elif "login" in url.lower():
-    print("On login page")
+### Step 3: Extract QR Code
 
-page.screenshot(path="/work/output/xiaohongshu_login.png", full_page=True)
-print("Login page screenshot saved")
+```python
+# Try common QR selectors
+qr_selectors = [".qrcode-img", ".qr-code", "img[src*='base64']",
+                "[class*=qrcode]", ".login-qrcode"]
+for sel in qr_selectors:
+    qr = page.locator(sel).first
+    if qr.count() > 0:
+        src = qr.get_attribute("src")
+        if src and src.startswith("data:image"):
+            b64 = src.split(",", 1)[1]
+            with open("/work/output/login_qr.png", "wb") as f:
+                f.write(base64.b64decode(b64))
+            print(f"QR saved from selector: {sel}")
+            break
 
+page.screenshot(path="/work/output/login_page.png", full_page=True)
+```
+
+### Step 4: Wait for User to Scan via VNC
+
+```python
+print("QR displayed on VNC — waiting for scan...")
+# The browser window is visible to the user via VNC on display :99
+# Wait for redirect after successful scan
+try:
+    page.wait_for_url("**/home**", timeout=120000)  # adjust pattern per site
+    print("Login successful")
+except Exception:
+    print("Login timeout — QR may have expired")
+```
+
+### Step 5: Save and Close
+
+```python
+page.context.storage_state(path="/work/profile/storage_state.json")
+print("Session saved")
 ctx.close()
 ```
 
-**QR Code Extraction:** Xiaohongshu login QR codes are rendered as base64 `<img>` with class `.qrcode-img`. In headed mode via VNC, the QR code is displayed directly in the browser window for the user to scan. To extract and save separately:
+### Anti-Bot Flags Quick Reference
 
-```python
-import base64
-qr = page.locator(".qrcode-img").first
-src = qr.get_attribute("src")
-if src and src.startswith("data:image"):
-    b64 = src.split(",", 1)[1]
-    with open("/work/output/xiaohongshu_qr.png", "wb") as f:
-        f.write(base64.b64decode(b64))
-```
-
-**Key flags for xiaohongshu:**
-- `--disable-http2` — required to bypass captcha challenge
-- `headless=False` — captcha detects headless mode
-- `launch_persistent_context` — keeps cookies between visits
-- `humanize=True` + `human_preset="careful"` — avoids behavioral detection
-- `--fingerprint=NNNNN` — consistent fingerprint for returning visitor
+| Flag | When to Use |
+|------|------------|
+| `--disable-http2` | Sites that challenge fresh HTTP/2 connections |
+| `headless=False` | Sites that detect headless mode |
+| `humanize=True` | Behavioral detection (mouse/keyboard patterns) |
+| `launch_persistent_context` | Keep cookies across visits, avoid incognito detection |
+| `--fingerprint=NNNNN` | Consistent fingerprint for returning visitor |
+| `--fingerprint-noise=false` | Sites using ML tampering detection |

@@ -4,6 +4,10 @@ ENV DEBIAN_FRONTEND=noninteractive
 
 RUN apt-get update && apt-get install -y --no-install-recommends \
     python3 python3-pip python3-venv curl ca-certificates \
+    libatk-bridge2.0-0 libatk1.0-0 libcups2 libdrm2 libgbm1 \
+    libnss3 libxcomposite1 libxdamage1 libxfixes3 libxkbcommon0 \
+    libxrandr2 libpango-1.0-0 libcairo2 libasound2t64 libx11-xcb1 \
+    fonts-noto-color-emoji fonts-freefont-ttf fonts-unifont \
   && rm -rf /var/lib/apt/lists/*
 
 RUN useradd --create-home --shell /bin/bash app \
@@ -13,7 +17,10 @@ RUN useradd --create-home --shell /bin/bash app \
 COPY --chown=app:app pyproject.toml /home/app/
 COPY --chown=app:app iagent_agent/ /home/app/iagent_agent/
 
-RUN python3 -m pip install --no-cache-dir --break-system-packages -e /home/app/
+RUN python3 -m pip install --no-cache-dir --break-system-packages -e /home/app/ \
+  && python3 -m pip install --no-cache-dir --break-system-packages cloakbrowser playwright
+
+RUN python3 -m playwright install-deps chromium 2>/dev/null || true
 
 ENV IAGENT_AGENT_PORT=8090
 ENV IAGENT_WORK_DIR=/work
@@ -21,14 +28,21 @@ ENV IAGENT_BROWSER_PROFILE=/work/profile
 ENV IAGENT_VNC_DISPLAY=:99
 ENV IAGENT_VNC_PORT=5901
 ENV IAGENT_VNC_ENABLED=false
-ENV IAGENT_BROWSER_CMD=camoufox
+ENV IAGENT_BROWSER_CMD=cloakbrowser
 ENV IAGENT_BRAIN=stub
+ENV CLOAKBROWSER_CACHE_DIR=/home/app/.cloakbrowser
+
+RUN mkdir -p /home/app/.claude/skills/default /home/app/.claude/skills/xiaohongshu-login
+COPY --chown=app:app skills/default/SKILL.md /home/app/.claude/skills/default/SKILL.md
+COPY --chown=app:app skills/xiaohongshu-login/SKILL.md /home/app/.claude/skills/xiaohongshu-login/SKILL.md
 
 VOLUME ["/work"]
 WORKDIR /home/app
 EXPOSE 8090
 
 USER app
+
+RUN python3 -m cloakbrowser install
 
 HEALTHCHECK --interval=15s --timeout=5s --start-period=10s --retries=3 \
   CMD curl -sf http://localhost:8090/healthz || exit 1
