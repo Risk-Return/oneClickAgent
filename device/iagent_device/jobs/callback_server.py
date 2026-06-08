@@ -105,17 +105,25 @@ class CallbackServer:
         message = event.get("message", event.get("status", ""))
         seq = event.get("event_seq", 0)
         terminal = event.get("terminal", False)
-        status = "running"
-        if terminal:
-            status = event.get("status", "succeeded")
+        status = event.get("status", "running")
 
-        await self._outbox.enqueue_and_send("JOB_PROGRESS", {
-            "job_id": job_id,
-            "status": status,
-            "percent": percent,
-            "message": message,
-            "event_seq": seq,
-        })
+        if terminal:
+            result_data = event.get("result", {})
+            error_data = event.get("error", {})
+            await self._outbox.enqueue_and_send("JOB_RESULT", {
+                "job_id": job_id,
+                "status": status,
+                "result": result_data,
+                "error_msg": error_data.get("message", "") if status != "succeeded" else "",
+            })
+        else:
+            await self._outbox.enqueue_and_send("JOB_PROGRESS", {
+                "job_id": job_id,
+                "status": "running",
+                "percent": percent,
+                "message": message,
+                "event_seq": seq,
+            })
 
     @staticmethod
     def _send_response(writer: asyncio.StreamWriter, status: int):
