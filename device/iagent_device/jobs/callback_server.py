@@ -94,7 +94,10 @@ class CallbackServer:
                 event = json.loads(body)
             except json.JSONDecodeError:
                 event = {}
-            await self._handle_event(job_id, event)
+            try:
+                await self._handle_event(job_id, event)
+            except Exception:
+                logger.exception("callback: handle_event failed for job=%s", job_id)
 
         self._send_response(writer, 204)
 
@@ -108,24 +111,27 @@ class CallbackServer:
         terminal = event.get("terminal", False)
         status = event.get("status", "running")
 
-        if terminal:
-            logger.info("callback: terminal event job=%s status=%s", job_id, status)
-            result_data = event.get("result", {})
-            error_data = event.get("error", {})
-            await self._outbox.enqueue_and_send("JOB_RESULT", {
-                "job_id": job_id,
-                "status": status,
-                "result": result_data,
-                "error_msg": error_data.get("message", "") if status != "succeeded" else "",
-            })
-        else:
-            await self._outbox.enqueue_and_send("JOB_PROGRESS", {
-                "job_id": job_id,
-                "status": "running",
-                "percent": percent,
-                "message": message,
-                "event_seq": seq,
-            })
+        try:
+            if terminal:
+                logger.info("callback: terminal event job=%s status=%s", job_id, status)
+                result_data = event.get("result", {})
+                error_data = event.get("error", {})
+                await self._outbox.enqueue_and_send("JOB_RESULT", {
+                    "job_id": job_id,
+                    "status": status,
+                    "result": result_data,
+                    "error_msg": error_data.get("message", "") if status != "succeeded" else "",
+                })
+            else:
+                await self._outbox.enqueue_and_send("JOB_PROGRESS", {
+                    "job_id": job_id,
+                    "status": "running",
+                    "percent": percent,
+                    "message": message,
+                    "event_seq": seq,
+                })
+        except Exception:
+            logger.exception("callback: failed to enqueue event for job=%s", job_id)
 
     @staticmethod
     def _send_response(writer: asyncio.StreamWriter, status: int):
