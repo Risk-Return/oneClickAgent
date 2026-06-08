@@ -80,11 +80,11 @@ def new_msg_id() -> str:
     return str(uuid.uuid4())
 
 
-def encode_frame(frame_type: FrameType, payload: dict | None = None, ack_id: str | None = None) -> str:
+def encode_frame(frame_type: FrameType, payload: dict | None = None, ack_id: str | None = None, msg_id: str | None = None) -> str:
     frame = {
         "v": FRAME_VERSION,
         "type": str(frame_type),
-        "msg_id": new_msg_id(),
+        "msg_id": msg_id or new_msg_id(),
         "ts": int(time.time() * 1000),
     }
     if ack_id:

@@ -5,6 +5,7 @@ handles cancellation. Signals pool reaper on terminal to release agent back to I
 
 import asyncio
 import logging
+import time
 
 from iagent_device.tunnel.codec import FrameType
 from iagent_device.tunnel.outbox import Outbox
@@ -54,10 +55,8 @@ class JobDispatcher:
         user_id = payload.get("user_id", "")
         command = payload.get("command", "")
         skill_id = payload.get("skill_id", "")
-        credential_ids_list = payload.get("credential_ids", [])
-        credential_ids_str = ",".join(credential_ids_list) if credential_ids_list else ""
 
-        self.job_repo.create(job_id, agent_id, user_id, command, skill_id, credential_ids_str)
+        self.job_repo.create(job_id, agent_id, user_id, command, skill_id)
         self.agent_repo.allocate(agent_id, user_id, job_id)
 
         await self.outbox.enqueue_and_send(FrameType.JOB_ACCEPTED, {"job_id": job_id})
@@ -71,24 +70,16 @@ class JobDispatcher:
             return
 
         try:
-            if credential_ids_list and self.cred_relay:
-                for cred in credential_ids_list:
-                    cred_payload = {
-                        "job_id": job_id,
-                        "credential_id": cred,
-                        "agent_id": agent_id,
-                    }
-                    await self.cred_relay.inject_credential(cred_payload)
-
             await self._wait_for_files(job_id)
 
-            await client.create_job(job_id, command, {}, self.callback_url, skill_id, workspace_dir=f"/work/workspaces/{job_id}")
+            await client.create_job(job_id, command, {}, callback_url=self.callback_url, skill_id=skill_id, workspace_dir=f"/work/workspaces/{job_id}")
             self.job_repo.update_status(job_id, "running")
             await self.outbox.enqueue_and_send(FrameType.JOB_PROGRESS, {
                 "job_id": job_id,
                 "status": "running",
                 "percent": 0,
                 "message": "Job started",
+                "event_seq": 0,
             })
 
             await self._poll_progress(client, job_id)
@@ -120,20 +111,29 @@ class JobDispatcher:
                 "ts": int(asyncio.get_event_loop().time() * 1000),
             })
 
-    async def _poll_progress(self, client, job_id: str):
+    async def _poll_progress(self, client, job_id: str, timeout_s: int = 3600):
+        """Poll agent GET /jobs/{job_id} until terminal status or timeout."""
         last_percent = 0
-        for _ in range(300):
+        event_seq = 1
+        deadline = time.monotonic() + timeout_s
+
+        while time.monotonic() < deadline:
             try:
                 status_data = await client.get_job(job_id)
                 status = status_data.get("status", "running")
-                percent = status_data.get("percent", last_percent)
+                percent = status_data.get("percent", 0)
                 message = status_data.get("message", "")
+                agent_event_seq = status_data.get("event_seq", 0)
 
-                if percent != last_percent or status in ("succeeded", "failed", "cancelled"):
+                if agent_event_seq > 0:
+                    event_seq = agent_event_seq
+
+                if percent != last_percent or status != "running":
                     await self.outbox.enqueue_and_send(FrameType.JOB_PROGRESS, {
                         "job_id": job_id,
                         "status": status,
                         "percent": percent,
+                        "event_seq": event_seq,
                         "message": message,
                     })
                     last_percent = percent
@@ -162,24 +162,29 @@ class JobDispatcher:
                         })
                     return
             except Exception:
-                pass
+                logger.warning("poll error for job %s", job_id, exc_info=True)
             await asyncio.sleep(2)
 
         self.job_repo.update_status(job_id, "failed")
+        logger.error("job %s timed out after %ds", job_id, timeout_s)
         await self.outbox.enqueue_and_send(FrameType.JOB_RESULT, {
             "job_id": job_id,
             "status": "failed",
-            "error_msg": "job timed out",
+            "error_msg": f"job timed out after {timeout_s}s",
         })
-
     async def handle_job_cancel(self, payload: dict):
         job_id = payload.get("job_id", "")
-        agent_id = payload.get("agent_id", "")
+        job = self.job_repo.get_by_id(job_id)
+        agent_id = job["agent_id"] if job else ""
 
         if agent_id:
             client = self.docker.get_client(agent_id)
             if client:
-                await client.cancel_job(job_id)
+                try:
+                    await client.cancel_job(job_id)
+                except Exception:
+                    logger.exception("agent cancel failed for job %s", job_id)
 
         self.job_repo.update_status(job_id, "cancelled")
-        self.agent_repo.release(agent_id)
+        if agent_id:
+            self.agent_repo.release(agent_id)

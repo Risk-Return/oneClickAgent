@@ -27,7 +27,7 @@ class AgentClient:
             r = await c.get(f"{self.base_url}/status")
             return r.json()
 
-    async def create_job(self, job_id: str, command: str, params: dict | None = None, inputs_dir: str = "", skill_id: str = "", workspace_dir: str = "") -> dict:
+    async def create_job(self, job_id: str, command: str, params: dict | None = None, inputs_dir: str = "", skill_id: str = "", workspace_dir: str = "", callback_url: str = "") -> dict:
         payload = {
             "job_id": job_id,
             "command": command,
@@ -37,6 +37,8 @@ class AgentClient:
         }
         if skill_id:
             payload["skill_id"] = skill_id
+        if callback_url:
+            payload["callback_url"] = callback_url
         async with httpx.AsyncClient(timeout=self.timeout) as c:
             r = await c.post(f"{self.base_url}/jobs", json=payload)
             return r.json()

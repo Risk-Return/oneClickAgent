@@ -21,7 +21,7 @@ class Outbox:
     async def enqueue_and_send(self, frame_type: FrameType, payload: dict):
         msg_id = new_msg_id()
         self.repo.enqueue(msg_id, str(frame_type), payload)
-        result = self.send_fn(frame_type, payload)
+        result = self.send_fn(frame_type, payload, msg_id=msg_id)
         if asyncio.iscoroutine(result):
             await result
 
@@ -32,6 +32,7 @@ class Outbox:
                 result = self.send_fn(
                     FrameType(entry["type"]),
                     json.loads(entry["payload"]),
+                    msg_id=entry["msg_id"],
                 )
                 if asyncio.iscoroutine(result):
                     await result

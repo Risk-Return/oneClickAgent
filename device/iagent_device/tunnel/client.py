@@ -64,6 +64,7 @@ class TunnelClient:
         self._pending_acks: dict[str, _PendingSend] = {}
         self._reconnect_attempt = 0
         self._processed_msg_ids: set[str] = set()
+        self._processed_msg_ids_max = 10000
         self._retransmit_task: asyncio.Task | None = None
 
     async def run(self):
@@ -129,8 +130,9 @@ class TunnelClient:
             except Exception:
                 logger.exception("hello_builder failed")
 
+        jobs = self.hello_extras.get("jobs", [])
         await self._send(FrameType.HELLO, hello_payload)
-        await self._send(FrameType.STATE_SYNC, {"jobs": [], "agents": self.hello_extras.get("agents", [])})
+        await self._send(FrameType.STATE_SYNC, {"jobs": jobs, "agents": agents})
 
     async def _read_loop(self, ws):
         async for msg in ws:
@@ -152,6 +154,8 @@ class TunnelClient:
             if msg_id in self._processed_msg_ids:
                 logger.debug("duplicate frame, already processed: %s", msg_id)
                 return
+            if len(self._processed_msg_ids) >= self._processed_msg_ids_max:
+                self._processed_msg_ids.clear()
             self._processed_msg_ids.add(msg_id)
 
         if frame_type == FrameType.ACK:
@@ -199,10 +203,10 @@ class TunnelClient:
                 break
             await asyncio.sleep(self.heartbeat_s)
 
-    async def _send(self, frame_type: FrameType, payload: dict, ack_id: str | None = None):
+    async def _send(self, frame_type: FrameType, payload: dict, ack_id: str | None = None, msg_id: str | None = None):
         if not self._ws:
             return
-        msg = encode_frame(frame_type, payload, ack_id)
+        msg = encode_frame(frame_type, payload, ack_id, msg_id)
         await self._ws.send(msg)
 
     def send_with_ack(self, frame_type: FrameType, payload: dict) -> asyncio.Future | None:
