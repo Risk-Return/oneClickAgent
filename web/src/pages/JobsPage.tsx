@@ -53,11 +53,21 @@ export function JobsPage() {
   const { data: skills } = useVisibleSkills();
   const { data: credentials } = useCredentials();
 
-  const [activeJobId, setActiveJobId] = useState<string | null>(null);
+  const storedJobId = sessionStorage.getItem("iagent-active-job");
+  const [activeJobId, setActiveJobId] = useState<string | null>(storedJobId);
   const [liveJob, setLiveJob] = useState<Job | null>(null);
 
   const detailJobId = routeJobId || activeJobId || "";
-  const { data: job, isLoading: jobLoading } = useJob(detailJobId);
+  const { data: job, isLoading: jobLoading } = useJob(detailJobId, { pollIntervalMs: 2000 });
+
+  const updateActiveJobId = (id: string | null) => {
+    setActiveJobId(id);
+    if (id) {
+      sessionStorage.setItem("iagent-active-job", id);
+    } else {
+      sessionStorage.removeItem("iagent-active-job");
+    }
+  };
 
   useEffect(() => {
     if (job && detailJobId) setLiveJob(job);
@@ -127,7 +137,7 @@ export function JobsPage() {
         onSuccess: (data) => {
           const job = (data as Record<string, unknown>).job as Job;
           setCommand(""); setFileIds([]); setSkillId(null); setCredentialIds([]);
-          setActiveJobId(job.id);
+          updateActiveJobId(job.id);
         },
         onError: (error: { code?: string; message?: string }) => {
           setInlineError(error.code === "QUEUE_FULL" ? t("jobs.queueFull") : (error.message || t("errors.somethingWentWrong")));

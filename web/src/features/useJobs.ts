@@ -9,11 +9,12 @@ export function useJobs(page = 0) {
   });
 }
 
-export function useJob(jobId: string) {
+export function useJob(jobId: string, opts?: { pollIntervalMs?: number }) {
   return useQuery({
     queryKey: ["jobs", jobId],
     queryFn: () => apiClient.get<Job>(`/jobs/${jobId}`),
     enabled: !!jobId,
+    refetchInterval: opts?.pollIntervalMs ?? false,
   });
 }
 
