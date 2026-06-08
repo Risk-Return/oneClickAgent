@@ -168,7 +168,7 @@ func NewHarness(t *testing.T) *E2EHarness {
 			return nil
 		},
 		OnJobProgress: func(ctx context.Context, deviceID model.UUID, payload model.JobProgressPayload) error {
-			_ = jobs.UpdateProgress(ctx, payload.JobID, payload.Percent, payload.Message)
+			_ = jobs.UpdateProgress(ctx, payload.JobID, payload.Percent, payload.Message, payload.Status)
 			if payload.Status == model.JobRunning {
 				_ = jobs.UpdateStatus(ctx, payload.JobID, payload.Status)
 			}

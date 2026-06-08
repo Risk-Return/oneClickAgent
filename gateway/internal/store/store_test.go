@@ -464,7 +464,7 @@ func TestJobLifecycle(t *testing.T) {
 	}
 
 	// Update progress
-	if err := js.UpdateProgress(ctx, job.ID, 50, "halfway done"); err != nil {
+	if err := js.UpdateProgress(ctx, job.ID, 50, "halfway done", model.JobRunning); err != nil {
 		t.Fatalf("update progress: %v", err)
 	}
 	progress, _ := js.GetByID(ctx, job.ID)

@@ -30,7 +30,7 @@ type DeviceConn struct {
 	done     chan struct{}
 	helloReceived atomic.Bool
 
-	processed   sync.Map // map[string]bool — dedup by msg_id for idempotency
+	processed   sync.Map // map[string]int64 — dedup by msg_id → unix ts for pruning
 	frameCount  atomic.Int64
 	frameLastTS atomic.Int64 // unix seconds of last frame rate reset
 
@@ -245,7 +245,8 @@ func (c *DeviceConn) StartWritePump(ctx context.Context) {
 func (c *DeviceConn) handleFrame(ctx context.Context, frame model.Frame) error {
 	// Idempotency: skip already-processed msg_ids (spec §2).
 	if frame.Type != model.FrameAck && frame.Type != model.FramePing && frame.Type != model.FramePong {
-		if _, loaded := c.processed.LoadOrStore(frame.MsgID, true); loaded {
+		now := time.Now().Unix()
+		if _, loaded := c.processed.LoadOrStore(frame.MsgID, now); loaded {
 			c.logger.Debug("duplicate frame, acking only", "msg_id", frame.MsgID)
 			c.sendAck(frame.MsgID)
 			return nil
@@ -477,6 +478,32 @@ func (c *DeviceConn) sendAck(msgID string) {
 	defer c.mu.Unlock()
 	if err := c.ws.WriteMessage(websocket.TextMessage, data); err != nil {
 		c.logger.Error("ack write error", "error", err)
+	}
+}
+
+// StartDedupPruner periodically prunes the dedup map to prevent unbounded memory growth.
+// Entries older than 5 minutes are removed; runs every 60 seconds.
+func (c *DeviceConn) StartDedupPruner(ctx context.Context) {
+	const maxAge = 5 * 60 // 5 minutes
+	ticker := time.NewTicker(60 * time.Second)
+	defer ticker.Stop()
+
+	for {
+		select {
+		case <-ctx.Done():
+			return
+		case <-c.done:
+			return
+		case <-ticker.C:
+			cutoff := time.Now().Unix() - maxAge
+			c.processed.Range(func(key, value interface{}) bool {
+				ts, ok := value.(int64)
+				if ok && ts < cutoff {
+					c.processed.Delete(key)
+				}
+				return true
+			})
+		}
 	}
 }
 

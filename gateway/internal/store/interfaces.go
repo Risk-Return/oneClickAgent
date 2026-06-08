@@ -55,7 +55,7 @@ type JobStoreInterface interface {
 	Create(ctx context.Context, j *model.Job) error
 	GetByID(ctx context.Context, id model.UUID) (*model.Job, error)
 	UpdateStatus(ctx context.Context, id model.UUID, status model.JobStatus) error
-	UpdateProgress(ctx context.Context, id model.UUID, percent int, message string) error
+	UpdateProgress(ctx context.Context, id model.UUID, percent int, message string, status model.JobStatus) error
 	UpdateResult(ctx context.Context, id model.UUID, status model.JobStatus, result *json.RawMessage) error
 	SetAgent(ctx context.Context, jobID, agentID, deviceID model.UUID) error
 	ClearAgent(ctx context.Context, jobID model.UUID) error

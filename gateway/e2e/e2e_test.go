@@ -165,7 +165,7 @@ func TestE2E_SubmitJobAndReceiveResult(t *testing.T) {
 		})
 
 		// Send result
-		resultVal := "{\"output\":\"hello from e2e\"}"
+		resultVal := json.RawMessage(`{"output":"hello from e2e"}`)
 		respFrame := mockdevice.NewFrame(model.FrameJobResult, model.JobResultPayload{
 			JobID:  payload.JobID,
 			Status: model.JobSucceeded,
@@ -381,7 +381,7 @@ func TestE2E_DequeueOnAgentAvailable(t *testing.T) {
 	md.On(model.FrameJobDispatch, func(dev *mockdevice.MockDevice, f model.Frame) *model.Frame {
 		var payload model.JobDispatchPayload
 		json.Unmarshal(f.Payload, &payload)
-		resultVal := "dequeued"
+		resultVal := json.RawMessage(`"dequeued"`)
 		respFrame := mockdevice.NewFrame(model.FrameJobResult, model.JobResultPayload{
 			JobID:  payload.JobID,
 			Status: model.JobSucceeded,

@@ -202,6 +202,7 @@ func (h *Hub) Register(conn *DeviceConn) {
 	_ = h.registry.Register(context.Background(), conn.DeviceID(), h.nodeID)
 
 	go conn.StartRetransmitter(context.Background())
+	go conn.StartDedupPruner(context.Background())
 
 	h.logger.Info("device registered", "device_id", conn.DeviceID(), "node", h.nodeID)
 }

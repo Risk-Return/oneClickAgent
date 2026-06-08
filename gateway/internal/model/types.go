@@ -680,10 +680,10 @@ type JobProgressPayload struct {
 }
 
 type JobResultPayload struct {
-	JobID    UUID      `json:"job_id"`
-	Status   JobStatus `json:"status"`
-	Result   *string   `json:"result,omitempty"`
-	ErrorMsg *string   `json:"error_msg,omitempty"`
+	JobID    UUID             `json:"job_id"`
+	Status   JobStatus        `json:"status"`
+	Result   *json.RawMessage `json:"result,omitempty"`
+	ErrorMsg *string          `json:"error_msg,omitempty"`
 }
 
 type JobRejectedPayload struct {
@@ -763,6 +763,7 @@ type SkillSyncPayload struct {
 
 type FilePushBeginPayload struct {
 	FileID      UUID   `json:"file_id"`
+	JobID       UUID   `json:"job_id"`
 	FileName    string `json:"file_name"`
 	SizeBytes   int64  `json:"size_bytes"`
 	TotalChunks int    `json:"total_chunks"`
@@ -941,7 +942,7 @@ type VNCOpenPayload struct {
 	JobID        UUID   `json:"job_id"`
 	RelayURL     string `json:"relay_url"`
 	SessionToken string `json:"session_token"`
-	TTLSecs      int    `json:"ttl_secs"`
+	TTLSecs      int    `json:"ttl_s"`
 }
 
 // VNCOpenedPayload is the payload for VNC_OPENED frame (device → gateway).

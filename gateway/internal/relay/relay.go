@@ -121,7 +121,7 @@ func (r *FileRelay) StageFile(ctx context.Context, userID model.UUID, fileName s
 }
 
 // PushFile sends a staged file to a device over the tunnel.
-func (r *FileRelay) PushFile(ctx context.Context, fileID model.UUID, deviceID model.UUID) error {
+func (r *FileRelay) PushFile(ctx context.Context, fileID, jobID, deviceID model.UUID) error {
 	file, err := r.store.GetByID(ctx, fileID)
 	if err != nil {
 		return err
@@ -146,6 +146,7 @@ func (r *FileRelay) PushFile(ctx context.Context, fileID model.UUID, deviceID mo
 	// Send FILE_PUSH_BEGIN
 	beginPayload := model.FilePushBeginPayload{
 		FileID:      file.ID,
+		JobID:       jobID,
 		FileName:    file.Name,
 		SizeBytes:   file.Size,
 		TotalChunks: totalChunks,

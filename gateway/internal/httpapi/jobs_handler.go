@@ -1,14 +1,17 @@
 package httpapi
 
 import (
+	"context"
 	"encoding/base64"
 	"encoding/json"
 	"net/http"
 
 	"github.com/go-chi/chi/v5"
+	"github.com/oneClickAgent/gateway/internal/credvault"
 	"github.com/oneClickAgent/gateway/internal/model"
 	"github.com/oneClickAgent/gateway/internal/obs"
 	"github.com/oneClickAgent/gateway/internal/pubsub"
+	"github.com/oneClickAgent/gateway/internal/store"
 	"github.com/oneClickAgent/gateway/internal/tunnel"
 )
 
@@ -61,6 +64,11 @@ func (deps *Dependencies) handleSubmitJob() http.HandlerFunc {
 			_ = deps.Files.LinkToJob(r.Context(), fileID, job.ID)
 		}
 
+		// Link credentials to job (before dispatch, for both immediate and queued paths)
+		for _, credID := range req.CredentialIDs {
+			_ = deps.Creds.LinkToJob(r.Context(), job.ID, credID)
+		}
+
 		// Try to allocate an agent
 		agent, err := deps.Allocator.Allocate(r.Context(), job)
 		if err != nil {
@@ -96,12 +104,14 @@ func (deps *Dependencies) handleSubmitJob() http.HandlerFunc {
 
 		// Send JOB_DISPATCH frame to device
 		dispatchPayload := model.JobDispatchPayload{
-			JobID:       job.ID,
-			UserID:      job.UserID,
-			AgentID:     agent.ID,
-			Command:     job.Command,
-			SkillID:     job.SkillID,
-			SubmittedAt: job.SubmittedAt.UnixMilli(),
+			JobID:         job.ID,
+			UserID:        job.UserID,
+			AgentID:       agent.ID,
+			Command:       job.Command,
+			SkillID:       job.SkillID,
+			FileIDs:       req.FileIDs,
+			CredentialIDs: req.CredentialIDs,
+			SubmittedAt:   job.SubmittedAt.UnixMilli(),
 		}
 		if job.Params != nil {
 			dispatchPayload.Params = *job.Params
@@ -116,32 +126,8 @@ func (deps *Dependencies) handleSubmitJob() http.HandlerFunc {
 			}
 		}
 
-		// Push credentials if requested
-		for _, credID := range req.CredentialIDs {
-			cred, err := deps.Creds.GetByID(r.Context(), credID)
-			if err != nil || cred == nil || cred.UserID != userID {
-				continue // skip invalid/unowned credentials
-			}
-			if !deps.CredVault.IsConfigured() {
-				continue
-			}
-			plaintext, err := deps.CredVault.Decrypt(cred.StorageStateEnc, cred.Nonce, cred.AuthTag, cred.SHA256)
-			if err != nil {
-				continue
-			}
-			// Send CRED_PUSH over tunnel
-			frame, _ := tunnel.NewFrame(model.FrameCredPush, model.CredPushPayload{
-				JobID:        job.ID,
-				CredentialID: cred.ID,
-				AgentID:      agent.ID,
-				Origin:       cred.Origin,
-				StorageState: base64.StdEncoding.EncodeToString(plaintext),
-				SHA256:       cred.SHA256,
-			})
-			_ = deps.Hub.SendFrame(agent.DeviceID, frame)
-			_ = deps.Creds.LinkToJob(r.Context(), job.ID, cred.ID)
-			_ = deps.Creds.Touch(r.Context(), cred.ID)
-		}
+		// Push credentials
+		_ = PushCredentialsForJob(r.Context(), job.ID, agent.ID, agent.DeviceID, deps.Creds, deps.CredVault, deps.Hub)
 
 		// Publish event
 		deps.Broker.PublishScoped(pubsub.JobTopic(job.ID), userID, model.WSEvent{
@@ -243,8 +229,9 @@ func (deps *Dependencies) handleCancelJob() http.HandlerFunc {
 		// Send JOB_CANCEL over tunnel if agent is allocated
 		if job.AgentID != nil && job.DeviceID != nil {
 			frame, _ := tunnel.NewFrame(model.FrameJobCancel, map[string]interface{}{
-				"job_id": jobID.String(),
-				"reason": "user requested",
+				"job_id":   jobID.String(),
+				"agent_id": job.AgentID.String(),
+				"reason":   "user requested",
 			})
 			_ = deps.Hub.SendFrame(*job.DeviceID, frame)
 		}
@@ -287,5 +274,36 @@ func (deps *Dependencies) handleGetJobResult() http.HandlerFunc {
 
 // PushFilesToDevice pushes files associated with a job to the device.
 func (deps *Dependencies) PushFilesToDevice(ctx interface{}, job *model.Job, deviceID model.UUID) error {
+	return nil
+}
+
+// PushCredentialsForJob decrypts and pushes all linked credentials for a job over the tunnel.
+func PushCredentialsForJob(ctx interface{}, jobID, agentID, deviceID model.UUID, credStore *store.CredentialStore, credVault *credvault.Vault, hub *tunnel.Hub) error {
+	if !credVault.IsConfigured() {
+		return nil
+	}
+
+	creds, err := credStore.ListByJob(ctx.(context.Context), jobID)
+	if err != nil {
+		return err
+	}
+
+	for _, cred := range creds {
+		plaintext, err := credVault.Decrypt(cred.StorageStateEnc, cred.Nonce, cred.AuthTag, cred.SHA256)
+		if err != nil {
+			continue
+		}
+		frame, _ := tunnel.NewFrame(model.FrameCredPush, model.CredPushPayload{
+			JobID:        jobID,
+			CredentialID: cred.ID,
+			AgentID:      agentID,
+			Origin:       cred.Origin,
+			StorageState: base64.StdEncoding.EncodeToString(plaintext),
+			SHA256:       cred.SHA256,
+		})
+		_ = hub.SendFrame(deviceID, frame)
+		_ = credStore.Touch(context.Background(), cred.ID)
+	}
+
 	return nil
 }

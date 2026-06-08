@@ -55,11 +55,11 @@ func (s *JobStore) UpdateStatus(ctx context.Context, id model.UUID, status model
 	return err
 }
 
-func (s *JobStore) UpdateProgress(ctx context.Context, id model.UUID, percent int, message string) error {
+func (s *JobStore) UpdateProgress(ctx context.Context, id model.UUID, percent int, message string, status model.JobStatus) error {
 	now := time.Now().UTC()
 	_, err := s.db.Pool.Exec(ctx,
-		`UPDATE jobs SET percent=$2, progress_message=$3, status=CASE WHEN $4='running' THEN $4 ELSE status END, updated_at=$5 WHERE id=$1`,
-		id, percent, message, model.JobRunning, now,
+		`UPDATE jobs SET percent=$2, progress_message=$3, status=CASE WHEN $4 NOT IN ('succeeded','failed','cancelled') THEN $4 ELSE status END, updated_at=$5 WHERE id=$1`,
+		id, percent, message, status, now,
 	)
 	return err
 }

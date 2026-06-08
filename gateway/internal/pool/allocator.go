@@ -16,13 +16,15 @@ import (
 
 // Allocator handles agent pool lifecycle and job queue management.
 type Allocator struct {
-	agents   store.AgentStoreInterface
-	jobs     store.JobStoreInterface
-	hub      *tunnel.Hub
-	broker   *pubsub.Broker
-	queueTTL time.Duration
-	maxQueue int
-	logger   *slog.Logger
+	agents         store.AgentStoreInterface
+	jobs           store.JobStoreInterface
+	files          store.FileStoreInterface
+	pushCredentials func(ctx context.Context, jobID, agentID, deviceID model.UUID) error
+	hub            *tunnel.Hub
+	broker         *pubsub.Broker
+	queueTTL       time.Duration
+	maxQueue       int
+	logger         *slog.Logger
 }
 
 // NewAllocator creates a new agent pool allocator.
@@ -96,6 +98,12 @@ func (a *Allocator) Allocate(ctx context.Context, job *model.Job) (*model.Agent,
 	job.Status = model.JobDispatched
 
 	return agent, nil
+}
+
+// SetDispatchDeps wires the file store and credential push hook for dispatch payloads.
+func (a *Allocator) SetDispatchDeps(files store.FileStoreInterface, pushCredentials func(ctx context.Context, jobID, agentID, deviceID model.UUID) error) {
+	a.files = files
+	a.pushCredentials = pushCredentials
 }
 
 // Release returns an agent to the idle pool and triggers dequeue.
@@ -178,12 +186,21 @@ func (a *Allocator) expireQueued(ctx context.Context) {
 
 // dispatchJob sends a JOB_DISPATCH frame over the tunnel to the device.
 func (a *Allocator) dispatchJob(ctx context.Context, job *model.Job, agent *model.Agent) error {
+	var fileIDs []model.UUID
+	if a.files != nil {
+		files, _ := a.files.ListByJob(ctx, job.ID)
+		for _, f := range files {
+			fileIDs = append(fileIDs, f.ID)
+		}
+	}
+
 	payload := model.JobDispatchPayload{
 		JobID:       job.ID,
 		UserID:      job.UserID,
 		AgentID:     agent.ID,
 		Command:     job.Command,
 		SkillID:     job.SkillID,
+		FileIDs:     fileIDs,
 		SubmittedAt: job.SubmittedAt.UnixMilli(),
 	}
 
@@ -196,7 +213,15 @@ func (a *Allocator) dispatchJob(ctx context.Context, job *model.Job, agent *mode
 		return err
 	}
 
-	return a.hub.SendFrame(agent.DeviceID, frame)
+	if err := a.hub.SendFrame(agent.DeviceID, frame); err != nil {
+		return err
+	}
+
+	if a.pushCredentials != nil {
+		_ = a.pushCredentials(ctx, job.ID, agent.ID, agent.DeviceID)
+	}
+
+	return nil
 }
 
 // StartExpiryTicker runs a background goroutine to expire queued jobs.

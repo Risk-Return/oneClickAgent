@@ -130,7 +130,7 @@ func (m *MockJobStore) UpdateStatus(ctx context.Context, id model.UUID, status m
 	return nil
 }
 
-func (m *MockJobStore) UpdateProgress(ctx context.Context, id model.UUID, percent int, message string) error {
+func (m *MockJobStore) UpdateProgress(ctx context.Context, id model.UUID, percent int, message string, status model.JobStatus) error {
 	m.mu.Lock()
 	defer m.mu.Unlock()
 	if j, ok := m.jobs[id]; ok {

@@ -5,6 +5,9 @@ package main
 
 import (
 	"context"
+	"crypto/sha256"
+	"encoding/base64"
+	"encoding/hex"
 	"encoding/json"
 	"fmt"
 	"log/slog"
@@ -114,6 +117,9 @@ func main() {
 	// VNC Relay
 	vncStore := store.NewVNCSessionStore(db)
 	credStore := store.NewCredentialStore(db)
+	allocator.SetDispatchDeps(files, func(ctx context.Context, jobID, agentID, deviceID model.UUID) error {
+		return httpapi.PushCredentialsForJob(ctx, jobID, agentID, deviceID, credStore, credVault, tunnelHub)
+	})
 	vncRelay := vncrelay.NewRelay(
 		tunnelHub.NodeID(),
 		int64(cfg.VNCSessionBufBytes),
@@ -136,7 +142,7 @@ func main() {
 			return nil
 		},
 		OnJobProgress: func(ctx context.Context, deviceID model.UUID, payload model.JobProgressPayload) error {
-			if err := jobs.UpdateProgress(ctx, payload.JobID, payload.Percent, payload.Message); err != nil {
+			if err := jobs.UpdateProgress(ctx, payload.JobID, payload.Percent, payload.Message, payload.Status); err != nil {
 				return err
 			}
 			broker.Publish(pubsub.JobTopic(payload.JobID), model.WSEvent{
@@ -146,12 +152,7 @@ func main() {
 			return nil
 		},
 		OnJobResult: func(ctx context.Context, deviceID model.UUID, payload model.JobResultPayload) error {
-			var result *json.RawMessage
-			if payload.Result != nil {
-				r := json.RawMessage(*payload.Result)
-				result = &r
-			}
-			if err := jobs.UpdateResult(ctx, payload.JobID, payload.Status, result); err != nil {
+			if err := jobs.UpdateResult(ctx, payload.JobID, payload.Status, payload.Result); err != nil {
 				return err
 			}
 			broker.Publish(pubsub.JobTopic(payload.JobID), model.WSEvent{
@@ -164,6 +165,34 @@ func main() {
 				_ = allocator.Release(ctx, *job.AgentID)
 				// Cleanup files
 				_ = fileRelay.CleanupJobFiles(ctx, payload.JobID)
+			}
+			return nil
+		},
+		OnJobRejected: func(ctx context.Context, deviceID model.UUID, payload model.JobRejectedPayload) error {
+			_ = jobs.UpdateResult(ctx, payload.JobID, model.JobFailed, nil)
+			if job, _ := jobs.GetByID(ctx, payload.JobID); job != nil && job.AgentID != nil {
+				_ = allocator.Release(ctx, *job.AgentID)
+			}
+			broker.Publish(pubsub.JobTopic(payload.JobID), model.WSEvent{
+				Type:  model.WSEventJobResult,
+				Topic: pubsub.JobTopic(payload.JobID),
+			})
+			return nil
+		},
+		OnStateSync: func(ctx context.Context, deviceID model.UUID, payload model.StateSyncPayload) error {
+			deviceJobs := make(map[model.UUID]bool)
+			for _, j := range payload.Jobs {
+				deviceJobs[j.JobID] = true
+			}
+			agents, _ := agents.ListByDevice(ctx, deviceID)
+			for _, a := range agents {
+				activeJobs, _ := jobs.ListByAgent(ctx, a.ID)
+				for _, j := range activeJobs {
+					if j.Status.IsActive() && !deviceJobs[j.ID] {
+						_ = jobs.UpdateResult(ctx, j.ID, model.JobFailed, nil)
+						_ = allocator.Release(ctx, a.ID)
+					}
+				}
 			}
 			return nil
 		},
@@ -183,18 +212,81 @@ func main() {
 			vncRelay.CloseSession(payload.SessionID, "device reported error: "+payload.Error)
 			return nil
 		},
+		OnVNCClose: func(ctx context.Context, deviceID model.UUID, payload json.RawMessage) error {
+			var p model.VNCOpenedPayload
+			if err := json.Unmarshal(payload, &p); err != nil {
+				return err
+			}
+			vncRelay.CloseSession(p.SessionID, "device closed session")
+			return vncStore.Close(ctx, p.SessionID)
+		},
 		OnCredPushAck: func(ctx context.Context, deviceID model.UUID, payload model.CredPushAckPayload) error {
-			if payload.Status == "ok" {
+			if payload.Status == "INJECTED" {
 				return credStore.Touch(ctx, payload.CredentialID)
 			}
 			slog.Error("credential push failed", "job_id", payload.JobID, "cred_id", payload.CredentialID, "error", payload.Error)
 			return nil
 		},
+		OnCredCapture: func(ctx context.Context, deviceID model.UUID, payload model.CredCapturePayload) error {
+			if !credVault.IsConfigured() {
+				slog.Error("credential capture failed: vault not configured")
+				return nil
+			}
+			data, err := base64.StdEncoding.DecodeString(payload.Data)
+			if err != nil {
+				slog.Error("credential capture: invalid base64 data", "error", err)
+				return err
+			}
+			hasher := sha256.New()
+			hasher.Write(data)
+			if hex.EncodeToString(hasher.Sum(nil)) != payload.SHA256 {
+				slog.Error("credential capture: sha256 mismatch")
+				return fmt.Errorf("sha256 mismatch")
+			}
+			enc, err := credVault.Encrypt(data)
+			if err != nil {
+				slog.Error("credential capture: encrypt failed", "error", err)
+				return err
+			}
+			job, _ := jobs.GetByID(ctx, payload.JobID)
+			if job == nil {
+				slog.Error("credential capture: job not found", "job_id", payload.JobID)
+				return fmt.Errorf("job not found")
+			}
+			cred := &model.BrowserCredential{
+				UserID:          job.UserID,
+				Label:           payload.Label,
+				Origin:          payload.Origin,
+				StorageStateEnc: enc.StorageStateEnc,
+				Nonce:           enc.Nonce,
+				AuthTag:         enc.AuthTag,
+				KeyID:           "default",
+				SHA256:          enc.SHA256,
+			}
+			if err := credStore.Create(ctx, cred); err != nil {
+				slog.Error("credential capture: store create failed", "error", err)
+				return err
+			}
+			ackFrame, _ := tunnel.NewFrame(model.FrameCredCaptureAck, model.CredCaptureAckPayload{
+				CredentialID: cred.ID,
+				SessionID:    payload.SessionID,
+				Status:       "STORED",
+			})
+			_ = tunnelHub.SendFrame(deviceID, ackFrame)
+			return nil
+		},
 		OnCredCaptureAck: func(ctx context.Context, deviceID model.UUID, payload model.CredCaptureAckPayload) error {
-			if payload.Status != "ok" {
-				slog.Error("credential capture failed", "session_id", payload.SessionID, "error", payload.Error)
+			if payload.Status != "STORED" {
+				slog.Error("credential capture ack failed", "session_id", payload.SessionID, "error", payload.Error)
 			}
 			return nil
+		},
+		OnSkillDispatchAck: func(ctx context.Context, deviceID model.UUID, payload json.RawMessage) error {
+			slog.Info("skill dispatch ack received", "device_id", deviceID)
+			return nil
+		},
+		OnFilePurged: func(ctx context.Context, deviceID model.UUID, payload json.RawMessage) error {
+			return fileRelay.CleanupStagedFiles(ctx)
 		},
 		OnFilePullBegin: func(ctx context.Context, deviceID model.UUID, payload model.FilePullBeginPayload) error {
 			return fileRelay.OnFilePullBegin(ctx, deviceID, payload)
