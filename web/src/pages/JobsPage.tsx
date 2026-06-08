@@ -116,8 +116,13 @@ export function JobsPage() {
     }
     setInlineError(null);
 
+    const selectedSkill = skillId ? skills?.find((s) => s.id === skillId) : null;
+    const composedCommand = selectedSkill
+      ? `Please use the skill "${selectedSkill.name}" to complete the following task. Save all output files to /work/output (markdown summaries, JSON, Excel, DOCX, HTML, PDF, etc.).\n\nTask:\n${command.trim()}`
+      : `Complete the following task. Save all output files to /work/output (markdown summaries, JSON, Excel, DOCX, HTML, PDF, etc.).\n\nTask:\n${command.trim()}`;
+
     submitJob.mutate(
-      { command: command.trim(), file_ids: fileIds.length > 0 ? fileIds : undefined, skill_id: skillId || undefined, credential_ids: credentialIds.length > 0 ? credentialIds : undefined },
+      { command: composedCommand, file_ids: fileIds.length > 0 ? fileIds : undefined, skill_id: skillId || undefined, credential_ids: credentialIds.length > 0 ? credentialIds : undefined },
       {
         onSuccess: (job) => {
           setCommand(""); setFileIds([]); setSkillId(null); setCredentialIds([]);
