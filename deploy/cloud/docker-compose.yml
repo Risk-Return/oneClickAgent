@@ -6,6 +6,7 @@ services:
       POSTGRES_DB: iagent
       POSTGRES_USER: iagent
       POSTGRES_PASSWORD: ${IAGENT_DB_PASSWORD}
+      POSTGRES_INITDB_ARGS: "--encoding=UTF8 --lc-collate=C.utf8 --lc-ctype=C.utf8"
     volumes:
       - pgdata:/var/lib/postgresql/data
     healthcheck:
