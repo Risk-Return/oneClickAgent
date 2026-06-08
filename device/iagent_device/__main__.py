@@ -225,6 +225,13 @@ async def _handle_agent_action(payload: dict, docker_mgr: DockerManager, outbox:
         if agent:
             docker_mgr._remove_container(agent)
         docker_mgr.repo.delete(agent_id)
+        await outbox.enqueue_and_send(FrameType.AGENT_STATUS, {
+            "agent_id": agent_id,
+            "status": "drained",
+            "health": "stopped",
+            "restarts": 0,
+            "ts": int(time.time() * 1000),
+        })
     elif action == "restart":
         docker_mgr._restart_container(agent_id)
 
