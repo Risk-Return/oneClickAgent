@@ -100,6 +100,7 @@ class CallbackServer:
 
     async def _handle_event(self, job_id: str, event: dict):
         if not self._outbox:
+            logger.warning("callback: no outbox configured, dropping event for job=%s", job_id)
             return
         percent = event.get("percent", event.get("progress", 0))
         message = event.get("message", event.get("status", ""))
@@ -108,6 +109,7 @@ class CallbackServer:
         status = event.get("status", "running")
 
         if terminal:
+            logger.info("callback: terminal event job=%s status=%s", job_id, status)
             result_data = event.get("result", {})
             error_data = event.get("error", {})
             await self._outbox.enqueue_and_send("JOB_RESULT", {
