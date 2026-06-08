@@ -38,7 +38,7 @@ class VNCBridge:
         agent_id = payload.get("agent_id", "")
         relay_url = payload["relay_url"]
         session_token = payload["session_token"]
-        ttl_s = payload.get("ttl_s", 0)
+        ttl_s = payload.get("ttl_s", 0) or payload.get("ttl_secs", 0)
 
         self.repo.create(session_id, "", agent_id, relay_url, session_token)
 
