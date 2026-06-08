@@ -21,15 +21,18 @@ class CallbackServer:
         host: str = "127.0.0.1",
         port: int = 0,
         outbox=None,
+        advertise_host: str | None = None,
     ):
         self.host = host
         self.port = port
+        self._advertise_host = advertise_host
         self._outbox = outbox
         self._server: asyncio.AbstractServer | None = None
 
     @property
     def callback_url(self) -> str:
-        return f"http://{self.host}:{self.port}"
+        h = self._advertise_host or self.host
+        return f"http://{h}:{self.port}"
 
     async def start(self):
         self._server = await asyncio.start_server(

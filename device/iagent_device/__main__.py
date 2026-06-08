@@ -124,7 +124,7 @@ async def cmd_run(cfg):
     monitor = Monitor(agent_repo, outbox, docker_mgr)
 
     from iagent_device.jobs.callback_server import CallbackServer
-    callback_server = CallbackServer("127.0.0.1", 0, outbox)
+    callback_server = CallbackServer("0.0.0.0", 0, outbox, advertise_host="172.17.0.1")
     await callback_server.start()
 
     dispatcher = JobDispatcher(
