@@ -164,8 +164,8 @@ class TunnelClient:
             if entry is not None:
                 if not entry.future.done():
                     entry.future.set_result(True)
-                if self.outbox:
-                    self.outbox.ack(ack_id)
+            if self.outbox:
+                self.outbox.ack(ack_id)
             return
 
         if frame_type == FrameType.PING:
