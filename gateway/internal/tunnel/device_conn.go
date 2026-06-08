@@ -253,6 +253,12 @@ func (c *DeviceConn) handleFrame(ctx context.Context, frame model.Frame) error {
 		}
 	}
 
+	// Send ACK for all non-hello/non-ping/non-pong/non-ack frames (§2)
+	if frame.Type != model.FrameAck && frame.Type != model.FramePing &&
+		frame.Type != model.FramePong && frame.Type != model.FrameHello {
+		defer c.sendAck(frame.MsgID)
+	}
+
 	switch frame.Type {
 	case model.FrameHello:
 		c.sendAck(frame.MsgID)
