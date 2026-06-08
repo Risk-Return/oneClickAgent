@@ -174,6 +174,7 @@ type ErrorCode string
 
 const (
 	ErrCodeQueueTimeout     ErrorCode = "QUEUE_TIMEOUT"
+	ErrCodeDispatchTimeout  ErrorCode = "DISPATCH_TIMEOUT"
 	ErrCodeQueueFull        ErrorCode = "QUEUE_FULL"
 	ErrCodeDeviceOffline    ErrorCode = "DEVICE_OFFLINE"
 	ErrCodeAgentUnavailable ErrorCode = "AGENT_UNAVAILABLE"

@@ -203,6 +203,10 @@ func (m *MockJobStore) ExpireQueued(ctx context.Context) (int64, error) {
 	return 0, nil
 }
 
+func (m *MockJobStore) ExpireDispatched(ctx context.Context, timeout time.Duration) (int64, error) {
+	return 0, nil
+}
+
 func (m *MockJobStore) CountQueuedByUser(ctx context.Context, userID model.UUID) (int, error) {
 	return 0, nil
 }

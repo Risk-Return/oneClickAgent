@@ -116,14 +116,25 @@ func (deps *Dependencies) handleSubmitJob() http.HandlerFunc {
 		if job.Params != nil {
 			dispatchPayload.Params = *job.Params
 		}
-		if dispatchFrame, err := tunnel.NewFrame(model.FrameJobDispatch, dispatchPayload); err == nil {
+		dispatchFrame, frameErr := tunnel.NewFrame(model.FrameJobDispatch, dispatchPayload)
+		var dispatchFailed bool
+		if frameErr == nil {
 			if sendErr := deps.Hub.SendFrame(agent.DeviceID, dispatchFrame); sendErr != nil {
 				obs.Logger("http.jobs").Error("failed to send JOB_DISPATCH frame",
 					"job_id", job.ID.String(),
 					"agent_id", agent.ID.String(),
 					"error", sendErr,
 				)
+				dispatchFailed = true
 			}
+		} else {
+			dispatchFailed = true
+		}
+		if dispatchFailed {
+			_ = deps.Allocator.Release(r.Context(), agent.ID)
+			_ = deps.Jobs.UpdateStatus(r.Context(), job.ID, model.JobFailed)
+			writeError(w, http.StatusServiceUnavailable, model.ErrCodeInternalError, "failed to dispatch job to device")
+			return
 		}
 
 		// Push credentials

@@ -62,6 +62,7 @@ type JobStoreInterface interface {
 	Cancel(ctx context.Context, id, userID model.UUID) error
 	DequeueNext(ctx context.Context) (*model.Job, error)
 	ExpireQueued(ctx context.Context) (int64, error)
+	ExpireDispatched(ctx context.Context, timeout time.Duration) (int64, error)
 	CountQueuedByUser(ctx context.Context, userID model.UUID) (int, error)
 	GetQueuePosition(ctx context.Context, jobID model.UUID) (int, error)
 	ListByUser(ctx context.Context, userID model.UUID, cursor *model.UUID, limit int) ([]model.Job, *model.UUID, error)

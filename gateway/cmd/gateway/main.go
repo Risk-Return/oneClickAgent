@@ -168,6 +168,9 @@ func main() {
 			}
 			return nil
 		},
+		OnJobAccepted: func(ctx context.Context, deviceID model.UUID, jobID model.UUID) error {
+			return jobs.UpdateStatus(ctx, jobID, model.JobRunning)
+		},
 		OnJobRejected: func(ctx context.Context, deviceID model.UUID, payload model.JobRejectedPayload) error {
 			_ = jobs.UpdateResult(ctx, payload.JobID, model.JobFailed, nil)
 			if job, _ := jobs.GetByID(ctx, payload.JobID); job != nil && job.AgentID != nil {

@@ -138,6 +138,20 @@ func (s *JobStore) ExpireQueued(ctx context.Context) (int64, error) {
 	return result.RowsAffected(), nil
 }
 
+func (s *JobStore) ExpireDispatched(ctx context.Context, timeout time.Duration) (int64, error) {
+	code := string(model.ErrCodeDispatchTimeout)
+	cutoff := time.Now().UTC().Add(-timeout)
+	result, err := s.db.Pool.Exec(ctx,
+		`UPDATE jobs SET status=$2, error_code=$3, error_message=$3, finished_at=$4, updated_at=$4
+		 WHERE status=$1 AND started_at <= $5`,
+		model.JobDispatched, model.JobFailed, code, time.Now().UTC(), cutoff,
+	)
+	if err != nil {
+		return 0, err
+	}
+	return result.RowsAffected(), nil
+}
+
 func (s *JobStore) CountQueuedByUser(ctx context.Context, userID model.UUID) (int, error) {
 	var count int
 	err := s.db.Pool.QueryRow(ctx,

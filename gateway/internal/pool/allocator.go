@@ -16,15 +16,16 @@ import (
 
 // Allocator handles agent pool lifecycle and job queue management.
 type Allocator struct {
-	agents         store.AgentStoreInterface
-	jobs           store.JobStoreInterface
-	files          store.FileStoreInterface
+	agents          store.AgentStoreInterface
+	jobs            store.JobStoreInterface
+	files           store.FileStoreInterface
 	pushCredentials func(ctx context.Context, jobID, agentID, deviceID model.UUID) error
-	hub            *tunnel.Hub
-	broker         *pubsub.Broker
-	queueTTL       time.Duration
-	maxQueue       int
-	logger         *slog.Logger
+	hub             *tunnel.Hub
+	broker          *pubsub.Broker
+	queueTTL        time.Duration
+	dispatchTimeout time.Duration
+	maxQueue        int
+	logger          *slog.Logger
 }
 
 // NewAllocator creates a new agent pool allocator.
@@ -37,13 +38,14 @@ func NewAllocator(
 	maxQueuePerUser int,
 ) *Allocator {
 	return &Allocator{
-		agents:   agents,
-		jobs:     jobs,
-		hub:      hub,
-		broker:   broker,
-		queueTTL: queueTTL,
-		maxQueue: maxQueuePerUser,
-		logger:   obs.Logger("pool"),
+		agents:          agents,
+		jobs:            jobs,
+		hub:             hub,
+		broker:          broker,
+		queueTTL:        queueTTL,
+		dispatchTimeout: 5 * time.Minute,
+		maxQueue:        maxQueuePerUser,
+		logger:          obs.Logger("pool"),
 	}
 }
 
@@ -122,8 +124,8 @@ func (a *Allocator) Release(ctx context.Context, agentID model.UUID) error {
 
 // dequeueNext selects the next queued job and allocates an agent.
 func (a *Allocator) dequeueNext(ctx context.Context) {
-	// First expire any timed-out queued jobs
-	a.expireQueued(ctx)
+	// First expire any timed-out queued/dispatched jobs
+	a.expireStale(ctx)
 
 	for {
 		// Find next queued job
@@ -161,6 +163,8 @@ func (a *Allocator) dequeueNext(ctx context.Context) {
 		// Dispatch to device over tunnel
 		if err := a.dispatchJob(ctx, job, agent); err != nil {
 			a.logger.Error("dispatch error", "error", err, "job_id", job.ID)
+			_ = a.agents.Release(ctx, agent.ID)
+			_ = a.jobs.UpdateStatus(ctx, job.ID, model.JobFailed)
 			continue
 		}
 
@@ -172,15 +176,20 @@ func (a *Allocator) dequeueNext(ctx context.Context) {
 	}
 }
 
-// expireQueued marks expired queued jobs as FAILED with QUEUE_TIMEOUT.
-func (a *Allocator) expireQueued(ctx context.Context) {
-	count, err := a.jobs.ExpireQueued(ctx)
+// expireStale marks expired queued and dispatched jobs as FAILED.
+func (a *Allocator) expireStale(ctx context.Context) {
+	queued, err := a.jobs.ExpireQueued(ctx)
 	if err != nil {
 		a.logger.Error("expire queued jobs error", "error", err)
-		return
+	} else if queued > 0 {
+		a.logger.Info("expired queued jobs", "count", queued)
 	}
-	if count > 0 {
-		a.logger.Info("expired queued jobs", "count", count)
+
+	dispatched, err := a.jobs.ExpireDispatched(ctx, a.dispatchTimeout)
+	if err != nil {
+		a.logger.Error("expire dispatched jobs error", "error", err)
+	} else if dispatched > 0 {
+		a.logger.Info("expired dispatched jobs (no device response)", "count", dispatched)
 	}
 }
 
@@ -234,7 +243,7 @@ func (a *Allocator) StartExpiryTicker(ctx context.Context) {
 		case <-ctx.Done():
 			return
 		case <-ticker.C:
-			a.expireQueued(ctx)
+			a.expireStale(ctx)
 		}
 	}
 }
