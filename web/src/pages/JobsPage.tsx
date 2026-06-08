@@ -37,7 +37,7 @@ function formatResultContent(result: Record<string, unknown>): string {
 
 export function JobsPage() {
   const { t } = useTranslation();
-  const { jobId } = useParams<{ jobId: string }>();
+  const { jobId: routeJobId } = useParams<{ jobId: string }>();
   const navigate = useNavigate();
   const [fileIds, setFileIds] = useState<string[]>([]);
   const [skillId, setSkillId] = useState<string | null>(null);
@@ -53,19 +53,22 @@ export function JobsPage() {
   const { data: skills } = useVisibleSkills();
   const { data: credentials } = useCredentials();
 
+  const [activeJobId, setActiveJobId] = useState<string | null>(null);
   const [liveJob, setLiveJob] = useState<Job | null>(null);
-  const { data: job, isLoading: jobLoading } = useJob(jobId || "");
+
+  const detailJobId = routeJobId || activeJobId || "";
+  const { data: job, isLoading: jobLoading } = useJob(detailJobId);
 
   useEffect(() => {
-    if (job && jobId) setLiveJob(job);
-  }, [job, jobId]);
+    if (job && detailJobId) setLiveJob(job);
+  }, [job, detailJobId]);
 
   useEffect(() => {
-    if (!jobId) return;
+    if (!detailJobId) return;
     const ws = getWSClient();
     ws.connect();
 
-    ws.subscribe(`job:${jobId}`, (event) => {
+    ws.subscribe(`job:${detailJobId}`, (event) => {
       if (event.type === "job.progress") {
         setLiveJob((prev) => {
           if (!prev) return prev;
@@ -101,8 +104,8 @@ export function JobsPage() {
       }
     });
 
-    return () => { ws.unsubscribe(`job:${jobId}`, () => {}); };
-  }, [jobId, t]);
+    return () => { ws.unsubscribe(`job:${detailJobId}`, () => {}); };
+  }, [detailJobId, t]);
 
   const effectiveJob = liveJob || job;
 
@@ -118,7 +121,7 @@ export function JobsPage() {
       {
         onSuccess: (job) => {
           setCommand(""); setFileIds([]); setSkillId(null); setCredentialIds([]);
-          if (job.id) navigate(`/jobs/${job.id}`);
+          setActiveJobId(job.id);
         },
         onError: (error: { code?: string; message?: string }) => {
           setInlineError(error.code === "QUEUE_FULL" ? t("jobs.queueFull") : (error.message || t("errors.somethingWentWrong")));
@@ -170,68 +173,128 @@ export function JobsPage() {
     downloadFile(content, filename);
   }, [effectiveJob?.result, effectiveJob?.id]);
 
-  if (jobId) {
+  const commandForm = (
+    <Card>
+      <CardHeader>
+        <CardTitle className="text-base">{t("jobs.newJob")}</CardTitle>
+        <CardDescription>{t("jobs.newJobDesc")}</CardDescription>
+      </CardHeader>
+      <CardContent className="space-y-4">
+        <div className="space-y-2">
+          <Label>{t("jobs.command")}</Label>
+          <Textarea placeholder={t("jobs.commandPlaceholder")} value={command} onChange={(e) => setCommand(e.target.value)} rows={3} />
+        </div>
+
+        <FileDropzone fileIds={fileIds} onFilesChange={setFileIds} disabled={submitJob.isPending} />
+
+        {skills && skills.length > 0 && (
+          <SkillSelector skills={skills} selectedSkillId={skillId} onSkillChange={setSkillId} />
+        )}
+
+        {skillId && skills && (
+          <div className="rounded-md bg-muted/50 p-3 text-xs text-muted-foreground">
+            <span className="font-medium">{t("jobs.skillPrefixPreview")}:</span><br />
+            Command will be prefixed with skill prompt and output instructions.<br />
+            Agent saves results to <code className="text-xs bg-muted px-1 rounded">/work/output</code> (markdown, JSON, Excel, HTML, PDF, etc.)
+          </div>
+        )}
+
+        {credentials && credentials.length > 0 && (
+          <div className="space-y-3">
+            <div className="flex items-center gap-2">
+              <Key className="h-4 w-4" />
+              <Label>{t("jobs.savedLoginsDesc")}</Label>
+            </div>
+            <div className="flex flex-wrap gap-2">
+              {credentials.map((cred) => (
+                <button key={cred.id} type="button" onClick={() => toggleCredential(cred.id)}
+                  className={`inline-flex items-center gap-1.5 rounded-full border px-3 py-1.5 text-sm font-medium transition-colors ${credentialIds.includes(cred.id) ? "border-primary bg-primary text-primary-foreground" : "border-muted-foreground/25 bg-transparent hover:bg-accent"}`}>
+                  {cred.label}
+                  <span className="text-xs opacity-70">({cred.origin})</span>
+                </button>
+              ))}
+            </div>
+          </div>
+        )}
+
+        {inlineError && (
+          <div className="rounded-md bg-destructive/10 p-3 text-sm text-destructive">{inlineError}</div>
+        )}
+
+        <Button onClick={handleSubmit} disabled={submitJob.isPending || !command.trim()} className="w-full">
+          {submitJob.isPending ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Send className="mr-2 h-4 w-4" />}
+          {t("jobs.sendJob")}
+        </Button>
+      </CardContent>
+    </Card>
+  );
+
+  const renderJobDetail = (job: Job) => (
+    <div className="space-y-4">
+      <Card>
+        <CardHeader>
+          <CardTitle className="text-base">{job.command}</CardTitle>
+          <CardDescription className="text-xs font-mono">ID: {job.id}</CardDescription>
+        </CardHeader>
+        <CardContent>
+          <JobProgressCard
+            status={job.status}
+            percent={job.percent}
+            progressMessage={job.progress_message}
+            queuePosition={job.queue_position}
+            estimatedWaitSeconds={job.estimated_wait_seconds}
+            startedAt={job.started_at}
+            errorCode={job.error_code}
+            errorMessage={job.error_message}
+            onCancel={handleCancel}
+          />
+        </CardContent>
+      </Card>
+
+      {["succeeded", "failed"].includes(job.status) && job.result && (
+        <Card>
+          <CardHeader className="flex flex-row items-center justify-between">
+            <CardTitle className="text-base">{t("jobs.result")}</CardTitle>
+            <Button variant="outline" size="sm" onClick={handleDownloadResult}>
+              <Download className="mr-2 h-4 w-4" /> {t("jobs.downloadResult")}
+            </Button>
+          </CardHeader>
+          <CardContent>
+            <pre className="whitespace-pre-wrap rounded-md bg-muted p-4 text-sm max-h-96 overflow-auto">
+              {formatResultContent(job.result)}
+            </pre>
+          </CardContent>
+        </Card>
+      )}
+
+      <div className="flex gap-2">
+        {!["succeeded", "failed", "cancelled"].includes(job.status) && (
+          <Button variant="destructive" onClick={handleCancel} disabled={cancelJob.isPending}>
+            <X className="mr-2 h-4 w-4" /> {t("jobs.cancelJob")}
+          </Button>
+        )}
+        {job.status === "running" && (
+          <Button variant="outline" onClick={handleOpenVNC} disabled={openVNC.isPending}>
+            {openVNC.isPending ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Monitor className="mr-2 h-4 w-4" />}
+            {t("jobs.openBrowser")}
+          </Button>
+        )}
+      </div>
+    </div>
+  );
+
+  if (routeJobId) {
     return (
       <div className="space-y-6 p-6 max-w-2xl">
         <div>
           <h1 className="text-2xl font-bold tracking-tight">{t("jobs.jobDetail")}</h1>
-          <p className="text-muted-foreground font-mono text-xs">{jobId}</p>
+          <p className="text-muted-foreground font-mono text-xs">{routeJobId}</p>
         </div>
 
         {jobLoading && !effectiveJob ? (
           <Card><CardContent className="space-y-4 py-6"><Skeleton className="h-6 w-32" /><Skeleton className="h-4 w-full" /><Skeleton className="h-8 w-full" /></CardContent></Card>
         ) : effectiveJob ? (
-          <div className="space-y-4">
-            <Card>
-              <CardHeader>
-                <CardTitle className="text-base">{effectiveJob.command}</CardTitle>
-                <CardDescription className="text-xs font-mono">ID: {effectiveJob.id}</CardDescription>
-              </CardHeader>
-              <CardContent>
-                <JobProgressCard
-                  status={effectiveJob.status}
-                  percent={effectiveJob.percent}
-                  progressMessage={effectiveJob.progress_message}
-                  queuePosition={effectiveJob.queue_position}
-                  estimatedWaitSeconds={effectiveJob.estimated_wait_seconds}
-                  startedAt={effectiveJob.started_at}
-                  errorCode={effectiveJob.error_code}
-                  errorMessage={effectiveJob.error_message}
-                  onCancel={handleCancel}
-                />
-              </CardContent>
-            </Card>
-
-            {["succeeded", "failed"].includes(effectiveJob.status) && effectiveJob.result && (
-              <Card>
-                <CardHeader className="flex flex-row items-center justify-between">
-                  <CardTitle className="text-base">{t("jobs.result")}</CardTitle>
-                  <Button variant="outline" size="sm" onClick={handleDownloadResult}>
-                    <Download className="mr-2 h-4 w-4" /> {t("jobs.downloadResult")}
-                  </Button>
-                </CardHeader>
-                <CardContent>
-                  <pre className="whitespace-pre-wrap rounded-md bg-muted p-4 text-sm max-h-96 overflow-auto">
-                    {formatResultContent(effectiveJob.result)}
-                  </pre>
-                </CardContent>
-              </Card>
-            )}
-
-            <div className="flex gap-2">
-              {!["succeeded", "failed", "cancelled"].includes(effectiveJob.status) && (
-                <Button variant="destructive" onClick={handleCancel} disabled={cancelJob.isPending}>
-                  <X className="mr-2 h-4 w-4" /> {t("jobs.cancelJob")}
-                </Button>
-              )}
-              {effectiveJob.status === "running" && (
-                <Button variant="outline" onClick={handleOpenVNC} disabled={openVNC.isPending}>
-                  {openVNC.isPending ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Monitor className="mr-2 h-4 w-4" />}
-                  {t("jobs.openBrowser")}
-                </Button>
-              )}
-            </div>
-          </div>
+          renderJobDetail(effectiveJob)
         ) : (
           <Card><CardContent className="flex flex-col items-center gap-4 py-12"><p className="text-muted-foreground">{t("jobs.jobNotFound")}</p><Button variant="outline" onClick={() => navigate("/jobs")}>{t("jobs.backToCommand")}</Button></CardContent></Card>
         )}
@@ -244,65 +307,47 @@ export function JobsPage() {
   }
 
   return (
-    <div className="space-y-6 p-6 max-w-2xl">
-      <div>
-        <h1 className="text-2xl font-bold tracking-tight">{t("jobs.title")}</h1>
-        <p className="text-muted-foreground">{t("jobs.desc")}</p>
+    <div className="flex h-full">
+      <div className="w-1/2 min-w-0 overflow-auto border-r p-6">
+        <div className="space-y-6 max-w-xl">
+          <div>
+            <h1 className="text-2xl font-bold tracking-tight">{t("jobs.title")}</h1>
+            <p className="text-muted-foreground">{t("jobs.desc")}</p>
+          </div>
+          {commandForm}
+        </div>
       </div>
 
-      <Card>
-        <CardHeader>
-          <CardTitle className="text-base">{t("jobs.newJob")}</CardTitle>
-          <CardDescription>{t("jobs.newJobDesc")}</CardDescription>
-        </CardHeader>
-        <CardContent className="space-y-4">
-          <div className="space-y-2">
-            <Label>{t("jobs.command")}</Label>
-            <Textarea placeholder={t("jobs.commandPlaceholder")} value={command} onChange={(e) => setCommand(e.target.value)} rows={3} />
+      <div className="w-1/2 min-w-0 overflow-auto p-6">
+        {activeJobId ? (
+          <div className="space-y-6 max-w-xl">
+            <div>
+              <h2 className="text-xl font-semibold tracking-tight">{t("jobs.jobDetail")}</h2>
+              {effectiveJob && (
+                <p className="text-muted-foreground font-mono text-xs">{effectiveJob.id}</p>
+              )}
+            </div>
+
+            {jobLoading && !effectiveJob ? (
+              <Card><CardContent className="space-y-4 py-6"><Skeleton className="h-6 w-32" /><Skeleton className="h-4 w-full" /><Skeleton className="h-8 w-full" /></CardContent></Card>
+            ) : effectiveJob ? (
+              renderJobDetail(effectiveJob)
+            ) : (
+              <Card><CardContent className="flex flex-col items-center gap-4 py-12"><p className="text-muted-foreground">{t("jobs.jobNotFound")}</p></CardContent></Card>
+            )}
           </div>
-
-          <FileDropzone fileIds={fileIds} onFilesChange={setFileIds} disabled={submitJob.isPending} />
-
-          {skills && skills.length > 0 && (
-            <SkillSelector skills={skills} selectedSkillId={skillId} onSkillChange={setSkillId} />
-          )}
-
-          {skillId && skills && (
-            <div className="rounded-md bg-muted/50 p-3 text-xs text-muted-foreground">
-              <span className="font-medium">{t("jobs.skillPrefixPreview")}:</span><br />
-              Command will be prefixed with skill prompt and output instructions.<br />
-              Agent saves results to <code className="text-xs bg-muted px-1 rounded">/work/output</code> (markdown, JSON, Excel, HTML, PDF, etc.)
+        ) : (
+          <div className="flex h-full items-center justify-center">
+            <div className="text-center space-y-3">
+              <p className="text-muted-foreground text-sm">{t("jobs.desc")}</p>
             </div>
-          )}
+          </div>
+        )}
+      </div>
 
-          {credentials && credentials.length > 0 && (
-            <div className="space-y-3">
-              <div className="flex items-center gap-2">
-                <Key className="h-4 w-4" />
-                <Label>{t("jobs.savedLoginsDesc")}</Label>
-              </div>
-              <div className="flex flex-wrap gap-2">
-                {credentials.map((cred) => (
-                  <button key={cred.id} type="button" onClick={() => toggleCredential(cred.id)}
-                    className={`inline-flex items-center gap-1.5 rounded-full border px-3 py-1.5 text-sm font-medium transition-colors ${credentialIds.includes(cred.id) ? "border-primary bg-primary text-primary-foreground" : "border-muted-foreground/25 bg-transparent hover:bg-accent"}`}>
-                    {cred.label}
-                    <span className="text-xs opacity-70">({cred.origin})</span>
-                  </button>
-                ))}
-              </div>
-            </div>
-          )}
-
-          {inlineError && (
-            <div className="rounded-md bg-destructive/10 p-3 text-sm text-destructive">{inlineError}</div>
-          )}
-
-          <Button onClick={handleSubmit} disabled={submitJob.isPending || !command.trim()} className="w-full">
-            {submitJob.isPending ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Send className="mr-2 h-4 w-4" />}
-            {t("jobs.sendJob")}
-          </Button>
-        </CardContent>
-      </Card>
+      {vncOpen && vncData && (
+        <VNCPanel open={vncOpen} onClose={handleCloseVNC} wsUrl={vncData.wsUrl} rfbPassword={vncData.rfbPassword} sessionId={vncData.sessionId} onSaveLogin={handleSaveLogin} />
+      )}
     </div>
   );
 }
