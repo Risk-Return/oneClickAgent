@@ -124,7 +124,8 @@ export function JobsPage() {
     submitJob.mutate(
       { command: composedCommand, file_ids: fileIds.length > 0 ? fileIds : undefined, skill_id: skillId || undefined, credential_ids: credentialIds.length > 0 ? credentialIds : undefined },
       {
-        onSuccess: (job) => {
+        onSuccess: (data) => {
+          const job = (data as Record<string, unknown>).job as Job;
           setCommand(""); setFileIds([]); setSkillId(null); setCredentialIds([]);
           setActiveJobId(job.id);
         },
