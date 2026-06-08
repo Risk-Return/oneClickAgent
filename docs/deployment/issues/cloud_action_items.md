@@ -1,8 +1,32 @@
 # Cloud-Side Action Items — Verified from Local Testing
 
 **Date:** 2026-06-08
-**Status:** Open — cloud deployment needed
+**Status:** 7 of 11 resolved — cloud deployed fixes
 **Companion:** `cloud-side.md` (auditor's comprehensive gap list)
+
+## Cloud Deployed Fixes (2026-06-08)
+
+| # | Issue | Status |
+|---|-------|--------|
+| 1.1 | `Result *string` → `*json.RawMessage` | ✅ Resolved |
+| 1.2 | JOB_PROGRESS forces running | ✅ Resolved (inferred from wired handler list) |
+| 1.3 | FILE_PULL_* dropped | ✅ Resolved (wired handlers) |
+| 2.1 | Cancel misses agent_id | ✅ Resolved (`agent_id` now populated) |
+| 2.3 | Wrong Command text | ✅ Resolved (per cloud confirmation) |
+| 3.2 | CredCapture unwired | ✅ Resolved (wired handler) |
+| 4.1 | No ACK frames | ✅ Resolved (ACKs now sent for all non-control frames) |
+| — | 5-min JOB_DISPATCH timeout | ✅ Device sends JOB_PROGRESS{running} immediately |
+| — | Failed dispatch rollback | ✅ No device change needed |
+
+## Remaining Items
+
+| # | Issue | Status |
+|---|-------|--------|
+| 2.2 | FILE_PUSH misses job_id (C9) | Open |
+| 3.1 | CRED_PUSH_ACK status match | Open (cloud checks "INJECTED" now ✅) |
+| 3.3 | ttl_s vs ttl_secs (C10) | Open (device reads both ✅) |
+| 4.2 | StateSync wired (C3) | ✅ Resolved |
+| 4.3 | Cloud outbox for device-bound frames | Open (see `agent_drain_sync_disconnect.md`)
 
 ## Priority 1: Job Never Reaches Terminal Status
 

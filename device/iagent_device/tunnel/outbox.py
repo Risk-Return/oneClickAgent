@@ -24,7 +24,6 @@ class Outbox:
         result = self.send_fn(frame_type, payload, msg_id=msg_id)
         if asyncio.iscoroutine(result):
             await result
-        self.repo.mark_acked(msg_id)
 
     async def flush(self):
         """Flush all unacknowledged outbox entries."""
