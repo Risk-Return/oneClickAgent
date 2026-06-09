@@ -313,7 +313,7 @@ func (a *Allocator) EnsurePoolSize(ctx context.Context, deviceID model.UUID, des
 
 // ReconcilePool syncs agent state with the device on reconnect.
 // Agents reported by device that are stuck in "creating" are promoted to "idle".
-// Agents NOT reported that are stuck in "creating" are deleted and re-created.
+// Stale "creating" agents (not reported and older than grace period) are deleted.
 func (a *Allocator) ReconcilePool(ctx context.Context, deviceID model.UUID, helloAgents []model.HelloAgent) error {
 	dbAgents, err := a.agents.ListByDevice(ctx, deviceID)
 	if err != nil {
@@ -339,9 +339,12 @@ func (a *Allocator) ReconcilePool(ctx context.Context, deviceID model.UUID, hell
 		}
 	}
 
+	// Only delete creating agents that have been stuck for >2 minutes
+	const gracePeriod = 2 * time.Minute
+	cutoff := time.Now().UTC().Add(-gracePeriod)
 	deleted := 0
 	for _, da := range dbAgents {
-		if !helloIDs[da.ID] && da.Status == model.AgentCreating {
+		if !helloIDs[da.ID] && da.Status == model.AgentCreating && da.CreatedAt.Before(cutoff) {
 			if err := a.agents.Delete(ctx, da.ID); err != nil {
 				a.logger.Error("failed to delete stuck agent", "agent_id", da.ID, "error", err)
 				continue
