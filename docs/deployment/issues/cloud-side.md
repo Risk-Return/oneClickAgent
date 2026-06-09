@@ -212,6 +212,13 @@ canonical injection mechanism (recommend: keep `CRED_PUSH` for the actual storag
 `credential_ids` in the dispatch so the device can wait for all pushes before starting — see C8/L5
 ordering).
 
+**Update (2026-06-09): RESOLVED.** The immediate path (`jobs_handler.go handleSubmitJob`) links
+files+credentials and sets `FileIDs`/`CredentialIDs`, then calls the shared `PushCredentialsForJob`.
+The queued path now also populates `CredentialIDs`: `Allocator.dispatchJob` lists the job's linked
+credential IDs via a new `credIDs` hook wired in `cmd/gateway/main.go` (`credStore.ListByJob`), and
+already calls `pushCredentials`. Both paths now carry `credential_ids`, enabling device-side L5
+ordering.
+
 ---
 
 ## C6 — HIGH — CRED_PUSH_ACK status string mismatch

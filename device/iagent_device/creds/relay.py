@@ -2,6 +2,7 @@
 Never persists cookies to disk. In-memory only.
 """
 
+import asyncio
 import hashlib
 import logging
 
@@ -16,6 +17,36 @@ class CredRelay:
     def __init__(self, docker_mgr: DockerManager, outbox: Outbox):
         self.docker = docker_mgr
         self.outbox = outbox
+        self._injected: dict[str, set[str]] = {}
+        self._injection_event = asyncio.Event()
+
+    def _record_injection(self, job_id: str, credential_id: str) -> None:
+        if not job_id or not credential_id:
+            return
+        self._injected.setdefault(job_id, set()).add(credential_id)
+        self._injection_event.set()
+
+    async def wait_for_injections(self, job_id: str, credential_ids: list[str], timeout: float) -> bool:
+        """Block until every credential_id has been injected for job_id, or timeout.
+        Returns True if all injected, False on timeout (job proceeds best-effort).
+        """
+        expected = {c for c in credential_ids if c}
+        if not expected:
+            return True
+        deadline = asyncio.get_event_loop().time() + timeout
+        while True:
+            if expected.issubset(self._injected.get(job_id, set())):
+                return True
+            remaining = deadline - asyncio.get_event_loop().time()
+            if remaining <= 0:
+                missing = expected - self._injected.get(job_id, set())
+                logger.warning("timed out waiting for credential injection job=%s missing=%s", job_id, missing)
+                return False
+            self._injection_event.clear()
+            try:
+                await asyncio.wait_for(self._injection_event.wait(), timeout=remaining)
+            except asyncio.TimeoutError:
+                pass
 
     async def handle_cred_push(self, payload: dict):
         job_id = payload.get("job_id", "")
@@ -49,6 +80,7 @@ class CredRelay:
         try:
             state = plaintext.decode("utf-8")
             await client.set_browser_state(state)
+            self._record_injection(job_id, credential_id)
             await self.outbox.enqueue_and_send(FrameType.CRED_PUSH_ACK, {
                 "job_id": job_id,
                 "credential_id": credential_id,
@@ -61,28 +93,6 @@ class CredRelay:
                 "status": "ERROR",
                 "error": str(e),
             })
-
-    async def inject_credential(self, payload: dict):
-        job_id = payload.get("job_id", "")
-        credential_id = payload.get("credential_id", "")
-        agent_id = payload.get("agent_id", "")
-        storage_state = payload.get("storage_state", "")
-        sha256 = payload.get("sha256", "")
-
-        if not storage_state:
-            return
-
-        import base64
-        plaintext = base64.b64decode(storage_state)
-        actual = hashlib.sha256(plaintext).hexdigest()
-        if actual != sha256:
-            logger.error("credential %s sha256 mismatch for job %s", credential_id, job_id)
-            return
-
-        client = self.docker.get_client(agent_id)
-        if client:
-            state = plaintext.decode("utf-8")
-            await client.set_browser_state(state)
 
     async def handle_cred_capture(self, payload: dict):
         session_id = payload.get("session_id", "")

@@ -194,6 +194,10 @@ The real injection path is `handle_cred_push` (`relay.py:20-63`), driven by `CRE
 **Fix:** delete `inject_credential` and the dispatch-time loop; rely solely on `CRED_PUSH`. Then
 coordinate ordering (L5).
 
+**Update (2026-06-09): RESOLVED.** The dispatch-time inject loop was already gone; the dead
+`inject_credential` method has now been removed from `creds/relay.py`. Credential injection is
+solely via `CRED_PUSH` (`handle_cred_push`).
+
 ---
 
 ## L5 — MEDIUM — `CRED_PUSH` not synchronized with job start
@@ -211,6 +215,19 @@ defeating "start already signed in."
 This needs the gateway to tell the device *how many* credentials to expect — list `credential_ids`
 in `JOB_DISPATCH` (cloud C5). The device then awaits N successful `CRED_PUSH` injections (with a
 timeout) before starting the job.
+
+**Update (2026-06-09): RESOLVED.** `JOB_DISPATCH` now carries `credential_ids` (cloud C5).
+`dispatcher.handle_job_dispatch` persists them on the job record and, before `create_job`, awaits
+`CredRelay.wait_for_injections(job_id, credential_ids, timeout)` (default 30s, best-effort on
+timeout). `CredRelay` records each successful `CRED_PUSH` injection in a per-job registry and signals
+waiters via an `asyncio.Event`.
+
+> **Concurrency prerequisite (also fixed):** the tunnel read loop processes frames *sequentially*
+> (`client.py _read_loop` awaits each handler). `handle_job_dispatch` now blocks on credential
+> injection *and* runs `_poll_progress` for the whole job — both would freeze the read loop (no
+> `CRED_PUSH`, `JOB_CANCEL`, or heartbeats processed mid-job, and the credential wait would
+> deadlock). `__main__.py` now runs `JOB_DISPATCH` as a tracked background task so the device keeps
+> servicing the tunnel while a job is in flight.
 
 ---
 

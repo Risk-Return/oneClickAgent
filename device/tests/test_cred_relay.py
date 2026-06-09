@@ -1,5 +1,6 @@
 """Unit tests for credential relay (no persistence, sha256 verification)."""
 
+import asyncio
 import hashlib
 import base64
 import pytest
@@ -119,3 +120,31 @@ class TestCredRelay:
             "storage_state": data_b64,
             "sha256": sha,
         })
+
+    @pytest.mark.asyncio
+    async def test_wait_for_injections_empty_returns_immediately(self, cred_relay):
+        assert await cred_relay.wait_for_injections("j1", [], timeout=0.1) is True
+
+    @pytest.mark.asyncio
+    async def test_wait_for_injections_resolves_when_all_pushed(self, cred_relay):
+        storage_state = '{"cookies":[]}'
+        data_b64 = base64.b64encode(storage_state.encode()).decode()
+        sha = hashlib.sha256(storage_state.encode()).hexdigest()
+
+        async def push_later():
+            await asyncio.sleep(0.05)
+            for cid in ("c1", "c2"):
+                await cred_relay.handle_cred_push({
+                    "job_id": "jw", "credential_id": cid, "agent_id": "a1",
+                    "storage_state": data_b64, "sha256": sha,
+                })
+
+        waiter = asyncio.create_task(cred_relay.wait_for_injections("jw", ["c1", "c2"], timeout=2.0))
+        pusher = asyncio.create_task(push_later())
+        assert await waiter is True
+        await pusher
+
+    @pytest.mark.asyncio
+    async def test_wait_for_injections_times_out_when_missing(self, cred_relay):
+        result = await cred_relay.wait_for_injections("jt", ["missing"], timeout=0.1)
+        assert result is False

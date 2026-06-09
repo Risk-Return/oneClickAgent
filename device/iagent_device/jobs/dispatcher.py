@@ -34,6 +34,7 @@ class JobDispatcher:
         stager=None,
         puller=None,
         cred_relay=None,
+        cred_inject_timeout: float = 30.0,
     ):
         self.job_repo = job_repo
         self.agent_repo = agent_repo
@@ -42,6 +43,7 @@ class JobDispatcher:
         self.stager = stager
         self.puller = puller
         self.cred_relay = cred_relay
+        self.cred_inject_timeout = cred_inject_timeout
 
     async def _wait_for_files(self, job_id: str, timeout: float = 30.0):
         if not self.stager:
@@ -62,8 +64,9 @@ class JobDispatcher:
         user_id = payload.get("user_id", "")
         command = payload.get("command", "")
         skill_id = payload.get("skill_id", "")
+        credential_ids = payload.get("credential_ids", []) or []
 
-        self.job_repo.create(job_id, agent_id, user_id, command, skill_id)
+        self.job_repo.create(job_id, agent_id, user_id, command, skill_id, ",".join(credential_ids))
         self.agent_repo.allocate(agent_id, user_id, job_id)
 
         await self.outbox.enqueue_and_send(FrameType.JOB_ACCEPTED, {"job_id": job_id})
@@ -78,6 +81,9 @@ class JobDispatcher:
 
         try:
             await self._wait_for_files(job_id)
+
+            if credential_ids and self.cred_relay is not None:
+                await self.cred_relay.wait_for_injections(job_id, credential_ids, self.cred_inject_timeout)
 
             await client.create_job(job_id, command, {}, skill_id=skill_id, workspace_dir=f"/work/workspaces/{job_id}")
             self.job_repo.update_status(job_id, "running")

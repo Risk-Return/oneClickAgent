@@ -136,8 +136,23 @@ async def cmd_run(cfg):
 
     hello_extras = monitor.build_hello_extras(agent_repo, vnc_enabled=True)
 
+    # JOB_DISPATCH drives the full job lifecycle (credential wait + create + poll),
+    # which can run for a long time. Run it off the tunnel read loop so the device
+    # keeps processing CRED_PUSH / JOB_CANCEL / heartbeats while a job is in flight.
+    _bg_tasks: set[asyncio.Task] = set()
+
+    def _on_bg_done(task: asyncio.Task):
+        _bg_tasks.discard(task)
+        if not task.cancelled() and task.exception() is not None:
+            logger.error("background job task failed", exc_info=task.exception())
+
+    async def _dispatch_job(_t, p):
+        task = asyncio.create_task(dispatcher.handle_job_dispatch(p))
+        _bg_tasks.add(task)
+        task.add_done_callback(_on_bg_done)
+
     handlers = {
-        str(FrameType.JOB_DISPATCH): lambda t, p: dispatcher.handle_job_dispatch(p),
+        str(FrameType.JOB_DISPATCH): _dispatch_job,
         str(FrameType.JOB_CANCEL): lambda t, p: dispatcher.handle_job_cancel(p),
         str(FrameType.JOB_QUERY): lambda t, p: _handle_job_query(p, job_repo, outbox),
         str(FrameType.AGENT_CREATE): lambda t, p: _handle_agent_create(p, docker_mgr, outbox),

@@ -1,9 +1,13 @@
 """Unit tests for job dispatcher state machine."""
 
+import asyncio
+import base64
+import hashlib
 import pytest
 from unittest.mock import AsyncMock, MagicMock
 
 from iagent_device.jobs.dispatcher import JobDispatcher
+from iagent_device.creds.relay import CredRelay
 from iagent_device.agentclient.client import AgentClient
 
 
@@ -120,6 +124,39 @@ class TestJobDispatch:
         body = json.loads(results[0]["payload"])
         assert body["status"] == "failed"
         assert body["error_msg"] == "boom"
+
+    @pytest.mark.asyncio
+    async def test_waits_for_credential_injection_before_create_job(self, job_repo, agent_repo, outbox):
+        agent_repo.upsert("ac", "agent-c", "img", 8096, status="idle")
+        client = make_client()
+        client.set_browser_state = AsyncMock()
+        docker_mgr = MagicMock()
+        docker_mgr.get_client = MagicMock(return_value=client)
+        docker_mgr.reaper_cleanup = AsyncMock()
+
+        cred_relay = CredRelay(docker_mgr, outbox)
+        disp = JobDispatcher(
+            job_repo=job_repo, agent_repo=agent_repo, docker_mgr=docker_mgr,
+            outbox=outbox, cred_relay=cred_relay, cred_inject_timeout=2.0,
+        )
+
+        payload = {"job_id": "jc", "agent_id": "ac", "user_id": "uc",
+                   "command": "test", "credential_ids": ["c1"]}
+        task = asyncio.create_task(disp.handle_job_dispatch(payload))
+
+        await asyncio.sleep(0.1)
+        assert client.create_job.await_count == 0  # blocked waiting for credential
+
+        storage_state = '{"cookies":[]}'
+        data_b64 = base64.b64encode(storage_state.encode()).decode()
+        sha = hashlib.sha256(storage_state.encode()).hexdigest()
+        await cred_relay.handle_cred_push({
+            "job_id": "jc", "credential_id": "c1", "agent_id": "ac",
+            "storage_state": data_b64, "sha256": sha,
+        })
+
+        await task
+        assert client.create_job.await_count == 1
 
     @pytest.mark.asyncio
     async def test_job_dispatch_with_credential_ids(self, dispatcher, job_repo, agent_repo):

@@ -19,6 +19,7 @@ type Allocator struct {
 	agents          store.AgentStoreInterface
 	jobs            store.JobStoreInterface
 	files           store.FileStoreInterface
+	credIDs         func(ctx context.Context, jobID model.UUID) ([]model.UUID, error)
 	pushCredentials func(ctx context.Context, jobID, agentID, deviceID model.UUID) error
 	hub             *tunnel.Hub
 	broker          *pubsub.Broker
@@ -102,9 +103,14 @@ func (a *Allocator) Allocate(ctx context.Context, job *model.Job) (*model.Agent,
 	return agent, nil
 }
 
-// SetDispatchDeps wires the file store and credential push hook for dispatch payloads.
-func (a *Allocator) SetDispatchDeps(files store.FileStoreInterface, pushCredentials func(ctx context.Context, jobID, agentID, deviceID model.UUID) error) {
+// SetDispatchDeps wires the file store, credential lister, and credential push hook for dispatch payloads.
+func (a *Allocator) SetDispatchDeps(
+	files store.FileStoreInterface,
+	credIDs func(ctx context.Context, jobID model.UUID) ([]model.UUID, error),
+	pushCredentials func(ctx context.Context, jobID, agentID, deviceID model.UUID) error,
+) {
 	a.files = files
+	a.credIDs = credIDs
 	a.pushCredentials = pushCredentials
 }
 
@@ -203,14 +209,20 @@ func (a *Allocator) dispatchJob(ctx context.Context, job *model.Job, agent *mode
 		}
 	}
 
+	var credIDs []model.UUID
+	if a.credIDs != nil {
+		credIDs, _ = a.credIDs(ctx, job.ID)
+	}
+
 	payload := model.JobDispatchPayload{
-		JobID:       job.ID,
-		UserID:      job.UserID,
-		AgentID:     agent.ID,
-		Command:     job.Command,
-		SkillID:     job.SkillID,
-		FileIDs:     fileIDs,
-		SubmittedAt: job.SubmittedAt.UnixMilli(),
+		JobID:         job.ID,
+		UserID:        job.UserID,
+		AgentID:       agent.ID,
+		Command:       job.Command,
+		SkillID:       job.SkillID,
+		FileIDs:       fileIDs,
+		CredentialIDs: credIDs,
+		SubmittedAt:   job.SubmittedAt.UnixMilli(),
 	}
 
 	if job.Params != nil {

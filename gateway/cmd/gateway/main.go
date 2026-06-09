@@ -117,7 +117,17 @@ func main() {
 	// VNC Relay
 	vncStore := store.NewVNCSessionStore(db)
 	credStore := store.NewCredentialStore(db)
-	allocator.SetDispatchDeps(files, func(ctx context.Context, jobID, agentID, deviceID model.UUID) error {
+	allocator.SetDispatchDeps(files, func(ctx context.Context, jobID model.UUID) ([]model.UUID, error) {
+		creds, err := credStore.ListByJob(ctx, jobID)
+		if err != nil {
+			return nil, err
+		}
+		ids := make([]model.UUID, 0, len(creds))
+		for _, c := range creds {
+			ids = append(ids, c.ID)
+		}
+		return ids, nil
+	}, func(ctx context.Context, jobID, agentID, deviceID model.UUID) error {
 		return httpapi.PushCredentialsForJob(ctx, jobID, agentID, deviceID, credStore, credVault, tunnelHub)
 	})
 	vncRelay := vncrelay.NewRelay(
