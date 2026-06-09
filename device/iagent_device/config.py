@@ -126,7 +126,9 @@ def load() -> Config:
     # Ensure directories exist
     cfg.device_data_dir.mkdir(parents=True, exist_ok=True)
     cfg.workspace_dir.mkdir(parents=True, exist_ok=True)
+    cfg.workspace_dir.chmod(0o777)
     (cfg.workspace_dir / "workspaces").mkdir(parents=True, exist_ok=True)
+    (cfg.workspace_dir / "workspaces").chmod(0o777)
     cfg.skills_dir.mkdir(parents=True, exist_ok=True)
 
     return cfg
