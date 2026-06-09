@@ -15,6 +15,15 @@ from iagent_device.docker.manager import DockerManager
 logger = logging.getLogger(__name__)
 
 
+def _error_message(error, fallback: str) -> str:
+    """Normalize the agent's error field (str or {code, message} dict) to a message string."""
+    if isinstance(error, dict):
+        return error.get("message") or error.get("code") or fallback
+    if isinstance(error, str) and error:
+        return error
+    return fallback
+
+
 class JobDispatcher:
     def __init__(
         self,
@@ -25,7 +34,6 @@ class JobDispatcher:
         stager=None,
         puller=None,
         cred_relay=None,
-        callback_url: str = "",
     ):
         self.job_repo = job_repo
         self.agent_repo = agent_repo
@@ -34,7 +42,6 @@ class JobDispatcher:
         self.stager = stager
         self.puller = puller
         self.cred_relay = cred_relay
-        self.callback_url = callback_url
 
     async def _wait_for_files(self, job_id: str, timeout: float = 30.0):
         if not self.stager:
@@ -72,7 +79,7 @@ class JobDispatcher:
         try:
             await self._wait_for_files(job_id)
 
-            await client.create_job(job_id, command, {}, callback_url=self.callback_url, skill_id=skill_id, workspace_dir=f"/work/workspaces/{job_id}")
+            await client.create_job(job_id, command, {}, skill_id=skill_id, workspace_dir=f"/work/workspaces/{job_id}")
             self.job_repo.update_status(job_id, "running")
             await self.outbox.enqueue_and_send(FrameType.JOB_PROGRESS, {
                 "job_id": job_id,
@@ -140,7 +147,6 @@ class JobDispatcher:
 
                 if status in ("succeeded", "failed", "cancelled"):
                     result_data = status_data.get("result", {})
-                    error_data = status_data.get("error", {})
 
                     self.job_repo.update_status(job_id, status)
                     if status == "succeeded":
@@ -158,7 +164,7 @@ class JobDispatcher:
                         await self.outbox.enqueue_and_send(FrameType.JOB_RESULT, {
                             "job_id": job_id,
                             "status": status,
-                            "error_msg": error_data.get("message", status),
+                            "error_msg": _error_message(status_data.get("error"), status),
                         })
                     return
             except Exception:

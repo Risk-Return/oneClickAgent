@@ -83,6 +83,45 @@ class TestJobDispatch:
         assert agent["status"] == "idle"
 
     @pytest.mark.asyncio
+    async def test_failed_job_string_error_reports_result(self, dispatcher, job_repo, agent_repo, docker_mgr, outbox_repo):
+        agent_repo.upsert("a5", "agent-5", "img", 8094, status="idle")
+        client = make_client()
+        client.get_job = AsyncMock(return_value={
+            "status": "failed", "percent": 50, "error": "brain exploded",
+        })
+        docker_mgr.get_client = MagicMock(return_value=client)
+
+        payload = {"job_id": "j6", "agent_id": "a5", "user_id": "u5", "command": "test"}
+        await dispatcher.handle_job_dispatch(payload)
+
+        assert job_repo.get_by_id("j6")["status"] == "failed"
+        results = [e for e in outbox_repo.list_unacked() if e["type"] == "JOB_RESULT"]
+        assert len(results) == 1
+        import json
+        body = json.loads(results[0]["payload"])
+        assert body["status"] == "failed"
+        assert body["error_msg"] == "brain exploded"
+
+    @pytest.mark.asyncio
+    async def test_failed_job_dict_error_reports_result(self, dispatcher, job_repo, agent_repo, docker_mgr, outbox_repo):
+        agent_repo.upsert("a6", "agent-6", "img", 8095, status="idle")
+        client = make_client()
+        client.get_job = AsyncMock(return_value={
+            "status": "failed", "percent": 50,
+            "error": {"code": "AGENT_ERROR", "message": "boom"},
+        })
+        docker_mgr.get_client = MagicMock(return_value=client)
+
+        payload = {"job_id": "j7", "agent_id": "a6", "user_id": "u6", "command": "test"}
+        await dispatcher.handle_job_dispatch(payload)
+
+        import json
+        results = [e for e in outbox_repo.list_unacked() if e["type"] == "JOB_RESULT"]
+        body = json.loads(results[0]["payload"])
+        assert body["status"] == "failed"
+        assert body["error_msg"] == "boom"
+
+    @pytest.mark.asyncio
     async def test_job_dispatch_with_credential_ids(self, dispatcher, job_repo, agent_repo):
         agent_repo.upsert("a4", "agent-4", "img", 8093, status="idle")
 

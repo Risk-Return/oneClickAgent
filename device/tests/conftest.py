@@ -102,7 +102,7 @@ def device_repo(db_conn):
 
 @pytest.fixture
 def outbox(outbox_repo):
-    def noop_send(frame_type, payload):
+    def noop_send(frame_type, payload, msg_id=None):
         pass
 
     return Outbox(outbox_repo, noop_send)
