@@ -299,9 +299,9 @@ func (a *Allocator) EnsurePoolSize(ctx context.Context, deviceID model.UUID, des
 	return nil
 }
 
-// ReconcilePool deletes stuck "creating" agents not reported by the device
-// and re-triggers AGENT_CREATE frames for the missing count.
-// Called from OnHello after device reconnect.
+// ReconcilePool syncs agent state with the device on reconnect.
+// Agents reported by device that are stuck in "creating" are promoted to "idle".
+// Agents NOT reported that are stuck in "creating" are deleted and re-created.
 func (a *Allocator) ReconcilePool(ctx context.Context, deviceID model.UUID, helloAgents []model.HelloAgent) error {
 	dbAgents, err := a.agents.ListByDevice(ctx, deviceID)
 	if err != nil {
@@ -311,6 +311,20 @@ func (a *Allocator) ReconcilePool(ctx context.Context, deviceID model.UUID, hell
 	helloIDs := make(map[model.UUID]bool, len(helloAgents))
 	for _, ha := range helloAgents {
 		helloIDs[ha.AgentID] = true
+	}
+
+	dbByID := make(map[model.UUID]model.Agent, len(dbAgents))
+	for _, da := range dbAgents {
+		dbByID[da.ID] = da
+	}
+
+	// Promote creating agents that the device reports as present to idle
+	for _, ha := range helloAgents {
+		if da, ok := dbByID[ha.AgentID]; ok && da.Status == model.AgentCreating {
+			if err := a.agents.UpdateStatus(ctx, ha.AgentID, model.AgentIdle); err != nil {
+				a.logger.Error("failed to promote agent to idle", "agent_id", ha.AgentID, "error", err)
+			}
+		}
 	}
 
 	deleted := 0
