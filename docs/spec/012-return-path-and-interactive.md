@@ -106,13 +106,30 @@ Out of scope (deferred):
 
 `gateway/internal/relay/relay.go:386-396` currently writes the file to disk and updates `model.File` in the `files` table but does **not** insert into `job_files`.
 
+**DB migration (locked, required):** the current `job_files` schema (`06-data-model.md §1.5`) is `(job_id, file_id)` only — there is no way to distinguish an input file (uploaded by the user, pushed to the device pre-job) from an output file (produced by the agent, pulled from the device post-job). Both currently end up in the same join table without a discriminator.
+
+Add a `role` column:
+
+```sql
+ALTER TABLE job_files
+  ADD COLUMN role text NOT NULL DEFAULT 'input'
+  CHECK (role IN ('input','output'));
+
+CREATE INDEX idx_job_files_job_role ON job_files (job_id, role);
+```
+
+- Backfill: existing rows are user-uploaded inputs → default `'input'` is correct.
+- Update `06-data-model.md §1.5` accordingly (see §7).
+- Update the Go model `model.JobFile` and any insert/select callsites in `gateway/internal/store` to carry `role`.
+
 **Concrete changes:**
 
 1. After `OnFilePullEnd` successfully writes the file:
    - Resolve the `Job` by `job_id` to obtain `user_id`.
-   - Insert (or upsert) `job_files (job_id, file_id, role)` with `role = "output"`. The schema in `06-data-model.md §1.7` already has `role` enum; if `output` is missing, **add it** as part of this workstream (Alembic migration / Atlas migration depending on your tooling — match existing repo convention).
-   - Set `model.File.UserID = job.UserID`, `File.Origin = "agent_output"`, `File.JobID = job_id`.
+   - Insert (or upsert) `job_files (job_id, file_id, role)` with `role = 'output'`.
+   - Set `model.File.UserID = job.UserID`, `File.Status = "staged_cloud"` (per `files.status` enum in `06-data-model.md §1.6`), and ensure `File.Sha256`, `File.Size`, `File.Name` are populated from the `FILE_PULL_BEGIN` payload.
 2. Send `FILE_PULL_ACK { status: "RECEIVED" }` only after the DB transaction commits. Failure path → `status: "ERROR"`.
+3. The input-push side (Workstream A2) MUST insert with `role = 'input'`. Verify after PR1 that the existing `jobs_handler.go:62-65` insert is updated to pass `'input'` explicitly rather than relying on the column default — explicit is safer when the default later changes.
 
 ### B2. Output download API (gap C2 part 2)
 
@@ -148,6 +165,8 @@ ETag: "<sha256>"
 **Tenant isolation:** both handlers MUST verify `job.user_id == claims.user_id` (or admin role) before responding, identical to existing `GET /jobs/{id}/result`.
 
 **Path resolution:** files live at `{baseDir}/jobs/{job_id}/output/{name}` (already so per `relay.go:386-395`). Translate `{file_id}` → `name` via the `files` table (`File.Name`). Reject if the resolved path escapes `{baseDir}` (defence in depth).
+
+**Role filter:** the list endpoint MUST filter `job_files.role = 'output'`; the download endpoint MUST verify `(job_id, file_id, role='output')` before serving — input files are never returned to the user via this route, even though they share the `files` table.
 
 **Streaming:** use `http.ServeFile` or `io.Copy` with a 64 KiB buffer. No range requests required in v1.
 
@@ -220,11 +239,11 @@ In `web/src/pages/JobsPage.tsx`:
    }
    ```
    - `ws_url` is **absolute** (scheme + host + path + query). Resolve scheme/host from request `Host` + `X-Forwarded-Proto` (or config `gateway.public_url`).
-   - `?token=` is a **dedicated short-lived token** scoped to `(session_id, user_id, "vnc")` with TTL = `ttl_secs`. Mint via `deps.JWT.IssueScoped(...)` (add the helper if missing). The browser-side `/ws/vnc/{id}` handler in `vnc_handler.go:289-301` already accepts `?token=`; tighten its claim check to require `scope == "vnc"` and `session_id` match.
+   - `?token=` **reuses the existing `session_token`** that `vnc_handler.go:45-60` already mints when creating the `vnc_sessions` row. Rationale: the token is already scoped to `(session_id, device_id, user_id)` per `05 §9`, has the right TTL, and is already validated by `/ws/vnc/{id}` on the device side; minting a second JWT just for the browser side adds a code path with no security gain. Tighten `vnc_handler.go:289-301` to: (a) accept `?token=<session_token>`, (b) verify it matches the `vnc_sessions.session_token` row, (c) verify `session_id` in URL matches the row, (d) verify `user_id` matches the JWT bearer if a user JWT is also present (defence in depth).
    - `rfb_password` is the secret returned by the agent; consumed once by `noVNC` then discarded.
 4. **Web** `web/src/components/VNCPanel.tsx`:
    - Use the absolute `wsUrl` verbatim (no prefix, no rewrite).
-   - Confirm `wsProtocols: ["binary"]` matches the gateway's expected subprotocol — current gateway accepts default; align if necessary. (Locked: subprotocol `iagent.novnc.v1` between browser ↔ gateway, distinct from `iagent.session.v1` between device ↔ gateway. Update both ends.)
+   - **Subprotocol negotiation (locked):** prefer `iagent.novnc.v1` between browser ↔ gateway; fall back to the empty subprotocol if the noVNC library refuses custom subprotocols. The gateway MUST accept both — clients are not pinned to v1. Device ↔ gateway uses `iagent.session.v1` independently (no fallback needed; the device is our code).
 
 ### C2. Fix `vncrelay` byte pump (gap V4)
 
@@ -287,10 +306,11 @@ Add to `05-tunnel-protocol.md §4.3`:
 
 | Type | Dir | Payload |
 |------|-----|---------|
-| `JOB_LOGIN_REQUIRED` | D→G | `{ job_id, event_seq, origin, label?, screenshot_sha256? }` |
+| `JOB_LOGIN_REQUIRED` | D→G | `{ job_id, event_seq, origin, label?, login_kind? }` |
 
 - `event_seq` enables idempotency (gateway dedupes by `(job_id, event_seq)` like `JOB_PROGRESS`).
-- `screenshot_sha256` references a file already pulled via `FILE_PULL_*` (out-of-band) — the screenshot itself is **not** inlined in the JSON frame because it would blow the 1 MiB cap with little benefit. Pulling the screenshot is optional in v1; if absent, the web UI just opens VNC without a preview.
+- `login_kind` is an optional hint: `"qr"` | `"form"` | `"unknown"` (default). When the agent knows the page is a QR-code login (e.g., WeChat / Alipay / 飞书), it sets `"qr"` so the web UI can adjust copy ("scan the QR code shown in the browser"). The agent does NOT need to detect this perfectly — `"unknown"` is always acceptable.
+- **No screenshot is transmitted.** The QR code (or login form) is shown live inside the agent's browser; the user sees it via the VNC live view and scans/types directly. This is simpler, lower-latency, and avoids a stale-screenshot UX. Implementations MUST NOT add a screenshot field in v1.
 
 **Implementation locations:**
 - `gateway/internal/model/types.go` — add `FrameJobLoginRequired`, `JobLoginRequiredPayload`.
@@ -316,16 +336,21 @@ const WSEventTypeLoginRequired = "job.login_required"
 
 Subscribers on `/api/v1/ws?topic=job:<id>` receive this alongside existing `job.progress` / `job.result` events.
 
-### D4. Web auto-opens VNC on `login_required` (gap L1 part 4)
+### D4. Web prompts user on `login_required` (gap L1 part 4)
+
+**Decision (locked):** do **not** auto-open the VNC modal. Instead show a **persistent, prominent prompt** that the user must explicitly act on. Rationale: an auto-popup is intrusive and can interrupt the user mid-task; the QR-code login flow needs the user to be ready (phone in hand) anyway, so making them click is the correct UX gate.
 
 `web/src/pages/JobsPage.tsx`:
 
 1. Subscribe to the existing `/ws` channel for the active job.
 2. On `event.type === "job.login_required"`:
-   - Show a toast: `"Login needed for {origin} — opening browser..."` (i18n via existing string table).
-   - If `vncData == null`, programmatically click `openVNC.mutate(...)` (same path as the manual button) and force the VNCPanel modal open.
-   - If a VNC session is already open, just flash the panel and emit a small banner inside it: `"Action needed: log in to {origin}"`.
-3. Add a user-preference toggle in settings: `"Auto-open browser when login is needed"` (default: ON). Persist in localStorage. When OFF, only the toast is shown and the user must click manually.
+   - **Add a sticky banner** at the top of the job detail card: `"Login required for {origin}. Open the remote browser to scan the QR code or sign in."` with a primary button `[Open Browser]`. The banner uses an attention-grabbing color (warning / accent) but does not block the page.
+   - **Also raise a toast** with the same message and the same action button — toasts are dismissable; the banner is not, until the login is satisfied (job leaves `login_required` state, status changes, or user closes the VNC session after success).
+   - **Do not** call `openVNC.mutate(...)` automatically. The user clicks `[Open Browser]`, which runs the existing manual flow.
+   - When `login_kind === "qr"`, the banner copy switches to `"Scan the QR code shown in the remote browser to sign in to {origin}."` to set expectations.
+   - If a VNC session is already open when the event fires, skip the banner and instead flash a small inline notice inside the VNC panel: `"Action needed: log in to {origin}"`.
+3. **State clearing:** the banner is cleared when (a) a subsequent `JOB_PROGRESS` arrives whose `message` does not indicate login, OR (b) `JOB_RESULT` arrives, OR (c) the user explicitly dismisses with an X button (which records a "user-acknowledged" timestamp; if a new `login_required` arrives after that, the banner reappears).
+4. **No localStorage preference toggle in v1.** Auto-open is permanently off; the prompt is permanently on. Revisit only if user feedback demands a per-user toggle.
 
 ### D5. `save-login` carries origin (gap L2)
 
@@ -372,7 +397,8 @@ Subscribers on `/api/v1/ws?topic=job:<id>` receive this alongside existing `job.
 | `05-tunnel-protocol.md` | §4.9 | Add `storage_state_encoding: "base64"` field (D6). Clarify `CRED_CAPTURE_ACK` is G→D **only** (D7). |
 | `05-tunnel-protocol.md` | §9 | Lock subprotocol names: browser↔gateway `iagent.novnc.v1`; device↔gateway `iagent.session.v1` (C1). |
 | `04-agent-container.md` | HTTP API | Add `POST /jobs/{job_id}/events`, `GET /jobs/{job_id}/events?since=`, `GET /browser/active_origin` (D1, D5). |
-| `06-data-model.md` | `job_files` | Document `role = 'output'` (B1). Add `job_login_events` table or extend `job_events` (D2). |
+| `06-data-model.md` | §1.5 `job_files` | Add `role text NOT NULL DEFAULT 'input' CHECK (role IN ('input','output'))` column + `idx_job_files_job_role` index (B1). |
+| `06-data-model.md` | new §1.x | Add `job_login_events (job_id, event_seq, origin, label, login_kind, created_at)` table for audit / replay (D2). |
 | `07-api.md` | §5 (jobs) | Add `GET /jobs/{id}/output`, `GET /jobs/{id}/output/{file_id}` (B2). Update `POST /jobs/{id}/vnc` response (C1). Add `GET /jobs/{id}/browser/active_origin` (D5). |
 | `07-api.md` | §9 (WS) | Add `job.login_required` event type (D3). |
 | `09-web-ui.md` | Job detail | Document new Output panel (B3) and login-required auto-open (D4). |
@@ -427,8 +453,9 @@ Every workstream has both unit and end-to-end coverage. End-to-end tests run aga
 | C2-Unit | Unit | `vncrelay` round-trips 1 MiB random bytes; sha256 matches both directions. |
 | C3-E2E | E2E | After C1-E2E, kill the browser tab; reopen via `GET /jobs/{id}/vnc`; receive same `session_id` and a fresh `ws_url`; reconnect succeeds. |
 | D1-Unit | Unit | Agent `POST /jobs/{id}/events` returns monotonic `event_seq`; `GET /jobs/{id}/events?since=N` filters. |
-| D2-D3-E2E | E2E | Agent emits `login_required`; web `/ws` subscriber receives `job.login_required`. |
-| D4-Web | Component | Mock WS event; assert `VNCPanel` opens automatically and toast renders. |
+| D2-D3-E2E | E2E | Agent emits `login_required` with `login_kind="qr"`; web `/ws` subscriber receives `job.login_required` with the same `login_kind`. |
+| D4-Web | Component | Mock WS event; assert sticky banner + toast both render with `[Open Browser]` button; assert VNC panel does **not** open automatically. Click button → `openVNC.mutate` invoked. |
+| D4-QR-E2E | E2E | Job that triggers `login_kind="qr"`; user clicks `[Open Browser]`; VNC live view shows the agent's browser at the QR page; simulated post-scan navigation clears the banner. |
 | D5-E2E | E2E | In a live VNC session, click "Save login" with origin pre-filled; assert `browser_credentials` row has correct `origin`; submit follow-up job with that `credential_id`; agent loads page already authenticated. |
 | D6-Unit | Unit | `CRED_CAPTURE` JSON has `storage_state` and `storage_state_encoding="base64"`. |
 | D7-Unit | Unit | Capture failure path emits `ERROR { code:"CRED_CAPTURE_FAILED" }`, **never** `CRED_CAPTURE_ACK`. |
@@ -448,13 +475,19 @@ E2E tests run against `iagent_e2e` DB per `AGENTS.md`. Never run against `iagent
 
 ---
 
-## 11. Open questions (require answers before merge)
+## 11. Resolved design decisions
 
-1. **`role` enum on `job_files`.** Does `06-data-model.md` already include `output`? If not, additive migration is required as part of B1. Implementer to confirm by reading the current schema before opening PR2.
-2. **Subprotocol negotiation for noVNC.** Confirm that `noVNC` browser library accepts `iagent.novnc.v1` as a custom subprotocol. If not, fall back to the empty subprotocol and rely on path-based routing — re-spec §9 in `05-tunnel-protocol.md`.
-3. **Short-lived JWT vs session-token reuse.** C1 specifies a new `scope:"vnc"` JWT for the browser side. Alternative: reuse the existing `session_token` (already minted by `vnc_handler.go:45-60`) and accept it via `?token=`. Decide before PR3; smaller change is reuse, but it conflates two security domains.
-4. **Login `screenshot` transport.** D2 routes screenshots through `FILE_PULL_*`. Should they instead go through a dedicated thumbnail endpoint that bypasses the file store (since they are ephemeral)? Defer until v2 unless trivial.
-5. **Auto-open default.** D4 defaults the auto-open setting to ON. Product decision: confirm before shipping; some users may find auto-popups disruptive.
+The five questions raised in earlier drafts are all resolved. Recorded here for future reviewers.
+
+1. **`job_files.role` column — required (locked in B1).** Verification of `06-data-model.md §1.5` confirmed the table currently has only `(job_id, file_id)`; there is no way to distinguish input from output files. The migration adds a `role text NOT NULL DEFAULT 'input' CHECK (role IN ('input','output'))` column. This satisfies the product requirement: the local device specifies an output directory, the device pulls everything in it to the cloud, and the cloud surfaces only `role='output'` files for user download.
+
+2. **noVNC subprotocol — fallback supported (locked in C1 step 4).** The gateway accepts both `iagent.novnc.v1` and the empty subprotocol on the browser ↔ gateway socket. The web client prefers v1 and falls back to empty if the noVNC library refuses. Either path produces a working remote-login UX, which is the only product requirement.
+
+3. **Browser-side `?token=` — reuse `session_token` (locked in C1 step 3).** The token already minted for the device side is reused for the browser side. It is scoped to `(session_id, device_id, user_id)` per `05 §9`, has the right TTL, and is sufficient to gate access to the per-session VNC relay. This keeps the cookie-relay flow simple: the user logs in via VNC, captured cookies travel via the existing `CRED_CAPTURE` path, and re-injection on subsequent jobs uses `CRED_PUSH` (already working — see audit 10 §3.5). No new JWT scope is needed for this product flow.
+
+4. **Login screenshots — not transmitted (locked in D2).** The QR code (or login form) is rendered live in the agent's browser; the user sees and scans it directly through the VNC live view. There is no screenshot field on `JOB_LOGIN_REQUIRED` and no thumbnail endpoint. Rationale: the QR-login product requirement is "user can scan a QR to log in"; the lowest-latency, freshest, and simplest implementation is the live VNC stream the system already supports. A screenshot would be stale by the time the user sees it, and QR codes refresh frequently.
+
+5. **Auto-open VNC — disabled; persistent prompt instead (locked in D4).** When `login_required` fires the web UI shows a sticky banner + a toast, both with an `[Open Browser]` button. The user clicks to open VNC. No automatic popup. Rationale: QR-code logins require the user to be ready (phone in hand); forcing the browser open before that is intrusive. The persistent banner ensures the user cannot miss the prompt even if they ignore the toast.
 
 ---
 
