@@ -39,10 +39,11 @@ Derived from `../braionstorm/goal.md`.
 | 08 | [08-auth-security.md](./08-auth-security.md) | Auth, tenant isolation, hardening, threat model |
 | 09 | [09-web-ui.md](./09-web-ui.md) | Frontend stack, screens, realtime, UX, testing |
 | 10 | [10-deployment.md](./10-deployment.md) | Build, deploy, ops, CI/CD, E2E verification |
+| 11 | [11-i18n.md](./11-i18n.md) | Multi-language support: inventory, strategy, implementation plan |
 
 ## Suggested reading order
 
-`00 → 01 → 05 → 06 → 07 → 02 → 03 → 04 → 08 → 09 → 10`
+`00 → 01 → 05 → 06 → 07 → 02 → 03 → 04 → 08 → 09 → 10 → 11`
 
 ## Status
 
