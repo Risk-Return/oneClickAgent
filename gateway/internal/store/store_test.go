@@ -690,7 +690,7 @@ func TestFileLifecycle(t *testing.T) {
 	}
 	fs.Create(ctx, file2)
 
-	if err := fs.LinkToJob(ctx, file2.ID, job.ID); err != nil {
+	if err := fs.LinkToJob(ctx, file2.ID, job.ID, "input"); err != nil {
 		t.Fatalf("link file: %v", err)
 	}
 	linked, err := fs.ListByJob(ctx, job.ID)

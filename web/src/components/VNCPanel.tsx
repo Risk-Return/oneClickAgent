@@ -18,7 +18,7 @@ interface VNCPanelProps {
   wsUrl: string;
   rfbPassword: string;
   sessionId: string;
-  onSaveLogin: (sessionId: string, label: string) => Promise<void>;
+  onSaveLogin: (sessionId: string, label: string, origin: string) => Promise<void>;
 }
 
 type ConnectionStatus = "connecting" | "connected" | "disconnected" | "error";
@@ -30,6 +30,7 @@ export function VNCPanel({ open, onClose, wsUrl, rfbPassword, sessionId, onSaveL
   const [status, setStatus] = useState<ConnectionStatus>("connecting");
   const [showSaveLogin, setShowSaveLogin] = useState(false);
   const [loginLabel, setLoginLabel] = useState("");
+  const [loginOrigin, setLoginOrigin] = useState("");
   const [saving, setSaving] = useState(false);
   const initializedRef = useRef(false);
 
@@ -77,11 +78,12 @@ export function VNCPanel({ open, onClose, wsUrl, rfbPassword, sessionId, onSaveL
   };
 
   const handleSaveLogin = async () => {
-    if (!loginLabel.trim()) return;
+    if (!loginLabel.trim() || !loginOrigin.trim()) return;
     setSaving(true);
     try {
-      await onSaveLogin(sessionId, loginLabel.trim());
+      await onSaveLogin(sessionId, loginLabel.trim(), loginOrigin.trim());
       setLoginLabel("");
+      setLoginOrigin("");
       setShowSaveLogin(false);
     } finally {
       setSaving(false);
@@ -138,14 +140,20 @@ export function VNCPanel({ open, onClose, wsUrl, rfbPassword, sessionId, onSaveL
             ) : (
               <div className="flex items-center gap-2">
                 <Input
+                  value={loginOrigin}
+                  onChange={(e) => setLoginOrigin(e.target.value)}
+                  placeholder={t("vnc.loginOrigin", "https://example.com")}
+                  className="h-8 w-40"
+                />
+                <Input
                   value={loginLabel}
                   onChange={(e) => setLoginLabel(e.target.value)}
                   placeholder={t("vnc.loginLabel")}
-                  className="h-8 w-48"
+                  className="h-8 w-40"
                   autoFocus
                   onKeyDown={(e) => e.key === "Enter" && handleSaveLogin()}
                 />
-                <Button size="sm" onClick={handleSaveLogin} disabled={!loginLabel.trim() || saving}>
+                <Button size="sm" onClick={handleSaveLogin} disabled={!loginLabel.trim() || !loginOrigin.trim() || saving}>
                   {saving ? <Loader2 className="mr-1 h-3 w-3 animate-spin" /> : null}
                   {t("vnc.save")}
                 </Button>

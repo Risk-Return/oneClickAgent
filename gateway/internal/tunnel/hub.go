@@ -80,6 +80,7 @@ type Hub struct {
 	onFilePullBegin    func(ctx context.Context, deviceID model.UUID, payload model.FilePullBeginPayload) error
 	onFilePullChunk    func(ctx context.Context, deviceID model.UUID, payload model.FilePullChunkPayload) error
 	onFilePullEnd      func(ctx context.Context, deviceID model.UUID, payload model.FilePullEndPayload) error
+	onJobLoginRequired func(ctx context.Context, deviceID model.UUID, payload model.JobLoginRequiredPayload) error
 
 	heartbeatInterval      time.Duration
 	heartbeatMissThreshold time.Duration
@@ -111,6 +112,7 @@ type HubConfig struct {
 	OnFilePullBegin         func(ctx context.Context, deviceID model.UUID, payload model.FilePullBeginPayload) error
 	OnFilePullChunk         func(ctx context.Context, deviceID model.UUID, payload model.FilePullChunkPayload) error
 	OnFilePullEnd           func(ctx context.Context, deviceID model.UUID, payload model.FilePullEndPayload) error
+	OnJobLoginRequired      func(ctx context.Context, deviceID model.UUID, payload model.JobLoginRequiredPayload) error
 }
 
 // NewHub creates a new tunnel Hub.
@@ -148,6 +150,7 @@ func NewHub(cfg HubConfig) *Hub {
 		onFilePullBegin:        cfg.OnFilePullBegin,
 		onFilePullChunk:        cfg.OnFilePullChunk,
 		onFilePullEnd:          cfg.OnFilePullEnd,
+		onJobLoginRequired:    cfg.OnJobLoginRequired,
 		heartbeatInterval:      cfg.HeartbeatInterval,
 		heartbeatMissThreshold: cfg.HeartbeatMissThreshold,
 		logger:                 obs.Logger("tunnel"),
@@ -178,6 +181,7 @@ func (h *Hub) SetHandlers(cfg HubConfig) {
 	h.onFilePullBegin = cfg.OnFilePullBegin
 	h.onFilePullChunk = cfg.OnFilePullChunk
 	h.onFilePullEnd = cfg.OnFilePullEnd
+	h.onJobLoginRequired = cfg.OnJobLoginRequired
 }
 
 // Register adds a new device connection, superseding any existing one.
@@ -402,6 +406,17 @@ func (h *Hub) HandleFilePullEnd(ctx context.Context, deviceID model.UUID, payloa
 	}
 	if h.onFilePullEnd != nil {
 		return h.onFilePullEnd(ctx, deviceID, p)
+	}
+	return nil
+}
+
+func (h *Hub) HandleJobLoginRequired(ctx context.Context, deviceID model.UUID, payload json.RawMessage) error {
+	var p model.JobLoginRequiredPayload
+	if err := json.Unmarshal(payload, &p); err != nil {
+		return err
+	}
+	if h.onJobLoginRequired != nil {
+		return h.onJobLoginRequired(ctx, deviceID, p)
 	}
 	return nil
 }

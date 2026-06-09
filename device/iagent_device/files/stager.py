@@ -29,7 +29,7 @@ class FileStager:
         total_chunks = payload.get("total_chunks", 0)
         size = payload.get("size_bytes", 0)
 
-        ws_dir = self.workspace_dir / job_id / "inputs"
+        ws_dir = self.workspace_dir / "workspaces" / job_id / "inputs"
         ws_dir.mkdir(parents=True, exist_ok=True)
 
         f = open(ws_dir / name, "wb")
@@ -78,7 +78,7 @@ class FileStager:
             })
 
     async def cleanup(self, job_id: str):
-        ws_dir = self.workspace_dir / job_id
+        ws_dir = self.workspace_dir / "workspaces" / job_id
         if ws_dir.exists():
             import shutil
             shutil.rmtree(ws_dir)

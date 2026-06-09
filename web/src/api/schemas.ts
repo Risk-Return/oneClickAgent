@@ -146,6 +146,21 @@ export const FileSchema = z.object({
 });
 export type FileModel = z.infer<typeof FileSchema>;
 
+export const JobOutputFileSchema = z.object({
+  file_id: z.string(),
+  name: z.string(),
+  size: z.number().int().nonnegative(),
+  sha256: z.string(),
+  created_at: z.string().datetime(),
+});
+export type JobOutputFile = z.infer<typeof JobOutputFileSchema>;
+
+export const JobOutputListSchema = z.object({
+  job_id: z.string(),
+  files: z.array(JobOutputFileSchema),
+});
+export type JobOutputList = z.infer<typeof JobOutputListSchema>;
+
 export const SkillVisibility = z.enum(["public", "restricted"]);
 export type SkillVisibility = z.infer<typeof SkillVisibility>;
 

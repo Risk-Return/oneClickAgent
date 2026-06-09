@@ -98,3 +98,8 @@ class AgentClient:
         async with httpx.AsyncClient(timeout=self.timeout) as c:
             r = await c.get(f"{self.base_url}/browser/state", params=params)
             return r.json()
+
+    async def get_job_events(self, job_id: str, since: int = 0) -> dict:
+        async with httpx.AsyncClient(timeout=self.timeout) as c:
+            r = await c.get(f"{self.base_url}/jobs/{job_id}/events", params={"since": since})
+            return r.json()

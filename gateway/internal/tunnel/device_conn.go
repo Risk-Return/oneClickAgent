@@ -380,6 +380,12 @@ func (c *DeviceConn) handleFrame(ctx context.Context, frame model.Frame) error {
 		}
 		return nil
 
+	case model.FrameJobLoginRequired:
+		if c.hub != nil {
+			return c.hub.HandleJobLoginRequired(ctx, c.deviceID, frame.Payload)
+		}
+		return nil
+
 	case model.FrameVNCOpened:
 		var payload model.VNCOpenedPayload
 		if err := json.Unmarshal(frame.Payload, &payload); err != nil {

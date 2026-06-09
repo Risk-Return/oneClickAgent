@@ -96,7 +96,7 @@ While a job is **running**, the customer can open a live VNC view of the agent's
 | POST | `/jobs/{id}/vnc` | open a session for the caller's running job → `201 {session_id, ws_url, rfb_password, ttl_s}`. `409` if job not running or VNC disabled on the agent |
 | GET | `/jobs/{id}/vnc` | current session status `{session_id, status}` (`pending`/`ready`/`active`/`closed`) |
 | DELETE | `/vnc/{session_id}` | close the session (also auto-closed on job terminal / idle / max-duration) |
-| POST | `/vnc/{session_id}/save-login` | `{label}` capture the current site login from the live browser into the credential vault → `201 {credential_id}` (see §5.2, `CRED_CAPTURE`) |
+| POST | `/vnc/{session_id}/save-login` | `{label, origin}` capture the current site login from the live browser into the credential vault. `origin` is required (scheme://host[:port]). → `201 {credential_id}` (see §5.2, `CRED_CAPTURE`) |
 
 The live pixels are carried on the realtime noVNC WebSocket `wss://<gateway>/ws/vnc/{session_id}` (§9.1). `rfb_password` is single-use and passed to the noVNC client only. Only the **owning customer** of the job may open/use the session.
 

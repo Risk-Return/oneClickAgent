@@ -4,7 +4,12 @@ import (
 	"context"
 	"encoding/base64"
 	"encoding/json"
+	"fmt"
+	"io"
 	"net/http"
+	"os"
+	"path/filepath"
+	"time"
 
 	"github.com/go-chi/chi/v5"
 	"github.com/oneClickAgent/gateway/internal/credvault"
@@ -61,7 +66,7 @@ func (deps *Dependencies) handleSubmitJob() http.HandlerFunc {
 
 		// Link files to job
 		for _, fileID := range req.FileIDs {
-			_ = deps.Files.LinkToJob(r.Context(), fileID, job.ID)
+			_ = deps.Files.LinkToJob(r.Context(), fileID, job.ID, "input")
 		}
 
 		// Link credentials to job (before dispatch, for both immediate and queued paths)
@@ -284,8 +289,8 @@ func (deps *Dependencies) handleGetJobResult() http.HandlerFunc {
 }
 
 // PushFilesToDevice pushes files associated with a job to the device.
-func (deps *Dependencies) PushFilesToDevice(ctx interface{}, job *model.Job, deviceID model.UUID) error {
-	return nil
+func (deps *Dependencies) PushFilesToDevice(ctx context.Context, job *model.Job, deviceID model.UUID) error {
+	return deps.Relay.PushJobInputs(ctx, job, deviceID)
 }
 
 // PushCredentialsForJob decrypts and pushes all linked credentials for a job over the tunnel.
@@ -317,4 +322,138 @@ func PushCredentialsForJob(ctx interface{}, jobID, agentID, deviceID model.UUID,
 	}
 
 	return nil
+}
+
+// ─── Job Output File Handlers ────────────────────────────────
+
+type jobOutputFileEntry struct {
+	FileID    model.UUID `json:"file_id"`
+	Name      string     `json:"name"`
+	Size      int64      `json:"size"`
+	SHA256    string     `json:"sha256"`
+	CreatedAt time.Time  `json:"created_at"`
+}
+
+type jobOutputListResponse struct {
+	JobID model.UUID             `json:"job_id"`
+	Files []jobOutputFileEntry   `json:"files"`
+}
+
+func (deps *Dependencies) handleListJobOutputs() http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		userID := getUserID(r)
+		jobID, err := model.ParseUUID(chi.URLParam(r, "jobID"))
+		if err != nil {
+			writeError(w, http.StatusBadRequest, model.ErrCodeValidationFailed, "invalid job_id")
+			return
+		}
+
+		job, err := deps.Jobs.GetByID(r.Context(), jobID)
+		if err != nil || job == nil {
+			writeError(w, http.StatusNotFound, model.ErrCodeNotFound, "job not found")
+			return
+		}
+		if job.UserID != userID {
+			writeError(w, http.StatusForbidden, model.ErrCodeForbidden, "access denied")
+			return
+		}
+
+		files, err := deps.Files.ListByJobAndRole(r.Context(), jobID, "output")
+		if err != nil {
+			writeError(w, http.StatusInternalServerError, model.ErrCodeInternalError, "failed to list output files")
+			return
+		}
+
+		entries := make([]jobOutputFileEntry, 0, len(files))
+		for _, f := range files {
+			entries = append(entries, jobOutputFileEntry{
+				FileID:    f.ID,
+				Name:      f.Name,
+				Size:      f.Size,
+				SHA256:    f.SHA256,
+				CreatedAt: f.CreatedAt,
+			})
+		}
+
+		writeJSON(w, http.StatusOK, jobOutputListResponse{
+			JobID: jobID,
+			Files: entries,
+		})
+	}
+}
+
+func (deps *Dependencies) handleDownloadJobOutput() http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		userID := getUserID(r)
+		jobID, err := model.ParseUUID(chi.URLParam(r, "jobID"))
+		if err != nil {
+			writeError(w, http.StatusBadRequest, model.ErrCodeValidationFailed, "invalid job_id")
+			return
+		}
+		fileID, err := model.ParseUUID(chi.URLParam(r, "fileID"))
+		if err != nil {
+			writeError(w, http.StatusBadRequest, model.ErrCodeValidationFailed, "invalid file_id")
+			return
+		}
+
+		job, err := deps.Jobs.GetByID(r.Context(), jobID)
+		if err != nil || job == nil {
+			writeError(w, http.StatusNotFound, model.ErrCodeNotFound, "job not found")
+			return
+		}
+		if job.UserID != userID {
+			writeError(w, http.StatusForbidden, model.ErrCodeForbidden, "access denied")
+			return
+		}
+
+		file, err := deps.Files.GetByID(r.Context(), fileID)
+		if err != nil || file == nil {
+			writeError(w, http.StatusNotFound, model.ErrCodeNotFound, "file not found")
+			return
+		}
+
+		// Verify output role by checking job_files
+		outputFiles, err := deps.Files.ListByJobAndRole(r.Context(), jobID, "output")
+		if err != nil {
+			writeError(w, http.StatusInternalServerError, model.ErrCodeInternalError, "internal error")
+			return
+		}
+		found := false
+		for _, f := range outputFiles {
+			if f.ID == fileID {
+				found = true
+				break
+			}
+		}
+		if !found {
+			writeError(w, http.StatusNotFound, model.ErrCodeNotFound, "file not found")
+			return
+		}
+
+		storagePath := file.StorageURI
+		if storagePath == "" {
+			writeError(w, http.StatusNotFound, model.ErrCodeNotFound, "file not available")
+			return
+		}
+
+		// Defence in depth: reject if path escapes base dir
+		absPath, err := filepath.Abs(storagePath)
+		if err != nil || !filepath.HasPrefix(absPath, filepath.Clean(deps.Config.FileStore)) {
+			writeError(w, http.StatusNotFound, model.ErrCodeNotFound, "file not found")
+			return
+		}
+
+		f, err := os.Open(storagePath)
+		if err != nil {
+			writeError(w, http.StatusNotFound, model.ErrCodeNotFound, "file not found")
+			return
+		}
+		defer f.Close()
+
+		w.Header().Set("Content-Type", "application/octet-stream")
+		w.Header().Set("Content-Disposition", fmt.Sprintf(`attachment; filename="%s"`, file.Name))
+		w.Header().Set("ETag", fmt.Sprintf(`"%s"`, file.SHA256))
+		w.WriteHeader(http.StatusOK)
+		io.Copy(w, f)
+	}
 }

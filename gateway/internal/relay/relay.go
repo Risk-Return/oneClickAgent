@@ -38,6 +38,8 @@ type FileRelay struct {
 
 	pullMu    sync.Mutex
 	pullBufs  map[model.UUID]*pullTransfer
+
+	GetJobUserID func(ctx context.Context, jobID model.UUID) (model.UUID, error)
 }
 
 type pullTransfer struct {
@@ -235,6 +237,23 @@ func (r *FileRelay) OnFileAck(ctx context.Context, payload model.FileAckPayload)
 	return fmt.Errorf("file ack error for %s: %s", payload.FileID, errMsg)
 }
 
+// PushJobInputs sends all input files linked to a job to the target device.
+func (r *FileRelay) PushJobInputs(ctx context.Context, job *model.Job, deviceID model.UUID) error {
+	files, err := r.store.ListByJob(ctx, job.ID)
+	if err != nil {
+		return fmt.Errorf("list job files: %w", err)
+	}
+	for _, f := range files {
+		if f.Status == model.FileStagedDevice {
+			continue
+		}
+		if err := r.PushFile(ctx, f.ID, job.ID, deviceID); err != nil {
+			return fmt.Errorf("push file %s: %w", f.ID, err)
+		}
+	}
+	return nil
+}
+
 // CleanupStagedFiles removes staged files older than the retention period.
 func (r *FileRelay) CleanupStagedFiles(ctx context.Context) error {
 	cutoff := time.Now().UTC().Add(-r.retention)
@@ -326,6 +345,9 @@ func (r *FileRelay) OnFilePullChunk(ctx context.Context, deviceID model.UUID, pa
 
 	pt.buf[payload.ChunkIndex] = data
 	pt.received[payload.ChunkIndex] = true
+
+	// ACK per-chunk for backpressure
+	r.sendPullAck(deviceID, payload.FileID, "CHUNK_OK", "", payload.ChunkIndex)
 	return nil
 }
 
@@ -391,19 +413,31 @@ func (r *FileRelay) OnFilePullEnd(ctx context.Context, deviceID model.UUID, payl
 		Status:     model.FileStagedCloud,
 		StorageURI: storagePath,
 	}
+
+	if r.GetJobUserID != nil {
+		if uid, err := r.GetJobUserID(ctx, pt.jobID); err == nil {
+			file.UserID = uid
+		}
+	}
 	if err := r.store.Create(ctx, file); err != nil {
 		// Non-fatal: file is on disk
 	}
+
+	// Insert into job_files with role='output'
+	_ = r.store.LinkToJob(ctx, pt.fileID, pt.jobID, "output")
 
 	r.sendPullAck(deviceID, payload.FileID, "RECEIVED", "")
 	return nil
 }
 
-func (r *FileRelay) sendPullAck(deviceID model.UUID, fileID model.UUID, status string, errMsg string) {
+func (r *FileRelay) sendPullAck(deviceID model.UUID, fileID model.UUID, status string, errMsg string, chunkIndex ...int) {
 	ack := model.FilePullAckPayload{
 		FileID: fileID,
 		Status: status,
 		Error:  errMsg,
+	}
+	if len(chunkIndex) > 0 {
+		ack.ChunkIndex = chunkIndex[0]
 	}
 	frame, err := tunnel.NewFrame(model.FrameFilePullAck, ack)
 	if err != nil {

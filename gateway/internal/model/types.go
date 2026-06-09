@@ -542,8 +542,11 @@ type SkillRolloutEntry struct {
 }
 
 type VNCStatusResponse struct {
-	SessionID *UUID             `json:"session_id,omitempty"`
-	Status    VNCSessionStatus `json:"status"`
+	SessionID   *UUID             `json:"session_id,omitempty"`
+	Status      VNCSessionStatus `json:"status"`
+	RFBPassword *string           `json:"rfb_password,omitempty"`
+	WSUrl       *string           `json:"ws_url,omitempty"`
+	TTLSecs     *int              `json:"ttl_secs,omitempty"`
 }
 
 // ---------- Tunnel Frame Types ----------
@@ -809,11 +812,12 @@ type FilePullEndPayload struct {
 	FileID UUID `json:"file_id"`
 }
 
-// FilePullAckPayload acknowledges receipt of an output file.
+// FilePullAckPayload acknowledges receipt of an output file chunk or full file.
 type FilePullAckPayload struct {
-	FileID UUID   `json:"file_id"`
-	Status string `json:"status"` // "RECEIVED" | "ERROR"
-	Error  string `json:"error,omitempty"`
+	FileID     UUID   `json:"file_id"`
+	Status     string `json:"status"` // "CHUNK_OK" | "RECEIVED" | "ERROR"
+	Error      string `json:"error,omitempty"`
+	ChunkIndex int    `json:"chunk_index,omitempty"`
 }
 
 type StateSyncPayload struct {
@@ -849,7 +853,16 @@ const (
 	WSEventAgentStatus  = "agent.status"
 	WSEventDeviceStatus = "device.status"
 	WSEventSkillRollout = "skill.rollout"
+	WSEventLoginRequired = "job.login_required"
 )
+
+type WSEventLoginRequiredData struct {
+	JobID     string `json:"job_id"`
+	Origin    string `json:"origin"`
+	Label     string `json:"label,omitempty"`
+	LoginKind string `json:"login_kind,omitempty"`
+	At        string `json:"at"`
+}
 
 // ---------- Pool Types ----------
 
@@ -934,6 +947,9 @@ const (
 	FrameCredPushAck FrameType = "CRED_PUSH_ACK"
 	FrameCredCapture FrameType = "CRED_CAPTURE"
 	FrameCredCaptureAck FrameType = "CRED_CAPTURE_ACK"
+
+	// Login events
+	FrameJobLoginRequired FrameType = "JOB_LOGIN_REQUIRED"
 )
 
 // VNCOpenPayload is the payload for VNC_OPEN frame (gateway → device).
@@ -980,13 +996,14 @@ type CredPushAckPayload struct {
 
 // CredCapturePayload is the payload for CRED_CAPTURE frame (device → gateway).
 type CredCapturePayload struct {
-	SessionID UUID   `json:"session_id"`
-	JobID     UUID   `json:"job_id"`
-	AgentID   UUID   `json:"agent_id"`
-	Origin    string `json:"origin"`
-	Data      string `json:"data"`  // base64-encoded browser storage state
-	SHA256    string `json:"sha256"`
-	Label     string `json:"label,omitempty"`
+	SessionID             UUID   `json:"session_id"`
+	JobID                 UUID   `json:"job_id"`
+	AgentID               UUID   `json:"agent_id"`
+	Origin                string `json:"origin"`
+	StorageState          string `json:"storage_state"` // base64-encoded browser storage state
+	StorageStateEncoding  string `json:"storage_state_encoding,omitempty"`
+	SHA256                string `json:"sha256"`
+	Label                 string `json:"label,omitempty"`
 }
 
 // CredCaptureAckPayload is the payload for CRED_CAPTURE_ACK frame (gateway → device).
@@ -995,6 +1012,15 @@ type CredCaptureAckPayload struct {
 	SessionID    UUID   `json:"session_id"`
 	Status       string `json:"status"` // STORED | error
 	Error        string `json:"error,omitempty"`
+}
+
+// JobLoginRequiredPayload is the payload for JOB_LOGIN_REQUIRED frame (device → gateway).
+type JobLoginRequiredPayload struct {
+	JobID     UUID   `json:"job_id"`
+	EventSeq  int    `json:"event_seq"`
+	Origin    string `json:"origin"`
+	Label     string `json:"label,omitempty"`
+	LoginKind string `json:"login_kind,omitempty"` // "qr" | "form" | "unknown"
 }
 
 // ─── VNC + Credential DTOs ──────────────────────────────────
@@ -1012,7 +1038,8 @@ type VNCOpenResponse struct {
 
 // SaveLoginRequest is the payload for POST /vnc/{id}/save-login.
 type SaveLoginRequest struct {
-	Label string `json:"label"`
+	Label  string `json:"label"`
+	Origin string `json:"origin"`
 }
 
 // CreateCredentialRequest is the payload for POST /credentials (admin push).

@@ -88,7 +88,7 @@ class DockerManager:
             logger.info("mock: create container %s on port %d", name, port)
             return None
         try:
-            workspace_mount = f"{self.data_dir}/workspaces:/workspaces:rw"
+            workspace_mount = f"{self.data_dir}/work:/work:rw"
             container = self.docker.containers.run(
                 self.image,
                 name=name,
@@ -197,7 +197,7 @@ class DockerManager:
             return {"cpu_pct": 0.0, "mem_mb": 0, "disk_mb": 0}
 
     async def reaper_cleanup(self, agent_id: str, job_id: str):
-        ws_dir = f"{self.data_dir}/workspaces/{job_id}"
+        ws_dir = f"{self.data_dir}/work/workspaces/{job_id}"
         try:
             shutil.rmtree(ws_dir, ignore_errors=True)
         except Exception:

@@ -77,8 +77,9 @@ type FileStoreInterface interface {
 	UpdateSHA256(ctx context.Context, id model.UUID, sha256 string) error
 	ListByUser(ctx context.Context, userID model.UUID, cursor *model.UUID, limit int) ([]model.File, *model.UUID, error)
 	ListStagedCloud(ctx context.Context, olderThan time.Time) ([]model.File, error)
-	LinkToJob(ctx context.Context, fileID, jobID model.UUID) error
+	LinkToJob(ctx context.Context, fileID, jobID model.UUID, role string) error
 	ListByJob(ctx context.Context, jobID model.UUID) ([]model.File, error)
+	ListByJobAndRole(ctx context.Context, jobID model.UUID, role string) ([]model.File, error)
 }
 
 type SkillStoreInterface interface {

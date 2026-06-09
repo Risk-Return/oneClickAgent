@@ -232,6 +232,10 @@ func NewHarness(t *testing.T) *E2EHarness {
 		OnFilePullEnd: func(ctx context.Context, deviceID model.UUID, payload model.FilePullEndPayload) error {
 			return fileRelay.OnFilePullEnd(ctx, deviceID, payload)
 		},
+		OnJobLoginRequired: func(ctx context.Context, deviceID model.UUID, payload model.JobLoginRequiredPayload) error {
+			// No-op in e2e tests
+			return nil
+		},
 	})
 
 	deps := &httpapi.Dependencies{

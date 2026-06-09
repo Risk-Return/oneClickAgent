@@ -158,4 +158,7 @@ func (r *Router) RegisterAll(hub *Hub) {
 	r.Register(model.FrameFilePullEnd, func(ctx context.Context, deviceID model.UUID, payload json.RawMessage) error {
 		return hub.HandleFilePullEnd(ctx, deviceID, payload)
 	})
+	r.Register(model.FrameJobLoginRequired, func(ctx context.Context, deviceID model.UUID, payload json.RawMessage) error {
+		return hub.HandleJobLoginRequired(ctx, deviceID, payload)
+	})
 }

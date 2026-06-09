@@ -103,10 +103,10 @@ class CredRelay:
 
         client = self.docker.get_client(agent_id)
         if not client:
-            await self.outbox.enqueue_and_send(FrameType.CRED_CAPTURE_ACK, {
-                "session_id": session_id,
-                "status": "error",
-                "error": "agent not reachable",
+            await self.outbox.enqueue_and_send(FrameType.ERROR, {
+                "code": "CRED_CAPTURE_FAILED",
+                "message": "agent not reachable",
+                "ref_msg_id": session_id,
             })
             return
 
@@ -128,12 +128,13 @@ class CredRelay:
                 "agent_id": agent_id,
                 "label": label,
                 "origin": origin,
-                "data": encoded,
+                "storage_state": encoded,
+                "storage_state_encoding": "base64",
                 "sha256": sha256,
             })
         except Exception as e:
-            await self.outbox.enqueue_and_send(FrameType.CRED_CAPTURE_ACK, {
-                "session_id": session_id,
-                "status": "error",
-                "error": str(e),
+            await self.outbox.enqueue_and_send(FrameType.ERROR, {
+                "code": "CRED_CAPTURE_FAILED",
+                "message": str(e),
+                "ref_msg_id": session_id,
             })

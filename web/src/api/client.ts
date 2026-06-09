@@ -128,6 +128,34 @@ export const apiClient = {
   post: <T>(path: string, body?: unknown) => apiClient.request<T>(path, { method: "POST", body }),
   patch: <T>(path: string, body?: unknown) => apiClient.request<T>(path, { method: "PATCH", body }),
   delete: <T>(path: string, body?: unknown) => apiClient.request<T>(path, { method: "DELETE", body }),
+
+  async getBlob(path: string): Promise<Blob> {
+    const url = `${API_PREFIX}/api/v1${path}`;
+    const token = getAccessToken();
+    const headers: Record<string, string> = {};
+    if (token) headers["Authorization"] = `Bearer ${token}`;
+
+    let response = await fetch(url, { headers });
+    if (response.status === 401) {
+      const newToken = await getTokenManager().refreshAccessToken();
+      if (newToken) {
+        headers["Authorization"] = `Bearer ${newToken}`;
+        response = await fetch(url, { headers });
+      }
+    }
+
+    if (!response.ok) {
+      let errBody: { error?: { code?: string; message?: string } } = {};
+      try { errBody = await response.json(); } catch { /* ignore */ }
+      throw new ApiError(
+        response.status,
+        errBody.error?.code ?? "UNKNOWN",
+        errBody.error?.message ?? `HTTP ${response.status}`,
+      );
+    }
+
+    return response.blob();
+  },
 };
 
 export function getAuthHeaders(): Record<string, string> {

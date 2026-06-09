@@ -415,8 +415,11 @@ func (m *MockFileStore) ListByUser(ctx context.Context, userID model.UUID, curso
 func (m *MockFileStore) ListStagedCloud(ctx context.Context, olderThan time.Time) ([]model.File, error) {
 	return nil, nil
 }
-func (m *MockFileStore) LinkToJob(ctx context.Context, fileID, jobID model.UUID) error { return nil }
+func (m *MockFileStore) LinkToJob(ctx context.Context, fileID, jobID model.UUID, role string) error { return nil }
 func (m *MockFileStore) ListByJob(ctx context.Context, jobID model.UUID) ([]model.File, error) {
+	return nil, nil
+}
+func (m *MockFileStore) ListByJobAndRole(ctx context.Context, jobID model.UUID, role string) ([]model.File, error) {
 	return nil, nil
 }
 

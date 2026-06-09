@@ -15,6 +15,7 @@ import { JobProgressCard } from "@/components/JobProgressCard";
 import { FileDropzone } from "@/components/FileDropzone";
 import { SkillSelector } from "@/components/SkillSelector";
 import { VNCPanel } from "@/components/VNCPanel";
+import { JobOutputs } from "@/components/JobOutputs";
 import { toast } from "sonner";
 import { Send, Loader2, Monitor, X, Key, Download } from "lucide-react";
 import type { Job, JobStatus } from "@/api/schemas";
@@ -46,6 +47,7 @@ export function JobsPage() {
   const [inlineError, setInlineError] = useState<string | null>(null);
   const [vncOpen, setVncOpen] = useState(false);
   const [vncData, setVncData] = useState<{ wsUrl: string; rfbPassword: string; sessionId: string } | null>(null);
+  const [loginRequired, setLoginRequired] = useState<{ origin: string; label?: string; loginKind?: string } | null>(null);
 
   const submitJob = useSubmitJob();
   const cancelJob = useCancelJob();
@@ -111,6 +113,19 @@ export function JobsPage() {
         });
         if (event.payload.status === "succeeded") toast.success(t("jobs.jobCompleted"));
         else if (event.payload.status === "failed") toast.error(t("jobs.jobFailed"));
+        setLoginRequired(null);
+      }
+      if (event.type === "job.login_required") {
+        const payload = event.payload as Record<string, unknown>;
+        setLoginRequired({
+          origin: (payload.origin as string) || "",
+          label: payload.label as string | undefined,
+          loginKind: payload.login_kind as string | undefined,
+        });
+        const msg = (payload.login_kind as string) === "qr"
+          ? t("jobs.loginRequiredQR", { origin: payload.origin as string || "site" })
+          : t("jobs.loginRequired", { origin: payload.origin as string || "site" });
+        toast(msg, { action: { label: t("jobs.openBrowser"), onClick: handleOpenVNC } });
       }
     });
 
@@ -165,9 +180,9 @@ export function JobsPage() {
     });
   };
 
-  const handleSaveLogin = async (sessionId: string, label: string) => {
+  const handleSaveLogin = async (sessionId: string, label: string, origin: string) => {
     try {
-      await apiClient.post(`/vnc/${sessionId}/save-login`, { label });
+      await apiClient.post(`/vnc/${sessionId}/save-login`, { label, origin });
       toast.success(t("vnc.loginSaved", { label }));
     } catch (err: unknown) {
       toast.error((err as { message?: string })?.message || t("vnc.saveLoginFailed"));
@@ -247,6 +262,27 @@ export function JobsPage() {
 
   const renderJobDetail = (job: Job) => (
     <div className="space-y-4">
+      {loginRequired && (
+        <div className="rounded-lg border border-amber-200 bg-amber-50 p-4 dark:border-amber-800 dark:bg-amber-950">
+          <div className="flex items-center justify-between">
+            <div>
+              <p className="text-sm font-medium text-amber-900 dark:text-amber-100">
+                {loginRequired.loginKind === "qr"
+                  ? t("jobs.loginRequiredQRBanner", { origin: loginRequired.origin || "site" })
+                  : t("jobs.loginRequiredBanner", { origin: loginRequired.origin || "site" })}
+              </p>
+            </div>
+            <div className="flex gap-2">
+              <Button variant="outline" size="sm" onClick={() => setLoginRequired(null)}>
+                <X className="mr-1 h-3 w-3" /> {t("common.dismiss")}
+              </Button>
+              <Button size="sm" onClick={handleOpenVNC} disabled={openVNC.isPending}>
+                <Monitor className="mr-1 h-3 w-3" /> {t("jobs.openBrowser")}
+              </Button>
+            </div>
+          </div>
+        </div>
+      )}
       <Card>
         <CardHeader>
           <CardTitle className="text-base">{job.command}</CardTitle>
@@ -282,6 +318,8 @@ export function JobsPage() {
           </CardContent>
         </Card>
       )}
+
+      <JobOutputs jobId={job.id} jobStatus={job.status} />
 
       <div className="flex gap-2">
         {!["succeeded", "failed", "cancelled"].includes(job.status) && (

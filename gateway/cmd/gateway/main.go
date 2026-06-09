@@ -99,6 +99,13 @@ func main() {
 		cfg.MaxUploadBytes,
 		time.Duration(cfg.FileRetentionHours)*time.Hour,
 	)
+	fileRelay.GetJobUserID = func(ctx context.Context, jobID model.UUID) (model.UUID, error) {
+		job, err := jobs.GetByID(ctx, jobID)
+		if err != nil || job == nil {
+			return model.UUID{}, fmt.Errorf("job not found: %w", err)
+		}
+		return job.UserID, nil
+	}
 
 	// Skill Vault
 	vault := skillvault.NewVault(skills, cfg.FileStore+"/skills")
@@ -222,7 +229,7 @@ func main() {
 			if payload.Status == "ready" {
 				return vncRelay.MarkReady(payload.SessionID, payload.RFBPassword)
 			}
-			vncRelay.CloseSession(payload.SessionID, "device reported error: "+payload.Error)
+			vncRelay.MarkError(payload.SessionID, payload.Error)
 			return nil
 		},
 		OnVNCClose: func(ctx context.Context, deviceID model.UUID, payload json.RawMessage) error {
@@ -245,7 +252,7 @@ func main() {
 				slog.Error("credential capture failed: vault not configured")
 				return nil
 			}
-			data, err := base64.StdEncoding.DecodeString(payload.Data)
+			data, err := base64.StdEncoding.DecodeString(payload.StorageState)
 			if err != nil {
 				slog.Error("credential capture: invalid base64 data", "error", err)
 				return err
@@ -309,6 +316,21 @@ func main() {
 		},
 		OnFilePullEnd: func(ctx context.Context, deviceID model.UUID, payload model.FilePullEndPayload) error {
 			return fileRelay.OnFilePullEnd(ctx, deviceID, payload)
+		},
+		OnJobLoginRequired: func(ctx context.Context, deviceID model.UUID, payload model.JobLoginRequiredPayload) error {
+			data, _ := json.Marshal(model.WSEventLoginRequiredData{
+				JobID:     payload.JobID.String(),
+				Origin:    payload.Origin,
+				Label:     payload.Label,
+				LoginKind: payload.LoginKind,
+				At:        time.Now().UTC().Format(time.RFC3339),
+			})
+			broker.Publish(pubsub.JobTopic(payload.JobID), model.WSEvent{
+				Type:    model.WSEventLoginRequired,
+				Topic:   pubsub.JobTopic(payload.JobID),
+				Payload: data,
+			})
+			return nil
 		},
 	})
 

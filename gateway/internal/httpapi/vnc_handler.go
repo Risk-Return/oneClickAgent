@@ -1,6 +1,8 @@
 package httpapi
 
 import (
+	"crypto/sha256"
+	"encoding/hex"
 	"log/slog"
 	"net/http"
 	"strings"
@@ -48,20 +50,38 @@ func (deps *Dependencies) handleOpenVNC() http.HandlerFunc {
 			return
 		}
 
+		// Build absolute ws_url with scheme + host
+		scheme := "wss"
+		if r.Header.Get("X-Forwarded-Proto") == "https" {
+			scheme = "wss"
+		} else if r.TLS == nil {
+			scheme = "ws"
+		}
+		wsPath := "/ws/vnc/" + sess.ID.String()
+		wsURL := scheme + "://" + r.Host + wsPath + "?token=" + token
+
 		// Send VNC_OPEN over tunnel
 		frame, _ := tunnel.NewFrame(model.FrameVNCOpen, model.VNCOpenPayload{
 			SessionID:    sess.ID,
 			AgentID:      *job.AgentID,
 			JobID:        jobID,
-			RelayURL:     "wss://" + r.Host + "/session/" + sess.ID.String(),
+			RelayURL:     scheme + "://" + r.Host + "/session/" + sess.ID.String(),
 			SessionToken: token,
 			TTLSecs:      maxTTL,
 		})
 		_ = deps.Hub.SendFrame(*job.DeviceID, frame)
 
+		// Block until device responds with VNC_OPENED (up to 15s)
+		rfbPassword, err := deps.VNCRelay.WaitReady(sess.ID, 15*time.Second)
+		if err != nil {
+			writeError(w, http.StatusGatewayTimeout, model.ErrCodeInternalError, "vnc_open_timeout")
+			return
+		}
+
 		writeJSON(w, http.StatusCreated, model.VNCOpenResponse{
 			SessionID:   sess.ID,
-			WSUrl:       "/ws/vnc/" + sess.ID.String(),
+			WSUrl:       wsURL,
+			RFBPassword: rfbPassword,
 			TTLSecs:     maxTTL,
 		})
 	}
@@ -110,12 +130,17 @@ func (deps *Dependencies) handleSaveLogin() http.HandlerFunc {
 			return
 		}
 
+		if req.Origin == "" {
+			writeError(w, http.StatusBadRequest, model.ErrCodeValidationFailed, "origin is required")
+			return
+		}
+
 		// Send CRED_CAPTURE to device
 		frame, _ := tunnel.NewFrame(model.FrameCredCapture, model.CredCapturePayload{
 			SessionID: sessionID,
 			JobID:     sess.JobID,
 			AgentID:   sess.AgentID,
-			Origin:    "",
+			Origin:    req.Origin,
 			Label:     req.Label,
 		})
 		_ = deps.Hub.SendFrame(sess.DeviceID, frame)
@@ -254,6 +279,44 @@ func (deps *Dependencies) handleGetJobVNC() http.HandlerFunc {
 			writeError(w, http.StatusInternalServerError, model.ErrCodeInternalError, "internal error")
 			return
 		}
+
+		// Consult in-memory relay for live session data
+		if sess != nil {
+			live := deps.VNCRelay.GetSession(sess.ID)
+			if live != nil {
+				status := model.VNCSessionStatus("pending")
+				switch live.Status.Load() {
+				case 0:
+					status = model.VNCSessionPending
+				case 1:
+					status = model.VNCSessionReady
+				case 2:
+					status = model.VNCSessionActive
+				}
+
+				scheme := "wss"
+				if r.Header.Get("X-Forwarded-Proto") == "https" {
+					scheme = "wss"
+				} else if r.TLS == nil {
+					scheme = "ws"
+				}
+
+				resp := model.VNCStatusResponse{
+					SessionID: &sess.ID,
+					Status:    status,
+				}
+
+				if live.RFBPassword != "" {
+					resp.RFBPassword = &live.RFBPassword
+					wsURL := scheme + "://" + r.Host + "/ws/vnc/" + sess.ID.String()
+					resp.WSUrl = &wsURL
+				}
+
+				writeJSON(w, http.StatusOK, resp)
+				return
+			}
+		}
+
 		if sess == nil {
 			writeJSON(w, http.StatusOK, model.VNCStatusResponse{
 				Status: model.VNCSessionClosed,
@@ -294,23 +357,37 @@ func (deps *Dependencies) handleVNCBrowserSocket() http.HandlerFunc {
 			return
 		}
 
-		claims, err := deps.JWT.VerifyToken(token)
-		if err != nil {
-			http.Error(w, "invalid token", http.StatusUnauthorized)
-			return
-		}
-
-		userID, err := model.ParseUUID(claims.Subject)
-		if err != nil {
-			http.Error(w, "invalid token", http.StatusUnauthorized)
-			return
-		}
-
 		sessionID, err := model.ParseUUID(chi.URLParam(r, "sessionID"))
 		if err != nil {
 			http.Error(w, "invalid session_id", http.StatusBadRequest)
 			return
 		}
+
+		// Try session_token first (preferred for browser VNC ws_url)
+		sess := deps.VNCRelay.GetSession(sessionID)
+		if sess != nil && hashVNCBrowserToken(token) == sess.TokenHash {
+			// Session token matched — proceed without JWT verification
+		} else {
+			// Fall back to JWT verification
+			claims, err := deps.JWT.VerifyToken(token)
+			if err != nil {
+				http.Error(w, "invalid token", http.StatusUnauthorized)
+				return
+			}
+
+			userID, err := model.ParseUUID(claims.Subject)
+			if err != nil {
+				http.Error(w, "invalid token", http.StatusUnauthorized)
+				return
+			}
+
+			if sess == nil || sess.UserID != userID {
+				http.Error(w, "access denied", http.StatusForbidden)
+				return
+			}
+		}
+
+		userID := sess.UserID
 
 		conn, err := vncUpgrader.Upgrade(w, r, nil)
 		if err != nil {
@@ -323,6 +400,11 @@ func (deps *Dependencies) handleVNCBrowserSocket() http.HandlerFunc {
 			slog.Error("vnc browser bind", "error", err)
 		}
 	}
+}
+
+func hashVNCBrowserToken(token string) string {
+	h := sha256.Sum256([]byte(token))
+	return hex.EncodeToString(h[:])
 }
 
 func (deps *Dependencies) handleVNCDeviceSocket() http.HandlerFunc {

@@ -170,6 +170,24 @@ def create_app() -> FastAPI:
         await state.executor.cancel()
         return {"job_id": job_id, "status": "cancelled"}
 
+    @app.post("/jobs/{job_id}/events", status_code=http_status.HTTP_202_ACCEPTED)
+    async def post_job_event(job_id: str, body: dict, request: Request):
+        state = request.app.state
+        current = state.executor.current_job_id()
+        if current != job_id:
+            raise HTTPException(status_code=404)
+        seq = state.executor.post_event(body)
+        return {"event_seq": seq}
+
+    @app.get("/jobs/{job_id}/events")
+    async def get_job_events(job_id: str, since: int = 0, request: Request = None):
+        state = request.app.state
+        current = state.executor.current_job_id()
+        if current != job_id:
+            return {"events": []}
+        events = state.executor.get_events_since(since)
+        return {"events": events}
+
     @app.get("/skills")
     async def get_skills(request: Request):
         return request.app.state.skills.list_skills()

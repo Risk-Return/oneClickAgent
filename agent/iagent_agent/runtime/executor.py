@@ -38,6 +38,7 @@ class JobExecutor:
         self._current: JobRecord | None = None
         self._task: asyncio.Task[None] | None = None
         self._credentials_pending: bool = False
+        self._job_events: list[dict] = []
 
     @property
     def busy(self) -> bool:
@@ -47,6 +48,20 @@ class JobExecutor:
         if self._current is not None:
             return self._current.job_id
         return None
+
+    def post_event(self, payload: dict) -> int:
+        seq = len(self._job_events)
+        payload["event_seq"] = seq
+        self._job_events.append(payload)
+        if len(self._job_events) > 32:
+            self._job_events = self._job_events[-32:]
+        return seq
+
+    def get_events_since(self, since: int) -> list[dict]:
+        return [e for e in self._job_events if e.get("event_seq", 0) >= since]
+
+    def clear_events(self) -> None:
+        self._job_events = []
 
     def get_job_record(self) -> JobRecord | None:
         return self._current
@@ -68,6 +83,8 @@ class JobExecutor:
     ) -> None:
         if self.busy:
             raise RuntimeError("BUSY")
+
+        self.clear_events()
 
         if skill_id:
             sk = self._skills.get_enabled_skill(skill_id)

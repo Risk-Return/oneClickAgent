@@ -128,6 +128,7 @@ class JobDispatcher:
         """Poll agent GET /jobs/{job_id} until terminal status or timeout."""
         last_percent = 0
         event_seq = 1
+        last_event_seq = -1
         deadline = time.monotonic() + timeout_s
 
         while time.monotonic() < deadline:
@@ -151,21 +152,43 @@ class JobDispatcher:
                     })
                     last_percent = percent
 
+                # Poll agent events for login_required
+                try:
+                    events_data = await client.get_job_events(job_id, since=last_event_seq + 1)
+                    for evt in events_data.get("events", []):
+                        evt_seq = evt.get("event_seq", -1)
+                        if evt_seq > last_event_seq:
+                            last_event_seq = evt_seq
+                        evt_type = evt.get("type", "")
+                        if evt_type == "login_required":
+                            await self.outbox.enqueue_and_send(FrameType.JOB_LOGIN_REQUIRED, {
+                                "job_id": job_id,
+                                "event_seq": evt.get("event_seq", 0),
+                                "origin": evt.get("origin", ""),
+                                "label": evt.get("label", ""),
+                                "login_kind": evt.get("login_kind", "unknown"),
+                            })
+                except Exception:
+                    logger.debug("failed to poll agent events for job %s", job_id)
+
                 if status in ("succeeded", "failed", "cancelled"):
                     result_data = status_data.get("result", {})
 
                     self.job_repo.update_status(job_id, status)
+
+                    # Pull output files for all terminal statuses
+                    if self.puller:
+                        try:
+                            await self.puller.pull_outputs(job_id)
+                        except Exception:
+                            logger.exception("pull_outputs failed for job %s", job_id)
+
                     if status == "succeeded":
                         await self.outbox.enqueue_and_send(FrameType.JOB_RESULT, {
                             "job_id": job_id,
                             "status": "succeeded",
                             "result": result_data,
                         })
-                        if self.puller:
-                            try:
-                                await self.puller.pull_outputs(job_id)
-                            except Exception:
-                                logger.exception("pull_outputs failed for job %s", job_id)
                     else:
                         await self.outbox.enqueue_and_send(FrameType.JOB_RESULT, {
                             "job_id": job_id,

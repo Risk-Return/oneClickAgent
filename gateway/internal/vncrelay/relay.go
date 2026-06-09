@@ -39,6 +39,9 @@ type Session struct {
 	mu         sync.Mutex
 	lastActive atomic.Int64
 
+	readyCh    chan struct{}
+	readyErr   string
+
 	idleTTL    time.Duration
 	maxTTL     time.Duration
 	createdAt  time.Time
@@ -105,6 +108,7 @@ func (r *Relay) CreateSession(jobID, userID, deviceID, agentID model.UUID, idleT
 		maxTTL:     maxTTL,
 		bufferCap: r.bufferCap,
 		createdAt:  time.Now(),
+		readyCh:    make(chan struct{}),
 	}
 	sess.Status.Store(statusPending)
 
@@ -131,7 +135,54 @@ func (r *Relay) MarkReady(sessionID model.UUID, rfbPassword string) error {
 	sess.RFBPassword = rfbPassword
 	sess.mu.Unlock()
 	sess.Status.Store(statusReady)
+
+	// Fire ready channel for async waiters
+	select {
+	case <-sess.readyCh:
+	default:
+		close(sess.readyCh)
+	}
 	return nil
+}
+
+// MarkError marks a session as failed with an error message.
+func (r *Relay) MarkError(sessionID model.UUID, errMsg string) {
+	sess := r.GetSession(sessionID)
+	if sess == nil {
+		return
+	}
+	sess.readyErr = errMsg
+	select {
+	case <-sess.readyCh:
+	default:
+		close(sess.readyCh)
+	}
+	r.CloseSession(sessionID, "device error: "+errMsg)
+}
+
+// WaitReady blocks until the session is ready or an error occurs, up to timeout.
+func (r *Relay) WaitReady(sessionID model.UUID, timeout time.Duration) (password string, err error) {
+	sess := r.GetSession(sessionID)
+	if sess == nil {
+		return "", fmt.Errorf("session %s not found", sessionID)
+	}
+
+	select {
+	case <-sess.readyCh:
+		sess.mu.Lock()
+		password = sess.RFBPassword
+		errMsg := sess.readyErr
+		sess.mu.Unlock()
+		if errMsg != "" {
+			return "", fmt.Errorf("VNC session error: %s", errMsg)
+		}
+		if password == "" {
+			return "", fmt.Errorf("VNC session closed before ready")
+		}
+		return password, nil
+	case <-time.After(timeout):
+		return "", fmt.Errorf("VNC session timed out waiting for ready")
+	}
 }
 
 // BindBrowser binds the noVNC (browser) WebSocket to a session.
@@ -211,13 +262,24 @@ func (r *Relay) pump(sess *Session, src, dst *websocket.Conn, label string) {
 			return
 		}
 
-		n, err := io.CopyBuffer(dst.UnderlyingConn(), reader, msgBuf)
+		if msgType != websocket.BinaryMessage {
+			continue
+		}
+
+		writer, err := dst.NextWriter(websocket.BinaryMessage)
 		if err != nil {
 			return
 		}
 
-		_ = msgType
-		_ = n
+		if _, err := io.CopyBuffer(writer, reader, msgBuf); err != nil {
+			_ = writer.Close()
+			return
+		}
+
+		if err := writer.Close(); err != nil {
+			return
+		}
+
 		sess.touch()
 	}
 }

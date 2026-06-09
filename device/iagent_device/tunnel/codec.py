@@ -62,6 +62,9 @@ class FrameType(StrEnum):
     VNC_OPENED = "VNC_OPENED"
     VNC_CLOSE = "VNC_CLOSE"
 
+    # Login events
+    JOB_LOGIN_REQUIRED = "JOB_LOGIN_REQUIRED"
+
     # Credentials
     CRED_PUSH = "CRED_PUSH"
     CRED_PUSH_ACK = "CRED_PUSH_ACK"

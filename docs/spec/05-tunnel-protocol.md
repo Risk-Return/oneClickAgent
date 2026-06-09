@@ -76,6 +76,7 @@ Rules:
 | `JOB_PROGRESS` | `{ job_id, event_seq, status, percent, message }` |
 | `JOB_RESULT` | `{ job_id, status:"SUCCEEDED"|"FAILED", result:{...}, error?:{code,message}, finished_at }` |
 | `JOB_REJECTED` | `{ job_id, code, message }` |
+| `JOB_LOGIN_REQUIRED` | D→G | `{ job_id, event_seq, origin, label?, login_kind? }` |
 
 > **Progress-only contract:** `message` is a human-readable status string. Raw logs, terminal output, stack traces, and internal chain-of-thought MUST NOT be sent over the tunnel to the user-facing path (see `09-web-ui.md`).
 
@@ -168,9 +169,9 @@ Login storage-state (cookies + localStorage) moved between the encrypted cloud v
 |------|-----|---------|
 | `CRED_PUSH` | G→D | `{ job_id, credential_id, origin, storage_state, sha256 }` — decrypted storage-state to inject for a job; chunked like files if > frame cap |
 | `CRED_PUSH_ACK` | D→G | `{ job_id, credential_id, status:"INJECTED"|"ERROR", message? }` |
-| `CRED_CAPTURE` | D→G | `{ session_id, job_id, label, origin, storage_state, sha256 }` — a login captured from a VNC session, to be encrypted + stored |
-| `CRED_CAPTURE_ACK` | G→D | `{ credential_id, status:"STORED"|"ERROR", message? }` |
+| `CRED_CAPTURE` | D→G | `{ session_id, job_id, label, origin, storage_state, storage_state_encoding, sha256 }` — a login captured from a VNC session, to be encrypted + stored. `storage_state_encoding` is `"base64"`. |
 
+| `CRED_CAPTURE_ACK` | G→D **only** | `{ credential_id, status:"STORED"|"ERROR", message? }` |
 ### 4.10 Output file relay (§11)
 
 Job result files (generated in `/work/output` on the agent container) flow **device → gateway** using `FILE_PULL_*` frames. Symmetrical to `FILE_PUSH_*` (§4.7) but in the reverse direction. Triggered when a job completes with files in the output directory.

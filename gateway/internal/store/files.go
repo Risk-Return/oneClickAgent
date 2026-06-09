@@ -111,9 +111,9 @@ func (s *FileStore) ListStagedCloud(ctx context.Context, olderThan time.Time) ([
 	return files, nil
 }
 
-func (s *FileStore) LinkToJob(ctx context.Context, fileID, jobID model.UUID) error {
+func (s *FileStore) LinkToJob(ctx context.Context, fileID, jobID model.UUID, role string) error {
 	_, err := s.db.Pool.Exec(ctx,
-		`INSERT INTO job_files (job_id, file_id) VALUES ($1, $2) ON CONFLICT DO NOTHING`, jobID, fileID,
+		`INSERT INTO job_files (job_id, file_id, role) VALUES ($1, $2, $3) ON CONFLICT (job_id, file_id) DO UPDATE SET role = EXCLUDED.role`, jobID, fileID, role,
 	)
 	return err
 }
@@ -122,6 +122,27 @@ func (s *FileStore) ListByJob(ctx context.Context, jobID model.UUID) ([]model.Fi
 	rows, err := s.db.Pool.Query(ctx,
 		`SELECT f.id, f.user_id, f.name, f.size, f.mime, f.sha256, f.status, f.storage_uri, f.created_at, f.purged_at
 		 FROM files f JOIN job_files jf ON f.id = jf.file_id WHERE jf.job_id=$1`, jobID,
+	)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	var files []model.File
+	for rows.Next() {
+		var f model.File
+		if err := rows.Scan(&f.ID, &f.UserID, &f.Name, &f.Size, &f.Mime, &f.SHA256, &f.Status, &f.StorageURI, &f.CreatedAt, &f.PurgedAt); err != nil {
+			return nil, err
+		}
+		files = append(files, f)
+	}
+	return files, nil
+}
+
+func (s *FileStore) ListByJobAndRole(ctx context.Context, jobID model.UUID, role string) ([]model.File, error) {
+	rows, err := s.db.Pool.Query(ctx,
+		`SELECT f.id, f.user_id, f.name, f.size, f.mime, f.sha256, f.status, f.storage_uri, f.created_at, f.purged_at
+		 FROM files f JOIN job_files jf ON f.id = jf.file_id WHERE jf.job_id=$1 AND jf.role=$2`, jobID, role,
 	)
 	if err != nil {
 		return nil, err

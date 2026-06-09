@@ -48,7 +48,7 @@ class Config:
 
     @property
     def workspace_dir(self) -> Path:
-        return self.device_data_dir / "workspaces"
+        return self.device_data_dir / "work"
 
     @property
     def skills_dir(self) -> Path:
@@ -126,6 +126,7 @@ def load() -> Config:
     # Ensure directories exist
     cfg.device_data_dir.mkdir(parents=True, exist_ok=True)
     cfg.workspace_dir.mkdir(parents=True, exist_ok=True)
+    (cfg.workspace_dir / "workspaces").mkdir(parents=True, exist_ok=True)
     cfg.skills_dir.mkdir(parents=True, exist_ok=True)
 
     return cfg
