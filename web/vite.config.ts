@@ -10,10 +10,6 @@ export default defineConfig({
   plugins: [react()],
   resolve: { alias: { '@': path.resolve(__dirname, 'src') } },
   base: process.env.VITE_BASE || '/',
-  define: {
-    'import.meta.env.VITE_API_PREFIX': JSON.stringify(API_PREFIX),
-    'import.meta.env.VITE_BASE': JSON.stringify(process.env.VITE_BASE || '/'),
-  },
   build: {
     target: 'es2022',
   },
