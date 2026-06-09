@@ -130,7 +130,7 @@ RUN python3.12 -m cloakbrowser install
 FROM tools AS final
 
 RUN useradd --create-home --shell /bin/bash app \
-  && mkdir -p /work /tmp/.X11-unix \
+  && mkdir -p /work/skills /work/output /tmp/.X11-unix \
   && chown -R app:app /work /tmp/.X11-unix \
   && rm -rf /root/.cargo/registry/cache /root/.cargo/git \
   && if [ -d /root/.cloakbrowser ]; then cp -a /root/.cloakbrowser /work/.cloakbrowser && chown -R app:app /work/.cloakbrowser; fi \
