@@ -40,6 +40,7 @@ Derived from `../braionstorm/goal.md`.
 | 09 | [09-web-ui.md](./09-web-ui.md) | Frontend stack, screens, realtime, UX, testing |
 | 10 | [10-deployment.md](./10-deployment.md) | Build, deploy, ops, CI/CD, E2E verification |
 | 11 | [11-i18n.md](./11-i18n.md) | Multi-language support: inventory, strategy, implementation plan |
+| 12 | [12-return-path-and-interactive.md](./12-return-path-and-interactive.md) | Implementation plan for result pull, output download, VNC fixes, login support (closes audit 10) |
 
 ## Suggested reading order
 
