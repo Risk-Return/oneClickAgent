@@ -4,6 +4,8 @@ package httpapi
 
 import (
 	"net/http"
+	"os"
+	"path/filepath"
 
 	"github.com/go-chi/chi/v5"
 	"github.com/go-chi/cors"
@@ -206,6 +208,11 @@ func NewRouter(deps *Dependencies) chi.Router {
 	r.Get("/ws/vnc/{sessionID}", deps.handleVNCBrowserSocket())
 	r.Get("/session/{sessionID}", deps.handleVNCDeviceSocket())
 
+	// Web frontend SPA (serve static files, fallback to index.html)
+	if deps.Config.WebDistDir != "" {
+		r.Handle("/*", spaFileServer(deps.Config.WebDistDir))
+	}
+
 	return r
 }
 
@@ -222,4 +229,17 @@ func corsMiddleware(allowedOrigins []string) func(http.Handler) http.Handler {
 		AllowCredentials: true,
 		MaxAge:           300,
 	})
+}
+
+// spaFileServer serves a static SPA with fallback to index.html for client-side routes.
+func spaFileServer(distDir string) http.HandlerFunc {
+	fs := http.FileServer(http.Dir(distDir))
+	return func(w http.ResponseWriter, r *http.Request) {
+		path := filepath.Join(distDir, filepath.Clean(r.URL.Path))
+		if _, err := os.Stat(path); os.IsNotExist(err) {
+			// SPA fallback: serve index.html for any non-file route
+			r.URL.Path = "/"
+		}
+		fs.ServeHTTP(w, r)
+	}
 }

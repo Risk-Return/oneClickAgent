@@ -40,6 +40,7 @@ type Config struct {
 	WSMaxSubscriptions     int           `env:"IAGENT_WS_MAX_SUBSCRIPTIONS" envDefault:"50"`
 	FileRetentionHours     int           `env:"IAGENT_FILE_RETENTION_HOURS" envDefault:"24"`
 	JobResultRetentionDays int           `env:"IAGENT_JOB_RESULT_RETENTION_DAYS" envDefault:"90"`
+	WebDistDir             string        `env:"IAGENT_WEB_DIST_DIR"`
 
 	// VNC session config
 	VNCIdleTTLSecs       int    `env:"IAGENT_VNC_IDLE_TTL" envDefault:"300"`
