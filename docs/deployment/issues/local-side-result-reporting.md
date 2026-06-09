@@ -135,6 +135,14 @@ names if/when live telemetry is surfaced.
 Left in the tree for now (no longer wired) to keep this change focused; can be deleted in a
 cleanup pass, or kept as the basis for a future push transport with proper host detection.
 
+**Update (2026-06-09): partially RESOLVED.** The device `callback_server.py` was genuinely dead
+(no importers after R1, and it still carried the R2 string/dict `error` bug), so it has been
+deleted. The agent's `CallbackClient` is **kept** — unlike the device server it is not dead: it is
+still wired into `agent/iagent_agent/runtime/executor.py` and covered by
+`test_callback_receives_events`. It activates only when a `callback_url` is supplied (which the
+device no longer sends), so it remains a dormant-but-functional optional push transport rather than
+unreachable code. Removing it would delete a working, tested agent capability for no benefit.
+
 ---
 
 ## Fixes applied (this change)
