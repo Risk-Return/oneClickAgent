@@ -162,7 +162,7 @@ func (s *AgentStore) IdleCount(ctx context.Context) (int, error) {
 
 func (s *AgentStore) CountByDevice(ctx context.Context, deviceID model.UUID) (int, error) {
 	var count int
-	err := s.db.Pool.QueryRow(ctx, `SELECT COUNT(*) FROM agents WHERE device_id=$1 AND status NOT IN ('failed')`, deviceID).Scan(&count)
+	err := s.db.Pool.QueryRow(ctx, `SELECT COUNT(*) FROM agents WHERE device_id=$1 AND status NOT IN ('failed', 'drained')`, deviceID).Scan(&count)
 	return count, err
 }
 
