@@ -813,11 +813,14 @@ type FilePullEndPayload struct {
 }
 
 // FilePullAckPayload acknowledges receipt of an output file chunk or full file.
+// ChunkIndex is -1 for file-level ACKs ("RECEIVED" / file-level "ERROR") and
+// >= 0 for chunk-level ACKs ("CHUNK_OK" / chunk-level "ERROR"). Always emitted
+// (no omitempty) to keep the wire format unambiguous between the two.
 type FilePullAckPayload struct {
 	FileID     UUID   `json:"file_id"`
 	Status     string `json:"status"` // "CHUNK_OK" | "RECEIVED" | "ERROR"
 	Error      string `json:"error,omitempty"`
-	ChunkIndex int    `json:"chunk_index,omitempty"`
+	ChunkIndex int    `json:"chunk_index"`
 }
 
 type StateSyncPayload struct {

@@ -272,9 +272,11 @@ func (r *FileRelay) CleanupStagedFiles(ctx context.Context) error {
 	return nil
 }
 
-// CleanupJobFiles marks all files associated with a job for purge.
+// CleanupJobFiles marks input files associated with a job for purge.
+// Output files (role='output') are preserved for user download and aged out by
+// CleanupStagedFiles via the retention TTL.
 func (r *FileRelay) CleanupJobFiles(ctx context.Context, jobID model.UUID) error {
-	files, err := r.store.ListByJob(ctx, jobID)
+	files, err := r.store.ListByJobAndRole(ctx, jobID, "input")
 	if err != nil {
 		return err
 	}
@@ -307,6 +309,11 @@ func (r *FileRelay) OnFilePullBegin(ctx context.Context, deviceID model.UUID, pa
 	if payload.Size > r.maxSize {
 		r.sendPullAck(deviceID, payload.FileID, "ERROR", "file too large")
 		return fmt.Errorf("file too large: %d > %d", payload.Size, r.maxSize)
+	}
+
+	if !isSafeOutputName(payload.Name) {
+		r.sendPullAck(deviceID, payload.FileID, "ERROR", "invalid filename")
+		return fmt.Errorf("invalid filename: %q", payload.Name)
 	}
 
 	r.pullBufs[payload.FileID] = &pullTransfer{
@@ -383,6 +390,11 @@ func (r *FileRelay) OnFilePullEnd(ctx context.Context, deviceID model.UUID, payl
 		return fmt.Errorf("sha256 mismatch for file %s", payload.FileID)
 	}
 
+	if !isSafeOutputName(pt.name) {
+		r.sendPullAck(deviceID, payload.FileID, "ERROR", "invalid filename")
+		return fmt.Errorf("invalid filename: %q", pt.name)
+	}
+
 	outputDir := filepath.Join(r.baseDir, "jobs", pt.jobID.String(), "output")
 	if err := os.MkdirAll(outputDir, 0o755); err != nil {
 		r.sendPullAck(deviceID, payload.FileID, "ERROR", "failed to create output dir")
@@ -432,9 +444,10 @@ func (r *FileRelay) OnFilePullEnd(ctx context.Context, deviceID model.UUID, payl
 
 func (r *FileRelay) sendPullAck(deviceID model.UUID, fileID model.UUID, status string, errMsg string, chunkIndex ...int) {
 	ack := model.FilePullAckPayload{
-		FileID: fileID,
-		Status: status,
-		Error:  errMsg,
+		FileID:     fileID,
+		Status:     status,
+		Error:      errMsg,
+		ChunkIndex: -1, // file-level by default; overridden below for chunk ACKs
 	}
 	if len(chunkIndex) > 0 {
 		ack.ChunkIndex = chunkIndex[0]
@@ -444,4 +457,24 @@ func (r *FileRelay) sendPullAck(deviceID model.UUID, fileID model.UUID, status s
 		return
 	}
 	_ = r.hub.SendFrame(deviceID, frame)
+}
+
+// isSafeOutputName rejects names that would escape the per-job output dir.
+// Allows relative subpaths (e.g. "screenshots/a.png") but forbids absolute
+// paths, parent traversal, empty names, or backslashes (Windows separators).
+func isSafeOutputName(name string) bool {
+	if name == "" {
+		return false
+	}
+	if strings.ContainsAny(name, "\\\x00") {
+		return false
+	}
+	if filepath.IsAbs(name) || strings.HasPrefix(name, "/") {
+		return false
+	}
+	cleaned := filepath.ToSlash(filepath.Clean(name))
+	if cleaned == "." || cleaned == ".." || strings.HasPrefix(cleaned, "../") || strings.Contains(cleaned, "/../") || strings.HasSuffix(cleaned, "/..") {
+		return false
+	}
+	return true
 }

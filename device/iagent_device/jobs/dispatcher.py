@@ -14,6 +14,8 @@ from iagent_device.docker.manager import DockerManager
 
 logger = logging.getLogger(__name__)
 
+PULL_OUTPUTS_TIMEOUT = 60.0
+
 
 def _error_message(error, fallback: str) -> str:
     """Normalize the agent's error field (str or {code, message} dict) to a message string."""
@@ -176,10 +178,19 @@ class JobDispatcher:
 
                     self.job_repo.update_status(job_id, status)
 
-                    # Pull output files for all terminal statuses
+                    # Pull output files for all terminal statuses, with a wallclock cap
+                    # so a stuck transfer cannot indefinitely delay JOB_RESULT.
                     if self.puller:
                         try:
-                            await self.puller.pull_outputs(job_id)
+                            await asyncio.wait_for(
+                                self.puller.pull_outputs(job_id),
+                                timeout=PULL_OUTPUTS_TIMEOUT,
+                            )
+                        except asyncio.TimeoutError:
+                            logger.warning(
+                                "pull_outputs exceeded %.0fs for job %s; sending JOB_RESULT anyway",
+                                PULL_OUTPUTS_TIMEOUT, job_id,
+                            )
                         except Exception:
                             logger.exception("pull_outputs failed for job %s", job_id)
 

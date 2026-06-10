@@ -135,6 +135,9 @@ class FilePuller:
 
         if chunk_index >= 0:
             self._ack_status.setdefault(file_id, {})[chunk_index] = status
+            evt = self._events.get(file_id, {}).get(chunk_index)
+            if evt is not None:
+                evt.set()
         elif file_id in self._events:
             for idx, evt in self._events[file_id].items():
                 self._ack_status.setdefault(file_id, {})[idx] = status
