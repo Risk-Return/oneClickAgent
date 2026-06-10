@@ -36,15 +36,20 @@ class FilePuller:
         if not files:
             return []
 
-        # Zip all output files and send as a single archive
+        # Send individual files
+        for path in files:
+            rel = str(path.relative_to(ws))
+            file_id = str(uuid.uuid4())
+            await self._send_file(job_id, file_id, rel, path)
+            relayed.append(rel)
+
+        # Zip and send as single archive
         with tempfile.NamedTemporaryFile(suffix=".zip", delete=False) as tf:
             zip_path = Path(tf.name)
         try:
             with zipfile.ZipFile(zip_path, "w", zipfile.ZIP_DEFLATED) as zf:
                 for path in files:
-                    arcname = str(path.relative_to(ws))
-                    zf.write(path, arcname)
-                    relayed.append(arcname)
+                    zf.write(path, path.relative_to(ws))
 
             file_id = str(uuid.uuid4())
             await self._send_file(job_id, file_id, f"{job_id}_outputs.zip", zip_path)
