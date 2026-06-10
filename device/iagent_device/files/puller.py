@@ -3,7 +3,9 @@ import base64
 import hashlib
 import logging
 import uuid
+import zipfile
 from pathlib import Path
+import tempfile
 
 from iagent_device.tunnel.codec import FrameType
 from iagent_device.tunnel.outbox import Outbox
@@ -25,20 +27,30 @@ class FilePuller:
 
     async def pull_outputs(self, job_id: str) -> list[str]:
         ws = self.workspace_dir / "workspaces" / job_id / "output"
-        if not ws.exists():
+        if not ws.exists() or not any(ws.iterdir()):
             return []
 
         relayed: list[str] = []
-        for path in sorted(ws.rglob("*")):
-            if not path.is_file():
-                continue
-            rel = path.relative_to(ws)
-            if rel.parts and rel.parts[0] == "inputs":
-                continue
+        files = sorted(p for p in ws.rglob("*") if p.is_file() and "inputs" not in p.parts)
+
+        if not files:
+            return []
+
+        # Zip all output files and send as a single archive
+        with tempfile.NamedTemporaryFile(suffix=".zip", delete=False) as tf:
+            zip_path = Path(tf.name)
+        try:
+            with zipfile.ZipFile(zip_path, "w", zipfile.ZIP_DEFLATED) as zf:
+                for path in files:
+                    arcname = str(path.relative_to(ws))
+                    zf.write(path, arcname)
+                    relayed.append(arcname)
 
             file_id = str(uuid.uuid4())
-            await self._send_file(job_id, file_id, str(rel), path)
-            relayed.append(str(rel))
+            await self._send_file(job_id, file_id, f"{job_id}_outputs.zip", zip_path)
+            relayed.append(f"{job_id}_outputs.zip")
+        finally:
+            zip_path.unlink(missing_ok=True)
 
         return relayed
 
