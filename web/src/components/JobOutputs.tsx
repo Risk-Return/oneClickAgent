@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback } from "react";
+import { useState, useEffect, useCallback, useRef } from "react";
 import { useTranslation } from "react-i18next";
 import { apiClient } from "@/api/client";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -23,16 +23,20 @@ export function JobOutputs({ jobId, jobStatus }: JobOutputsProps) {
   const { t } = useTranslation();
   const [files, setFiles] = useState<JobOutputFile[]>([]);
   const [loading, setLoading] = useState(false);
+  const initialLoadRef = useRef(true);
 
   const fetchOutputs = useCallback(async () => {
     try {
-      setLoading(true);
+      if (initialLoadRef.current) setLoading(true);
       const data = await apiClient.get<{ job_id: string; files: JobOutputFile[] }>(`/jobs/${jobId}/output`);
       setFiles(data?.files ?? []);
     } catch {
       // Output endpoint may not be available before job produces files
     } finally {
-      setLoading(false);
+      if (initialLoadRef.current) {
+        setLoading(false);
+        initialLoadRef.current = false;
+      }
     }
   }, [jobId]);
 
