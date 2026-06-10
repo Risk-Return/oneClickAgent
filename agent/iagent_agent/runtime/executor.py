@@ -224,4 +224,5 @@ class JobExecutor:
 
         finally:
             self._teardown()
+            await asyncio.sleep(10)
             self._current = None
