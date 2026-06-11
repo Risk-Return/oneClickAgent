@@ -14,3 +14,4 @@ gateway/bin/gateway
 *.tar.gz
 *.tar
 *.zip
+gateway/local:/tmp/iagent-files/jobs/*
