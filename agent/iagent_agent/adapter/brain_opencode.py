@@ -40,7 +40,11 @@ class OpenCodeBrain:
                 prompt,
                 stdout=asyncio.subprocess.PIPE,
                 stderr=asyncio.subprocess.PIPE,
-                env={**os.environ, "OPENCODE_OUTPUT_DIR": ctx.output_dir},
+                env={
+                    **os.environ,
+                    "OPENCODE_OUTPUT_DIR": ctx.output_dir,
+                    "DISPLAY": os.environ.get("IAGENT_VNC_DISPLAY", ":99"),
+                },
             )
             self._procs[ctx.job_id] = proc
             self._stderr = proc.stderr
