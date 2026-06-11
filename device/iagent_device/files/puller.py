@@ -2,6 +2,7 @@ import asyncio
 import base64
 import hashlib
 import logging
+import os
 import uuid
 import zipfile
 from pathlib import Path
@@ -36,26 +37,27 @@ class FilePuller:
         if not files:
             return []
 
-        # Send individual files
-        for path in files:
-            rel = str(path.relative_to(ws))
-            file_id = str(uuid.uuid4())
-            await self._send_file(job_id, file_id, rel, path)
-            relayed.append(rel)
+        mode = os.getenv("IAGENT_PULL_MODE", "zip")  # "raw", "zip", or "both"
 
-        # Zip and send as single archive
-        with tempfile.NamedTemporaryFile(suffix=".zip", delete=False) as tf:
-            zip_path = Path(tf.name)
-        try:
-            with zipfile.ZipFile(zip_path, "w", zipfile.ZIP_DEFLATED) as zf:
-                for path in files:
-                    zf.write(path, path.relative_to(ws))
+        if mode in ("raw", "both"):
+            for path in files:
+                rel = str(path.relative_to(ws))
+                file_id = str(uuid.uuid4())
+                await self._send_file(job_id, file_id, rel, path)
+                relayed.append(rel)
 
-            file_id = str(uuid.uuid4())
-            await self._send_file(job_id, file_id, f"{job_id}_outputs.zip", zip_path)
-            relayed.append(f"{job_id}_outputs.zip")
-        finally:
-            zip_path.unlink(missing_ok=True)
+        if mode in ("zip", "both"):
+            with tempfile.NamedTemporaryFile(suffix=".zip", delete=False) as tf:
+                zip_path = Path(tf.name)
+            try:
+                with zipfile.ZipFile(zip_path, "w", zipfile.ZIP_DEFLATED) as zf:
+                    for path in files:
+                        zf.write(path, path.relative_to(ws))
+                file_id = str(uuid.uuid4())
+                await self._send_file(job_id, file_id, f"{job_id}_outputs.zip", zip_path)
+                relayed.append(f"{job_id}_outputs.zip")
+            finally:
+                zip_path.unlink(missing_ok=True)
 
         return relayed
 
