@@ -4,6 +4,7 @@
 package relay
 
 import (
+	"archive/zip"
 	"context"
 	"crypto/sha256"
 	"encoding/base64"
@@ -438,7 +439,78 @@ func (r *FileRelay) OnFilePullEnd(ctx context.Context, deviceID model.UUID, payl
 	// Insert into job_files with role='output'
 	_ = r.store.LinkToJob(ctx, pt.fileID, pt.jobID, "output")
 
+	// If the pulled artifact is a zip, extract its members and register each as
+	// its own output file so the web UI can list/preview individual files (e.g.
+	// the markdown summary). The zip itself is kept for "download all".
+	if strings.EqualFold(filepath.Ext(pt.name), ".zip") {
+		if err := r.extractZipOutputs(ctx, pt.jobID, file.UserID, storagePath, outputDir); err != nil {
+			// Non-fatal: the zip is still downloadable even if extraction fails.
+		}
+	}
+
 	r.sendPullAck(deviceID, payload.FileID, "RECEIVED", "")
+	return nil
+}
+
+// extractZipOutputs unzips an output archive into destDir, registering every
+// member as an output file. Members are guarded against zip-slip.
+func (r *FileRelay) extractZipOutputs(ctx context.Context, jobID, userID model.UUID, zipPath, destDir string) error {
+	zr, err := zip.OpenReader(zipPath)
+	if err != nil {
+		return fmt.Errorf("open zip: %w", err)
+	}
+	defer zr.Close()
+
+	cleanDest := filepath.Clean(destDir)
+	for _, zf := range zr.File {
+		if zf.FileInfo().IsDir() {
+			continue
+		}
+		name := zf.Name
+		if !isSafeOutputName(name) {
+			continue // zip-slip / invalid member; skip
+		}
+		target := filepath.Join(destDir, filepath.FromSlash(name))
+		// Defence in depth: ensure target stays within destDir.
+		if rel, err := filepath.Rel(cleanDest, target); err != nil || strings.HasPrefix(rel, "..") {
+			continue
+		}
+		if err := os.MkdirAll(filepath.Dir(target), 0o755); err != nil {
+			continue
+		}
+
+		rc, err := zf.Open()
+		if err != nil {
+			continue
+		}
+		out, err := os.Create(target)
+		if err != nil {
+			rc.Close()
+			continue
+		}
+		hasher := sha256.New()
+		size, err := io.Copy(io.MultiWriter(out, hasher), io.LimitReader(rc, r.maxSize))
+		rc.Close()
+		out.Close()
+		if err != nil {
+			os.Remove(target)
+			continue
+		}
+
+		member := &model.File{
+			ID:         model.NewUUID(),
+			UserID:     userID,
+			Name:       name,
+			Size:       size,
+			SHA256:     hex.EncodeToString(hasher.Sum(nil)),
+			Status:     model.FileStagedCloud,
+			StorageURI: target,
+		}
+		if err := r.store.Create(ctx, member); err != nil {
+			continue
+		}
+		_ = r.store.LinkToJob(ctx, member.ID, jobID, "output")
+	}
 	return nil
 }
 

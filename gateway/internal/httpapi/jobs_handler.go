@@ -9,6 +9,7 @@ import (
 	"net/http"
 	"os"
 	"path/filepath"
+	"strings"
 	"time"
 
 	"github.com/go-chi/chi/v5"
@@ -450,10 +451,34 @@ func (deps *Dependencies) handleDownloadJobOutput() http.HandlerFunc {
 		}
 		defer f.Close()
 
-		w.Header().Set("Content-Type", "application/octet-stream")
-		w.Header().Set("Content-Disposition", fmt.Sprintf(`attachment; filename="%s"`, file.Name))
+		if r.URL.Query().Get("inline") == "1" {
+			w.Header().Set("Content-Type", inlineContentType(file.Name))
+			w.Header().Set("Content-Disposition", fmt.Sprintf(`inline; filename="%s"`, file.Name))
+		} else {
+			w.Header().Set("Content-Type", "application/octet-stream")
+			w.Header().Set("Content-Disposition", fmt.Sprintf(`attachment; filename="%s"`, file.Name))
+		}
 		w.Header().Set("ETag", fmt.Sprintf(`"%s"`, file.SHA256))
 		w.WriteHeader(http.StatusOK)
 		io.Copy(w, f)
+	}
+}
+
+// inlineContentType maps an output file name to a browser-renderable content
+// type for inline preview. Falls back to text/plain for unknown extensions.
+func inlineContentType(name string) string {
+	switch strings.ToLower(filepath.Ext(name)) {
+	case ".md", ".markdown":
+		return "text/markdown; charset=utf-8"
+	case ".json":
+		return "application/json; charset=utf-8"
+	case ".txt", ".log":
+		return "text/plain; charset=utf-8"
+	case ".html", ".htm":
+		return "text/html; charset=utf-8"
+	case ".csv":
+		return "text/csv; charset=utf-8"
+	default:
+		return "text/plain; charset=utf-8"
 	}
 }

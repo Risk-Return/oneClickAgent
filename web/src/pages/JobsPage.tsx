@@ -16,8 +16,9 @@ import { FileDropzone } from "@/components/FileDropzone";
 import { SkillSelector } from "@/components/SkillSelector";
 import { VNCPanel } from "@/components/VNCPanel";
 import { JobOutputs } from "@/components/JobOutputs";
+import { Collapsible, CollapsibleContent, CollapsibleTrigger } from "@/components/ui/collapsible";
 import { toast } from "sonner";
-import { Send, Loader2, Monitor, X, Key, Download } from "lucide-react";
+import { Send, Loader2, Monitor, X, Key, Download, ChevronDown } from "lucide-react";
 import type { Job, JobStatus } from "@/api/schemas";
 
 function downloadFile(content: string, filename: string, mime = "application/json") {
@@ -303,23 +304,30 @@ export function JobsPage() {
         </CardContent>
       </Card>
 
+      <JobOutputs jobId={job.id} jobStatus={job.status} />
+
       {["succeeded", "failed"].includes(job.status) && job.result && (
         <Card>
-          <CardHeader className="flex flex-row items-center justify-between">
-            <CardTitle className="text-base">{t("jobs.result")}</CardTitle>
-            <Button variant="outline" size="sm" onClick={handleDownloadResult}>
-              <Download className="mr-2 h-4 w-4" /> {t("jobs.downloadResult")}
-            </Button>
-          </CardHeader>
-          <CardContent>
-            <pre className="whitespace-pre-wrap rounded-md bg-muted p-4 text-sm max-h-96 overflow-auto">
-              {formatResultContent(job.result)}
-            </pre>
-          </CardContent>
+          <Collapsible>
+            <CardHeader className="flex flex-row items-center justify-between space-y-0">
+              <CollapsibleTrigger className="flex items-center gap-2 text-base font-semibold [&[data-state=open]>svg]:rotate-180">
+                <ChevronDown className="h-4 w-4 transition-transform" />
+                {t("jobs.rawResult", "Raw result (JSON)")}
+              </CollapsibleTrigger>
+              <Button variant="outline" size="sm" onClick={handleDownloadResult}>
+                <Download className="mr-2 h-4 w-4" /> {t("jobs.downloadResult")}
+              </Button>
+            </CardHeader>
+            <CollapsibleContent>
+              <CardContent>
+                <pre className="whitespace-pre-wrap rounded-md bg-muted p-4 text-sm max-h-96 overflow-auto">
+                  {formatResultContent(job.result)}
+                </pre>
+              </CardContent>
+            </CollapsibleContent>
+          </Collapsible>
         </Card>
       )}
-
-      <JobOutputs jobId={job.id} jobStatus={job.status} />
 
       <div className="flex gap-2">
         {!["succeeded", "failed", "cancelled"].includes(job.status) && (

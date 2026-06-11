@@ -156,6 +156,28 @@ export const apiClient = {
 
     return response.blob();
   },
+
+  async getText(path: string): Promise<string> {
+    const url = `${API_PREFIX}/api/v1${path}`;
+    const headers: Record<string, string> = {};
+    const token = await getAccessToken();
+    if (token) headers["Authorization"] = `Bearer ${token}`;
+
+    let response = await fetch(url, { headers, credentials: "include" });
+    if (response.status === 401) {
+      const newToken = await getTokenManager().refreshAccessToken();
+      if (newToken) {
+        headers["Authorization"] = `Bearer ${await getAccessToken()}`;
+        response = await fetch(url, { headers, credentials: "include" });
+      }
+    }
+
+    if (!response.ok) {
+      throw new ApiError(response.status, "UNKNOWN", `HTTP ${response.status}`);
+    }
+
+    return response.text();
+  },
 };
 
 export function getAuthHeaders(): Record<string, string> {
