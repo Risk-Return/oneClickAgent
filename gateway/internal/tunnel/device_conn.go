@@ -92,8 +92,18 @@ func (c *DeviceConn) StartReadPump(ctx context.Context) {
 
 	// WebSocket-level ping/pong as secondary liveness check (§3).
 	c.ws.SetPingHandler(func(appData string) error {
+		c.mu.Lock()
+		defer c.mu.Unlock()
+		err := c.ws.WriteControl(websocket.PongMessage, []byte(appData), time.Now().Add(5*time.Second))
+		if err != nil {
+			c.logger.Warn("write pong failed", "error", err)
+		}
 		c.touch()
-		c.ws.SetReadDeadline(time.Now().Add(readTimeout))
+		return err
+	})
+
+	c.ws.SetPongHandler(func(appData string) error {
+		c.touch()
 		return nil
 	})
 	c.ws.SetPongHandler(func(appData string) error {
