@@ -229,8 +229,7 @@ func (c *DeviceConn) StartWritePump(ctx context.Context) {
 			err := c.ws.WriteMessage(websocket.PingMessage, nil)
 			c.mu.Unlock()
 			if err != nil {
-				c.logger.Error("write error on ping", "error", err)
-				return
+				c.logger.Warn("write failed on ping, continuing", "error", err)
 			}
 		case frame, ok := <-c.outbound:
 			if !ok {
