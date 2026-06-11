@@ -223,6 +223,7 @@ class TunnelClient:
             return
         msg = encode_frame(frame_type, payload, ack_id, msg_id)
         await self._ws.send(msg)
+        logger.info("sent frame type=%s msg_id=%s", frame_type, msg_id or "")
 
     def send_with_ack(self, frame_type: FrameType, payload: dict) -> asyncio.Future | None:
         if not self._ws:
