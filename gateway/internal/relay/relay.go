@@ -55,6 +55,9 @@ type pullTransfer struct {
 
 // NewFileRelay creates a new file relay service.
 func NewFileRelay(fileStore store.FileStoreInterface, hub *tunnel.Hub, baseDir string, maxSize int64, retention time.Duration) *FileRelay {
+	if strings.HasPrefix(baseDir, "local:") {
+		baseDir = baseDir[6:]
+	}
 	return &FileRelay{
 		store:     fileStore,
 		hub:       hub,

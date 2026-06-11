@@ -440,9 +440,16 @@ func (deps *Dependencies) handleDownloadJobOutput() http.HandlerFunc {
 			return
 		}
 
-		// Defence in depth: reject if path escapes base dir
+		// Defence in depth: reject if path escapes base dir.
+		// Resolve both storagePath and the configured base dir to absolute
+		// paths before comparing, so the check works regardless of whether
+		// the paths contain a storage-backend prefix (e.g. "local:").
 		absPath, err := filepath.Abs(storagePath)
-		if err != nil || !filepath.HasPrefix(absPath, filepath.Clean(deps.Config.FileStore)) {
+		configBase := deps.Config.FileStore
+		if !filepath.IsAbs(configBase) {
+			configBase, _ = filepath.Abs(configBase)
+		}
+		if err != nil || !filepath.HasPrefix(absPath, filepath.Clean(configBase)) {
 			writeError(w, http.StatusNotFound, model.ErrCodeNotFound, "file not found")
 			return
 		}
