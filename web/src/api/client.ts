@@ -131,7 +131,7 @@ export const apiClient = {
 
   async getBlob(path: string): Promise<Blob> {
     const url = `${API_PREFIX}/api/v1${path}`;
-    const token = getAccessToken();
+    const token = await getAccessToken();
     const headers: Record<string, string> = {};
     if (token) headers["Authorization"] = `Bearer ${token}`;
 
