@@ -79,8 +79,9 @@ type Hub struct {
 	onFilePurged       func(ctx context.Context, deviceID model.UUID, payload json.RawMessage) error
 	onFilePullBegin    func(ctx context.Context, deviceID model.UUID, payload model.FilePullBeginPayload) error
 	onFilePullChunk    func(ctx context.Context, deviceID model.UUID, payload model.FilePullChunkPayload) error
-	onFilePullEnd      func(ctx context.Context, deviceID model.UUID, payload model.FilePullEndPayload) error
-	onJobLoginRequired func(ctx context.Context, deviceID model.UUID, payload model.JobLoginRequiredPayload) error
+	onFilePullEnd         func(ctx context.Context, deviceID model.UUID, payload model.FilePullEndPayload) error
+	onJobLoginRequired    func(ctx context.Context, deviceID model.UUID, payload model.JobLoginRequiredPayload) error
+	onDisconnect          func(ctx context.Context, deviceID model.UUID) error
 
 	heartbeatInterval      time.Duration
 	heartbeatMissThreshold time.Duration
@@ -113,6 +114,7 @@ type HubConfig struct {
 	OnFilePullChunk         func(ctx context.Context, deviceID model.UUID, payload model.FilePullChunkPayload) error
 	OnFilePullEnd           func(ctx context.Context, deviceID model.UUID, payload model.FilePullEndPayload) error
 	OnJobLoginRequired      func(ctx context.Context, deviceID model.UUID, payload model.JobLoginRequiredPayload) error
+	OnDisconnect            func(ctx context.Context, deviceID model.UUID) error
 }
 
 // NewHub creates a new tunnel Hub.
@@ -149,8 +151,9 @@ func NewHub(cfg HubConfig) *Hub {
 		onFilePurged:           cfg.OnFilePurged,
 		onFilePullBegin:        cfg.OnFilePullBegin,
 		onFilePullChunk:        cfg.OnFilePullChunk,
-		onFilePullEnd:          cfg.OnFilePullEnd,
+		onFilePullEnd:           cfg.OnFilePullEnd,
 		onJobLoginRequired:    cfg.OnJobLoginRequired,
+		onDisconnect:          cfg.OnDisconnect,
 		heartbeatInterval:      cfg.HeartbeatInterval,
 		heartbeatMissThreshold: cfg.HeartbeatMissThreshold,
 		logger:                 obs.Logger("tunnel"),
@@ -182,6 +185,7 @@ func (h *Hub) SetHandlers(cfg HubConfig) {
 	h.onFilePullChunk = cfg.OnFilePullChunk
 	h.onFilePullEnd = cfg.OnFilePullEnd
 	h.onJobLoginRequired = cfg.OnJobLoginRequired
+	h.onDisconnect = cfg.OnDisconnect
 }
 
 // Register adds a new device connection, superseding any existing one.
@@ -220,6 +224,11 @@ func (h *Hub) Unregister(deviceID model.UUID, conn *DeviceConn) {
 	h.mu.Unlock()
 
 	_ = h.registry.Unregister(context.Background(), deviceID)
+
+	if h.onDisconnect != nil {
+		_ = h.onDisconnect(context.Background(), deviceID)
+	}
+
 	h.logger.Info("device unregistered", "device_id", deviceID)
 }
 

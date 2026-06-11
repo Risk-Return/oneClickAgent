@@ -236,6 +236,9 @@ func NewHarness(t *testing.T) *E2EHarness {
 			// No-op in e2e tests
 			return nil
 		},
+		OnDisconnect: func(ctx context.Context, deviceID model.UUID) error {
+			return nil
+		},
 	})
 
 	deps := &httpapi.Dependencies{

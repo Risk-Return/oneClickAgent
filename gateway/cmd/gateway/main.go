@@ -332,6 +332,9 @@ func main() {
 			})
 			return nil
 		},
+		OnDisconnect: func(ctx context.Context, deviceID model.UUID) error {
+			return devices.UpdateStatus(ctx, deviceID, model.DeviceOffline)
+		},
 	})
 
 	// Assemble HTTP dependencies
