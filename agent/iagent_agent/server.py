@@ -84,6 +84,7 @@ def create_app() -> FastAPI:
             state.browser_type = "camoufox"
 
         state.vnc = VNCStack(display=display, rfb_port=rfb_port)
+        state.vnc.ensure_xvfb()
         state.executor = JobExecutor(
             brain=_make_brain(),
             workspace=state.workspace,

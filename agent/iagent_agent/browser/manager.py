@@ -209,18 +209,23 @@ class VNCStack:
     def rfb_password(self) -> Optional[str]:
         return self._rfb_password
 
-    def start(self) -> str:
-        if self._running:
-            return self._rfb_password or ""
-
-        self._rfb_password = secrets.token_urlsafe(16)
+    def ensure_xvfb(self) -> None:
+        if self._xvfb is not None and self._xvfb.poll() is None:
+            return
         self._xvfb = subprocess.Popen(
             ["Xvfb", self._display, "-screen", "0", "1280x720x24"],
             stdout=subprocess.DEVNULL,
             stderr=subprocess.DEVNULL,
         )
-
         time.sleep(1)
+        logger.info("Xvfb started on display=%s", self._display)
+
+    def start(self) -> str:
+        if self._running:
+            return self._rfb_password or ""
+
+        self.ensure_xvfb()
+        self._rfb_password = secrets.token_urlsafe(16)
 
         self._x11vnc = subprocess.Popen(
             [
