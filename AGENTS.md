@@ -387,3 +387,253 @@ done
 | `docs/dev/` | Development progress records per module |
 
 Reading order: `goal → 00-overview → 01-architecture → 05-tunnel-protocol → 06-data-model → 07-api → 02-cloud-gateway → 03-local-device → 04-agent-container → 08-auth-security → 09-web-ui → 10-deployment`
+
+---
+
+## Local Device — Build, Deploy & Monitor
+
+### Architecture (Local Perspective)
+
+```
+Cloud (deepwitai.cn/aiproduct)
+    │ WSS tunnel
+    ▼
+Device (native Python process) ──┐
+    │ Docker API                 │
+    ├─ agent-xxx (port 42000)    │
+    ├─ agent-xxx (port 42001)    ├─ Bind mount: {data_dir}/work → /work
+    ├─ ...                       │
+    └─ SQLite DB in {data_dir}/ ─┘
+```
+
+### Key File Locations
+
+| Path | Purpose |
+|------|---------|
+| `device/venv/` | Python virtual environment for the device |
+| `agent/Dockerfile` | Agent container image definition |
+| `agent/iagent_agent/` | Agent Python code (runs inside containers) |
+| `device/iagent_device/` | Device Python code (runs on host) |
+| `{data_dir}/device.db` | Device SQLite database (agents, jobs, outbox) |
+| `{data_dir}/work/` | Bind-mounted to containers as `/work/` |
+| `{data_dir}/work/workspaces/{job_id}/output/` | Job output files |
+| `{data_dir}/work/.cloakbrowser/` | CloakBrowser Chromium binary cache |
+| `{data_dir}/llm_provider.json` | LLM API credentials (gitignored) |
+| `/tmp/iagent-cloud-new/` | Current device data dir on this machine |
+
+### Build Agent Docker Image
+
+```bash
+# Build image (includes cloakbrowser, opencode, all runtimes)
+cd agent
+sg docker -c "docker build -t iagent/agent:dev -f Dockerfile ."
+sg docker -c "docker tag iagent/agent:dev iagent/agent:latest"
+
+# Force rebuild agent code layer (if cached incorrectly)
+touch iagent_agent/adapter/brain_opencode.py
+sg docker -c "docker build -t iagent/agent:dev -f Dockerfile ."
+
+# Verify latest code in image
+sg docker -c "docker run --rm --entrypoint sh iagent/agent:dev -c 'grep pattern /home/app/iagent_agent/...'"
+```
+
+### Enroll Device (first time or after DB reset)
+
+```bash
+# Clean any old device data
+rm -rf /tmp/iagent-cloud-new
+mkdir -p /tmp/iagent-cloud-new
+
+# Copy LLM config from old data dir or template
+cp /tmp/iagent-cloud/llm_provider.json /tmp/iagent-cloud-new/  # if exists
+
+# Enroll with enrollment code from admin portal
+cd device
+source venv/bin/activate
+IAGENT_DEVICE_DATA_DIR=/tmp/iagent-cloud-new \
+  IAGENT_GATEWAY_URL=https://deepwitai.cn/aiproduct \
+  python -m iagent_device enroll <ENROLLMENT_CODE>
+```
+
+### Start / Restart Device
+
+The device must run with `sg docker` for Docker socket access:
+
+```bash
+# Kill all device processes
+ps -ef | grep iagent_device | grep -v grep | awk '{print $2}' | while read p; do kill -9 $p 2>/dev/null; done
+
+# Make work dir world-writable (container user mismatch)
+chmod 777 /tmp/iagent-cloud-new/work 2>/dev/null
+
+# Start device (pool_size=0 disables local reconciliation, cloud manages pool)
+cd /home/ryandong/桌面/oneClickAgent
+python3 -c "
+import subprocess
+p = subprocess.Popen(
+    ['sg', 'docker', '-c', 'DOCKER_HOST=unix:///var/run/docker.sock IAGENT_DEVICE_DATA_DIR=/tmp/iagent-cloud-new IAGENT_GATEWAY_URL=https://deepwitai.cn/aiproduct IAGENT_PREPULL_IMAGE=false IAGENT_POOL_SIZE=0 exec /home/ryandong/桌面/oneClickAgent/device/venv/bin/python -m iagent_device run'],
+    stdout=open('/tmp/device-cloud15.log', 'w'),
+    stderr=subprocess.STDOUT,
+    start_new_session=True,
+)
+print(f'PID: {p.pid}')
+"
+
+# Reinstall device code after changes (without restart)
+cd device && venv/bin/pip install -e .
+```
+
+### Install Device Code Only (no restart needed if process persists)
+
+```bash
+cd device && venv/bin/pip install -e .
+```
+
+### LLM Provider Config
+
+File: `{data_dir}/llm_provider.json` (gitignored, `chmod 600`)
+
+```json
+{
+  "provider": "hboom",
+  "api": "openai",
+  "model": "deepseek-v4-pro",
+  "api_key": "sk-...",
+  "base_url": "https://hk.hboom.ai/v1"
+}
+```
+
+Maps to container env vars based on `api` field:
+- `openai` → `OPENAI_API_KEY`, `OPENAI_MODEL`, `OPENAI_BASE_URL`
+- `anthropic` → `ANTHROPIC_API_KEY`, `ANTHROPIC_MODEL`, `ANTHROPIC_BASE_URL`
+
+The agent's `brain_opencode.py` generates opencode provider config from these env vars before spawning opencode.
+
+### Monitor Agent Status
+
+```bash
+# List all pool containers
+sg docker -c "docker ps --filter 'label=iagent.pool=true' --format 'table {{.Names}}\t{{.Status}}\t{{.Ports}}'"
+
+# Check specific agent health + job status
+curl http://localhost:42000/healthz   # {"status":"ok","busy":false}
+curl http://localhost:42000/status    # full status JSON with current_job
+
+# Check all agent ports (scan range)
+for p in 42000 42001 42002 42003 42004; do
+  python3 -c "import urllib.request,json; r=urllib.request.urlopen('http://localhost:$p/healthz',timeout=2); d=json.loads(r.read()); print('$p:', json.dumps(d))" 2>/dev/null
+done
+```
+
+### Monitor Job Execution
+
+```bash
+# Find which container has the job
+for c in $(sg docker -c "docker ps -q --filter 'label=iagent.pool=true'"); do
+  port=$(sg docker -c "docker port $c 8090" | awk -F: '{print $2}')
+  s=$(python3 -c "import urllib.request,json; r=urllib.request.urlopen('http://localhost:$port/status'); d=json.loads(r.read()); j=d.get('current_job'); print(j.get('job_id','')[:13] if j else 'idle')" 2>/dev/null)
+  echo "$port: $s"
+done
+
+# Stream live opencode output (stderr contains the actual agent actions)
+sg docker -c "docker logs -f agent-{name} 2>&1" | grep -v "healthz\|/healthz\|GET /status\|GET /jobs"
+
+# Check job output files in container
+sg docker -c "docker exec agent-{name} sh -c 'ls -la /work/workspaces/{job_id}/output/'"
+
+# Read summary.md
+sg docker -c "docker exec agent-{name} sh -c 'cat /work/workspaces/{job_id}/output/summary.md'"
+
+# Check if opencode process is still running
+sg docker -c "docker exec agent-{name} sh -c 'ps aux | grep opencode | grep -v grep'"
+```
+
+### Inspect CloakBrowser Binary
+
+```bash
+# Check if binary is present in container
+sg docker -c "docker exec agent-{name} sh -c 'ls /work/.cloakbrowser/chromium-*/chrome'"
+
+# Copy binary from host to container (697MB)
+sg docker -c "docker cp /home/ryandong/.cloakbrowser/chromium-146.0.7680.177.5 agent-{name}:/work/.cloakbrowser/"
+
+# Pre-populate binary for future containers (bind mount path)
+cp -a /home/ryandong/.cloakbrowser/chromium-146.0.7680.177.5 /tmp/iagent-cloud-new/work/.cloakbrowser/
+
+# Test cloakbrowser directly in container
+sg docker -c "docker exec -i agent-{name} python3" < /tmp/test_xhs.py
+```
+
+### Device Logs
+
+```bash
+# Main device log (process stdout)
+tail -f /tmp/device-cloud15.log
+
+# Filter out noisy health check polls
+grep -v "healthz\|HTTP Request" /tmp/device-cloud15.log | tail -20
+
+# Check tunnel disconnections
+grep -i "disconnect\|reconnect\|no close frame" /tmp/device-cloud15.log | tail -5
+
+# AGENT_CREATE frames received
+grep "AGENT_CREATE\|handle_agent_create" /tmp/device-cloud15.log
+
+# Job dispatch events
+grep "019ea" /tmp/device-cloud15.log | grep -v "healthz\|HTTP Request" | tail -20
+
+# Outbox/ACK status
+grep "ACK\|acked\|outbox" /tmp/device-cloud15.log | tail -10
+```
+
+### Device SQLite Database
+
+```bash
+# Connect to device DB
+python3 -c "
+import sqlite3
+conn = sqlite3.connect('/tmp/iagent-cloud-new/device.db')
+
+# Agent records
+for r in conn.execute('SELECT agent_id, name, status, restarts FROM agents'): print(r)
+
+# Outbox entries (unacked frames)
+print('Unacked:', conn.execute('SELECT count(*) FROM outbox WHERE acked=0').fetchone()[0])
+
+# Recent outbox entries
+for r in conn.execute('SELECT msg_id, type, acked, substr(payload,1,80) FROM outbox ORDER BY rowid DESC LIMIT 10'): print(r)
+
+# Clean stale agent records
+conn.execute('DELETE FROM agents WHERE restarts > 10')
+conn.commit()
+
+# Clean outbox
+conn.execute('DELETE FROM outbox')
+conn.commit()
+"
+```
+
+### Quick Diagnostic Flow
+
+When a job fails or gets stuck, trace the chain:
+
+1. **Web UI status**: "waiting", "running", "failed" — what does cloud show?
+2. **Device log**: `grep {job_id} /tmp/device-cloud15.log` — any JOB_DISPATCH received?
+3. **Agent status**: `curl http://localhost:{port}/status` — job present? what progress?
+4. **Agent logs**: `docker logs agent-{name}` — opencode output, errors?
+5. **Device DB**: Check outbox for JOB_RESULT, acked status
+6. **Container state**: `docker ps -a` — container healthy? exited?
+7. **Work dir**: `ls {data_dir}/work/workspaces/` — permissions correct?
+
+### Known Issues & Workarounds
+
+| Issue | Symptom | Fix |
+|-------|---------|-----|
+| Tunnel drops every 2 min | `no close frame received or sent` | `ping_interval=30` in tunnel client |
+| Container PermissionError | `/work/skills`, `/work/workspaces` denied | `chmod 777 {data_dir}/work` on host |
+| CloakBrowser binary not found | 175MB download retry loop | Copy binary to `{data_dir}/work/.cloakbrowser/` |
+| Jobs stuck "dispatched" | AGENT_CREATE never arrives | Cloud-side fix: gateway `handleSubmitJob` missing dispatch frame |
+| Jobs never reach terminal | Web UI stuck "running" after agent done | Cloud-side: `Result *string` → `*json.RawMessage`, JOB_RESULT needs FILE_PULL handler |
+| Outbox unbounded growth | 65K+ unacked entries | ACK handling fix + periodic cleanup |
+| Port conflict on container create | `port is already allocated` | Delete stale containers: `docker rm -f $(docker ps -aq)` |
+| Stale agent DB records | `exceeded max restarts` endless | `DELETE FROM agents WHERE restarts > 10` |
