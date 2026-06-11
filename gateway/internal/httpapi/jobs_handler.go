@@ -291,6 +291,9 @@ func (deps *Dependencies) handleGetJobResult() http.HandlerFunc {
 
 // PushFilesToDevice pushes files associated with a job to the device.
 func (deps *Dependencies) PushFilesToDevice(ctx context.Context, job *model.Job, deviceID model.UUID) error {
+	if deps.Relay == nil {
+		return nil
+	}
 	return deps.Relay.PushJobInputs(ctx, job, deviceID)
 }
 

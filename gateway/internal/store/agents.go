@@ -63,8 +63,8 @@ func (s *AgentStore) FindIdle(ctx context.Context) (*model.Agent, error) {
 func (s *AgentStore) Allocate(ctx context.Context, agentID, userID, jobID model.UUID) error {
 	now := time.Now().UTC()
 	_, err := s.db.Pool.Exec(ctx,
-		`UPDATE agents SET status=$2, user_id=$3, allocated_at=$4, updated_at=$4 WHERE id=$1`,
-		agentID, model.AgentBusy, userID, now,
+		`UPDATE agents SET status=$2, user_id=$3, job_id=$4, allocated_at=$5, updated_at=$5 WHERE id=$1`,
+		agentID, model.AgentBusy, userID, jobID, now,
 	)
 	return err
 }

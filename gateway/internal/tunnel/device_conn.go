@@ -88,6 +88,8 @@ func (c *DeviceConn) touch() {
 func (c *DeviceConn) StartReadPump(ctx context.Context) {
 	defer c.Close(1000, "read pump done")
 
+	readTimeout := 30 * time.Second
+
 	// WebSocket-level ping/pong as secondary liveness check (§3).
 	c.ws.SetPongHandler(func(appData string) error {
 		c.touch()
@@ -114,6 +116,7 @@ func (c *DeviceConn) StartReadPump(ctx context.Context) {
 	}()
 
 	for {
+		c.ws.SetReadDeadline(time.Now().Add(readTimeout))
 		_, msg, err := c.ws.ReadMessage()
 		if err != nil {
 			if !c.closed.Load() {
@@ -203,6 +206,8 @@ func (c *DeviceConn) handleHello(ctx context.Context, frame *model.Frame) {
 func (c *DeviceConn) StartWritePump(ctx context.Context) {
 	defer c.Close(1000, "write pump done")
 
+	writeTimeout := 10 * time.Second
+
 	// WS-level ping ticker (secondary liveness per spec §3 note).
 	wsPingTicker := time.NewTicker(15 * time.Second)
 	defer wsPingTicker.Stop()
@@ -215,9 +220,11 @@ func (c *DeviceConn) StartWritePump(ctx context.Context) {
 			return
 		case <-wsPingTicker.C:
 			c.mu.Lock()
+			c.ws.SetWriteDeadline(time.Now().Add(writeTimeout))
 			err := c.ws.WriteMessage(websocket.PingMessage, nil)
 			c.mu.Unlock()
 			if err != nil {
+				c.logger.Error("write error on ping", "error", err)
 				return
 			}
 		case frame, ok := <-c.outbound:
@@ -232,6 +239,7 @@ func (c *DeviceConn) StartWritePump(ctx context.Context) {
 			}
 
 			c.mu.Lock()
+			c.ws.SetWriteDeadline(time.Now().Add(writeTimeout))
 			writeErr := c.ws.WriteMessage(websocket.TextMessage, data)
 			c.mu.Unlock()
 			if writeErr != nil {
