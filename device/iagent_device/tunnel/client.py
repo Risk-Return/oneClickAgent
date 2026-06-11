@@ -18,6 +18,10 @@ from iagent_device.tunnel.outbox import Outbox
 
 logger = logging.getLogger(__name__)
 
+OPEN_TIMEOUT = 10.0
+PING_TIMEOUT = 20.0
+CLOSE_TIMEOUT = 10.0
+
 RECONNECT_BASE_S = 1.0
 RECONNECT_MAX_S = 30.0
 RECONNECT_JITTER = 0.2
@@ -74,6 +78,7 @@ class TunnelClient:
             try:
                 await self._connect()
                 self._reconnect_attempt = 0
+                logger.info("connection closed gracefully, reconnecting immediately")
             except asyncio.CancelledError:
                 break
             except Exception:
@@ -98,6 +103,9 @@ class TunnelClient:
             subprotocols=["iagent.tunnel.v1"],
             max_size=FRAME_MAX_SIZE,
             ping_interval=30,
+            ping_timeout=PING_TIMEOUT,
+            open_timeout=OPEN_TIMEOUT,
+            close_timeout=CLOSE_TIMEOUT,
         ) as ws:
             self._ws = ws
             self._pending_acks.clear()
@@ -135,12 +143,17 @@ class TunnelClient:
         await self._send(FrameType.STATE_SYNC, {"jobs": jobs, "agents": agents})
 
     async def _read_loop(self, ws):
-        async for msg in ws:
-            try:
-                frame = decode_frame(msg)
-                await self._handle_frame(frame)
-            except Exception:
-                logger.exception("frame handling error")
+        try:
+            async for msg in ws:
+                try:
+                    frame = decode_frame(msg)
+                    await self._handle_frame(frame)
+                except Exception:
+                    logger.exception("frame handling error")
+        except Exception:
+            logger.exception("read loop error")
+        finally:
+            logger.info("read loop exited, connection=%s", "alive" if self._ws else "dead")
 
     async def _handle_frame(self, frame: dict):
         frame_type = frame["type"]
@@ -200,8 +213,10 @@ class TunnelClient:
             try:
                 await self._send(FrameType.PING, {})
             except Exception:
+                logger.info("heartbeat send failed, exiting heartbeat loop")
                 break
             await asyncio.sleep(self.heartbeat_s)
+        logger.info("heartbeat loop exited, ws_alive=%s, running=%s", self._ws is not None, self._running)
 
     async def _send(self, frame_type: FrameType, payload: dict, ack_id: str | None = None, msg_id: str | None = None):
         if not self._ws:
