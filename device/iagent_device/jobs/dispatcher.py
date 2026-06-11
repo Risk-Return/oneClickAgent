@@ -132,10 +132,12 @@ class JobDispatcher:
         event_seq = 1
         last_event_seq = -1
         deadline = time.monotonic() + timeout_s
+        consecutive_failures = 0
 
         while time.monotonic() < deadline:
             try:
                 status_data = await client.get_job(job_id)
+                consecutive_failures = 0
                 status = status_data.get("status", "running")
                 percent = status_data.get("percent", 0)
                 message = status_data.get("message", "")
@@ -208,7 +210,17 @@ class JobDispatcher:
                         })
                     return
             except Exception:
-                logger.warning("poll error for job %s", job_id, exc_info=True)
+                consecutive_failures += 1
+                if consecutive_failures >= 5:
+                    logger.error("job %s poll failed %d times, giving up", job_id, consecutive_failures)
+                    self.job_repo.update_status(job_id, "failed")
+                    await self.outbox.enqueue_and_send(FrameType.JOB_RESULT, {
+                        "job_id": job_id,
+                        "status": "failed",
+                        "error_msg": "agent unreachable or job not found",
+                    })
+                    return
+                logger.warning("poll error for job %s (attempt %d)", job_id, consecutive_failures, exc_info=True)
             await asyncio.sleep(2)
 
         self.job_repo.update_status(job_id, "failed")

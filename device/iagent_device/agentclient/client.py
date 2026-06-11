@@ -51,6 +51,7 @@ class AgentClient:
     async def get_job(self, job_id: str) -> dict:
         async with httpx.AsyncClient(timeout=self.timeout) as c:
             r = await c.get(f"{self.base_url}/jobs/{job_id}")
+            r.raise_for_status()
             return r.json()
 
     async def install_skill(self, skill_id: str, version: str, manifest: str, artifact_path: str) -> dict:
