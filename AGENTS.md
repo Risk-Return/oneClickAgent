@@ -183,6 +183,200 @@ go test -v -count=1 ./gateway/e2e/
 
 ---
 
+## Cloud-Side Build & Restart (Production Server)
+
+The production cloud server runs nginx + gateway natively on this machine (`deepwitai.cn`). The Vite dev server is not used in production — the built web dist is served by nginx and the gateway.
+
+### Gateway Build & Restart
+
+```bash
+# Build
+cd gateway && go build -o bin/gateway ./cmd/gateway && go vet ./...
+
+# Restart (kill existing, start new with production env)
+fuser -k 42080/tcp; sleep 1
+nohup env \
+  IAGENT_CORS_ORIGINS='*' \
+  IAGENT_CRED_KEY='AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA=' \
+  IAGENT_DB_URL='postgres://iagent:iagent_dev_password@localhost:5432/iagent?sslmode=disable' \
+  IAGENT_ENV='development' \
+  IAGENT_FILE_STORE='local:/tmp/iagent-files' \
+  IAGENT_HTTP_ADDR=':42080' \
+  IAGENT_JWT_SECRET='dev-jwt-secret-at-least-32-characters-long!!' \
+  IAGENT_LOG_FORMAT='text' \
+  IAGENT_LOG_LEVEL='debug' \
+  IAGENT_WEB_DIST_DIR='/root/projects/oneClickAgent/web/dist' \
+  /root/projects/oneClickAgent/gateway/bin/gateway \
+  > /tmp/gateway.log 2>&1 &
+
+# Verify
+curl -s -o /dev/null -w "%{http_code}" http://localhost:42080/healthz   # expect 200
+```
+
+### Web UI Build & Deploy
+
+```bash
+# Install deps (if new packages added)
+cd web && npm install
+
+# Build for production (served under /aiproduct/ subpath by nginx)
+cd web && VITE_BASE=/aiproduct/ VITE_API_PREFIX=/aiproduct npx vite build
+
+# Reload nginx to pick up new dist assets
+nginx -s reload
+
+# Verify assets are reachable
+dist_js=$(grep -oP '/aiproduct/assets/index-[^.]+\.js' web/dist/index.html)
+curl -s -o /dev/null -w "%{http_code}" "https://deepwitai.cn${dist_js}"   # expect 200
+```
+
+### Quick Full Rebuild
+
+```bash
+cd /root/projects/oneClickAgent
+# Gateway
+cd gateway && go build -o bin/gateway ./cmd/gateway && go vet ./...
+# Web
+cd ../web && VITE_BASE=/aiproduct/ VITE_API_PREFIX=/aiproduct npx vite build
+# Restart gateway
+fuser -k 42080/tcp; sleep 1
+nohup env IAGENT_CORS_ORIGINS='*' IAGENT_CRED_KEY='AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA=' IAGENT_DB_URL='postgres://iagent:iagent_dev_password@localhost:5432/iagent?sslmode=disable' IAGENT_ENV='development' IAGENT_FILE_STORE='local:/tmp/iagent-files' IAGENT_HTTP_ADDR=':42080' IAGENT_JWT_SECRET='dev-jwt-secret-at-least-32-characters-long!!' IAGENT_LOG_FORMAT='text' IAGENT_LOG_LEVEL='debug' IAGENT_WEB_DIST_DIR='/root/projects/oneClickAgent/web/dist' gateway/bin/gateway > /tmp/gateway.log 2>&1 &
+nginx -s reload
+```
+
+---
+
+## Cloud-Side Diagnostics
+
+### Database
+
+| Item | Value |
+|------|-------|
+| Host | `localhost:5432` |
+| Production DB | `iagent` |
+| E2E test DB | `iagent_e2e` |
+| User | `iagent` |
+| Password | `iagent_dev_password` |
+| Encoding | `UTF8` (must be UTF8, not SQL_ASCII — jsonb columns reject non-ASCII) |
+
+**Connect:**
+```bash
+PGPASSWORD=iagent_dev_password psql -h localhost -U iagent -d iagent
+```
+
+### Database Tables
+
+```bash
+# List all tables
+PGPASSWORD=iagent_dev_password psql -h localhost -U iagent -d iagent -c "\dt"
+```
+
+Core tables: `users`, `devices`, `agents`, `jobs`, `files`, `job_files`, `skills`, `skill_versions`, `device_skills`, `agent_skills`, `skill_grants`, `browser_credentials`, `job_credentials`, `vnc_sessions`, `refresh_tokens`, `audit_log`, `organizations`
+
+### Common Diagnostic Queries
+
+```bash
+# Active and recent jobs
+PGPASSWORD=iagent_dev_password psql -h localhost -U iagent -d iagent -c "
+SELECT j.id, j.status, j.agent_id, j.device_id, j.error_code,
+       j.created_at, j.started_at, j.finished_at
+FROM jobs j ORDER BY j.created_at DESC LIMIT 10;"
+
+# Agent pool status
+PGPASSWORD=iagent_dev_password psql -h localhost -U iagent -d iagent -c "
+SELECT id, device_id, user_id, name, status, job_id, created_at
+FROM agents ORDER BY created_at DESC;"
+
+# Device online status
+PGPASSWORD=iagent_dev_password psql -h localhost -U iagent -d iagent -c "
+SELECT id, name, status FROM devices;"
+
+# Users
+PGPASSWORD=iagent_dev_password psql -h localhost -U iagent -d iagent -c "
+SELECT id, email, role, tier FROM users;"
+
+# Job output files
+PGPASSWORD=iagent_dev_password psql -h localhost -U iagent -d iagent -c "
+SELECT f.id, f.name, f.size, jf.role, jf.job_id
+FROM files f JOIN job_files jf ON f.id = jf.file_id
+WHERE jf.role = 'output' ORDER BY f.created_at DESC LIMIT 10;"
+```
+
+### Log Files
+
+| Log | Path | Content |
+|-----|------|---------|
+| Gateway stdout/stderr | `/tmp/gateway.log` | Startup, HTTP requests, tunnel events, errors |
+| Nginx access log | `/var/log/nginx/access.log` | All HTTP requests through nginx |
+| Nginx error log | `/var/log/nginx/error.log` | Nginx errors |
+
+Gateway log format: structured JSON lines with `time`, `level`, `source`, `msg`, and context fields.
+
+**Common log queries:**
+```bash
+# Device connection events
+grep "device registered\|device unregistered\|read error\|abnormal" /tmp/gateway.log
+
+# Job completion (agent release)
+grep "agent released to pool" /tmp/gateway.log
+
+# AGENT_CREATE delivery failures
+grep "AGENT_CREATE not delivered" /tmp/gateway.log
+
+# Frame retransmissions (unacked frames)
+grep "retransmit" /tmp/gateway.log
+
+# Job submissions
+grep "POST.*/jobs " /tmp/gateway.log
+
+# HTTP errors
+grep "status=4[0-9][0-9]\|status=5[0-9][0-9]" /tmp/gateway.log
+
+# Specific job activity (by job ID)
+grep "019ead2b" /tmp/gateway.log
+```
+
+### Nginx Configuration
+
+| File | Purpose |
+|------|---------|
+| `/etc/nginx/conf.d/aibi.conf` | Main nginx config (all routes) |
+| `/etc/nginx/nginx.conf` | Global nginx config |
+
+**IAgent routes under `/aiproduct/`:**
+
+| Route | Target |
+|-------|--------|
+| `/aiproduct/` | SPA static files from `web/dist/` |
+| `/aiproduct/assets/` | Long-cached JS/CSS from `web/dist/assets/` |
+| `/aiproduct/api/` | Proxied to `http://127.0.0.1:42080/api/` |
+| `/aiproduct/ws` | Proxied to `http://127.0.0.1:42080/ws` (WebSocket) |
+| `/aiproduct/tunnel` | Proxied to `http://127.0.0.1:42080/tunnel` (device WSS) |
+
+Reload after changes: `nginx -s reload`
+
+### Migrations
+
+Apply manually from `gateway/migrations/`:
+
+```bash
+for f in gateway/migrations/*.up.sql; do
+  PGPASSWORD=iagent_dev_password psql -h localhost -U iagent -d iagent -f "$f"
+done
+```
+
+### Key Directories
+
+| Path | Purpose |
+|------|---------|
+| `gateway/bin/gateway` | Gateway binary |
+| `web/dist/` | Built web frontend (served by nginx) |
+| `gateway/migrations/` | SQL migration files |
+| `docs/deployment/issues/` | Issue investigation reports |
+| `/tmp/iagent-files/` | Staged file storage (`IAGENT_FILE_STORE`) |
+
+---
+
 ## Docs Structure
 
 | Directory | Content |
