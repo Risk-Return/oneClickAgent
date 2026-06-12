@@ -20,7 +20,7 @@ interface JobProgressCardProps {
 export function JobProgressCard({
   status,
   percent,
-  progressMessage,
+  progressMessage: _progressMessage,
   queuePosition,
   estimatedWaitSeconds,
   startedAt,
@@ -67,7 +67,6 @@ export function JobProgressCard({
 
       <div aria-live="polite" aria-atomic="true">
         <Progress value={percent} className={status === "failed" ? "[&>div]:bg-red-500" : ""} />
-        <p className="mt-2 text-sm text-muted-foreground">{progressMessage || t("progress.waiting")}</p>
       </div>
     </div>
   );
