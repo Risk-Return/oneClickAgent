@@ -446,6 +446,7 @@ func (deps *Dependencies) handleDownloadJobOutput() http.HandlerFunc {
 		// the paths contain a storage-backend prefix (e.g. "local:").
 		absPath, err := filepath.Abs(storagePath)
 		configBase := deps.Config.FileStore
+		configBase = strings.TrimPrefix(configBase, "local:")
 		if !filepath.IsAbs(configBase) {
 			configBase, _ = filepath.Abs(configBase)
 		}
