@@ -109,6 +109,23 @@ export function JobOutputs({ jobId, jobStatus }: JobOutputsProps) {
     }
   };
 
+  const handleDownloadZip = async () => {
+    try {
+      const shortId = jobId.slice(0, 8);
+      const blob = await apiClient.getBlob(`/jobs/${jobId}/output/zip`);
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement("a");
+      a.href = url;
+      a.download = `job-${shortId}-outputs.zip`;
+      document.body.appendChild(a);
+      a.click();
+      document.body.removeChild(a);
+      URL.revokeObjectURL(url);
+    } catch (err: unknown) {
+      toast.error((err as { message?: string })?.message || t("jobs.downloadFailed"));
+    }
+  };
+
   if (loading && files.length === 0) {
     return (
       <Card>
@@ -143,12 +160,18 @@ export function JobOutputs({ jobId, jobStatus }: JobOutputsProps) {
       <Card>
         <CardHeader className="flex flex-row items-center justify-between">
           <CardTitle className="text-base">{t("jobs.outputFiles", "Output Files")}</CardTitle>
-          {zip && (
-            <Button variant="outline" size="sm" onClick={() => handleDownload(zip.file_id, zip.name)}>
+          <div className="flex items-center gap-2">
+            <Button variant="outline" size="sm" onClick={handleDownloadZip}>
               <FileArchive className="mr-2 h-4 w-4" />
-              {t("jobs.downloadAll", "Download all")}
+              {t("jobs.downloadZip", "Download ZIP")}
             </Button>
-          )}
+            {zip && (
+              <Button variant="outline" size="sm" onClick={() => handleDownload(zip.file_id, zip.name)}>
+                <Download className="mr-2 h-4 w-4" />
+                {t("jobs.downloadAll", "Download all")}
+              </Button>
+            )}
+          </div>
         </CardHeader>
         <CardContent>
           <div className="space-y-2">

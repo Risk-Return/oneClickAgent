@@ -1,6 +1,7 @@
 package httpapi
 
 import (
+	"archive/zip"
 	"context"
 	"encoding/base64"
 	"encoding/json"
@@ -475,6 +476,64 @@ func (deps *Dependencies) handleDownloadJobOutput() http.HandlerFunc {
 		w.Header().Set("ETag", fmt.Sprintf(`"%s"`, file.SHA256))
 		w.WriteHeader(http.StatusOK)
 		io.Copy(w, f)
+	}
+}
+
+// handleDownloadJobOutputZip streams a zip archive of all output files for a job.
+func (deps *Dependencies) handleDownloadJobOutputZip() http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		userID := getUserID(r)
+		jobID, err := model.ParseUUID(chi.URLParam(r, "jobID"))
+		if err != nil {
+			writeError(w, http.StatusBadRequest, model.ErrCodeValidationFailed, "invalid job_id")
+			return
+		}
+
+		job, err := deps.Jobs.GetByID(r.Context(), jobID)
+		if err != nil || job == nil {
+			writeError(w, http.StatusNotFound, model.ErrCodeNotFound, "job not found")
+			return
+		}
+		if job.UserID != userID {
+			writeError(w, http.StatusForbidden, model.ErrCodeForbidden, "access denied")
+			return
+		}
+
+		files, err := deps.Files.ListByJobAndRole(r.Context(), jobID, "output")
+		if err != nil {
+			writeError(w, http.StatusInternalServerError, model.ErrCodeInternalError, "failed to list output files")
+			return
+		}
+
+		shortID := jobID.String()[:8]
+		filename := fmt.Sprintf("job-%s-outputs.zip", shortID)
+		w.Header().Set("Content-Type", "application/zip")
+		w.Header().Set("Content-Disposition", fmt.Sprintf(`attachment; filename="%s"`, filename))
+
+		zw := zip.NewWriter(w)
+		defer zw.Close()
+
+		for _, f := range files {
+			sp := f.StorageURI
+			if sp == "" {
+				continue
+			}
+			rf, err := os.Open(sp)
+			if err != nil {
+				// Try stripped path for files without backend prefix
+				rf, err = os.Open(strings.TrimPrefix(sp, "local:"))
+				if err != nil {
+					continue
+				}
+			}
+			ze, err := zw.Create(f.Name)
+			if err != nil {
+				rf.Close()
+				continue
+			}
+			io.Copy(ze, rf)
+			rf.Close()
+		}
 	}
 }
 

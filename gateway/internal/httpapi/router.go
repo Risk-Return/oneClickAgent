@@ -131,6 +131,7 @@ func NewRouter(deps *Dependencies) chi.Router {
 		r.Post("/api/v1/jobs/{jobID}/cancel", deps.handleCancelJob())
 		r.Get("/api/v1/jobs/{jobID}/result", deps.handleGetJobResult())
 		r.Get("/api/v1/jobs/{jobID}/output", deps.handleListJobOutputs())
+		r.Get("/api/v1/jobs/{jobID}/output/zip", deps.handleDownloadJobOutputZip())
 		r.Get("/api/v1/jobs/{jobID}/output/{fileID}", deps.handleDownloadJobOutput())
 
 		// VNC sessions
