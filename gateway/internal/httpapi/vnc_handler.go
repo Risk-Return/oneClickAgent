@@ -71,8 +71,11 @@ func (deps *Dependencies) handleOpenVNC() http.HandlerFunc {
 		})
 		_ = deps.Hub.SendFrame(*job.DeviceID, frame)
 
-		// Block until device responds with VNC_OPENED (up to 15s)
-		rfbPassword, err := deps.VNCRelay.WaitReady(sess.ID, 15*time.Second)
+		// Block until device responds with VNC_OPENED. Must exceed the device's
+		// agent-HTTP client timeout (30s) so the device's /vnc/start call (which
+		// also launches the browser, and may cold-start Chromium) has time to
+		// reply before the gateway gives up.
+		rfbPassword, err := deps.VNCRelay.WaitReady(sess.ID, 40*time.Second)
 		if err != nil {
 			writeError(w, http.StatusGatewayTimeout, model.ErrCodeInternalError, "vnc_open_timeout")
 			return

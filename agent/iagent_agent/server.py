@@ -20,6 +20,7 @@ Routes (per spec 04-agent-container §3):
 
 from __future__ import annotations
 
+import asyncio
 import logging
 import os
 from contextlib import asynccontextmanager
@@ -246,12 +247,22 @@ def create_app() -> FastAPI:
         if not state.executor.busy:
             raise HTTPException(status_code=409, detail={"code": "NO_ACTIVE_JOB"})
 
+        # Start the RFB server first and reply immediately. The browser launch
+        # (especially a cloakbrowser Chromium cold start) can take many seconds,
+        # which would otherwise block this response past the gateway's wait window
+        # and surface as "vnc_open_timeout". Launch the browser in the background
+        # so the VNC stream becomes viewable right away.
         rfb_password = state.vnc.start()
-        if getattr(state, "browser_type", "") == "cloakbrowser":
-            import asyncio
-            await asyncio.to_thread(state.browser.launch_headless)
-        else:
-            state.browser.launch_headless()
+
+        async def _launch_browser() -> None:
+            try:
+                await asyncio.to_thread(state.browser.launch_headless)
+            except Exception:
+                logger.exception("background browser launch failed")
+
+        # Keep a reference so the task is not garbage-collected before it finishes.
+        state.vnc_browser_task = asyncio.create_task(_launch_browser())
+
         return {"rfb_port": state.vnc.rfb_port, "rfb_password": rfb_password}
 
     @app.post("/vnc/stop", status_code=http_status.HTTP_204_NO_CONTENT)
