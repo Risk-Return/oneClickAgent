@@ -49,7 +49,10 @@ func (s *JobStore) GetByID(ctx context.Context, id model.UUID) (*model.Job, erro
 func (s *JobStore) UpdateStatus(ctx context.Context, id model.UUID, status model.JobStatus) error {
 	now := time.Now().UTC()
 	_, err := s.db.Pool.Exec(ctx,
-		`UPDATE jobs SET status=$2, finished_at=CASE WHEN $2 IN ('succeeded','failed','cancelled') THEN $3 ELSE finished_at END, updated_at=$3 WHERE id=$1`,
+		`UPDATE jobs SET status=$2,
+		 finished_at=CASE WHEN $2 IN ('succeeded','failed','cancelled') THEN $3 ELSE finished_at END,
+		 queue_expires_at=CASE WHEN $2='queued' THEN $3 + interval '1 hour' ELSE queue_expires_at END,
+		 updated_at=$3 WHERE id=$1`,
 		id, status, now,
 	)
 	return err

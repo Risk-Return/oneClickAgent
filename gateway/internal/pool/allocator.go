@@ -362,6 +362,9 @@ func (a *Allocator) ReconcilePool(ctx context.Context, deviceID model.UUID, hell
 		return a.EnsurePoolSize(ctx, deviceID, len(dbAgents))
 	}
 
+	// Device came online — attempt to dequeue any waiting jobs.
+	go a.dequeueNext(context.Background())
+
 	return nil
 }
 
