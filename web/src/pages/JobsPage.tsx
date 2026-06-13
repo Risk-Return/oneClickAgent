@@ -123,10 +123,14 @@ export function JobsPage() {
           label: payload.label as string | undefined,
           loginKind: payload.login_kind as string | undefined,
         });
-        const msg = (payload.login_kind as string) === "qr"
-          ? t("jobs.loginRequiredQR", { origin: payload.origin as string || "site" })
-          : t("jobs.loginRequired", { origin: payload.origin as string || "site" });
-        toast(msg, { action: { label: t("jobs.openBrowser"), onClick: handleOpenVNC } });
+        const kind = payload.login_kind as string;
+        if (kind === "qr") {
+          toast(t("jobs.loginRequiredQR", { origin: payload.origin as string || "site" }), { action: { label: t("jobs.openBrowser"), onClick: handleOpenVNC } });
+        } else if (kind === "browser_ready") {
+          toast(t("jobs.browserReady", "Browser is ready — open VNC to view"), { action: { label: t("jobs.openBrowser"), onClick: handleOpenVNC } });
+        } else {
+          toast(t("jobs.loginRequired", { origin: payload.origin as string || "site" }), { action: { label: t("jobs.openBrowser"), onClick: handleOpenVNC } });
+        }
       }
     });
 
@@ -270,7 +274,9 @@ export function JobsPage() {
               <p className="text-sm font-medium text-amber-900 dark:text-amber-100">
                 {loginRequired.loginKind === "qr"
                   ? t("jobs.loginRequiredQRBanner", { origin: loginRequired.origin || "site" })
-                  : t("jobs.loginRequiredBanner", { origin: loginRequired.origin || "site" })}
+                  : loginRequired.loginKind === "browser_ready"
+                    ? t("jobs.browserReadyBanner", "Browser is ready — open VNC to view the page")
+                    : t("jobs.loginRequiredBanner", { origin: loginRequired.origin || "site" })}
               </p>
             </div>
             <div className="flex gap-2">

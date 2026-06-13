@@ -182,6 +182,11 @@ class JobExecutor:
                 if callback:
                     await callback.post_event(record)
 
+                if hasattr(self._brain, "set_browser_ready_callback"):
+                    async def _on_browser_ready(kind: str) -> None:
+                        self.post_event({"type": kind})
+                    self._brain.set_browser_ready_callback(_on_browser_ready)
+
                 result = await self._brain.run(ctx, emit)
 
                 record.status = JobState.SUCCEEDED

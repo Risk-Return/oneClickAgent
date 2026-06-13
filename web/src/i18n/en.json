@@ -100,6 +100,8 @@
     "result": "Result",
     "cancelJob": "Cancel job",
     "openBrowser": "Open Browser",
+    "browserReady": "Browser is ready — open VNC to view",
+    "browserReadyBanner": "Browser is ready — open VNC to view the page",
     "jobNotFound": "Job not found",
     "backToCommand": "Back to command",
     "queueFull": "Too many queued jobs — cancel one or wait.",

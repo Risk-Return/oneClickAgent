@@ -4,6 +4,7 @@ import logging
 import os
 import shutil
 from pathlib import Path
+from typing import Awaitable, Callable, Optional
 
 from iagent_agent.adapter.protocol import JobContext, JobResult, ProgressEmitter
 
@@ -22,6 +23,10 @@ Write all output files to {output_dir}. Create a summary at {output_dir}/summary
 class OpenCodeBrain:
     def __init__(self):
         self._procs: dict[str, asyncio.subprocess.Process] = {}
+        self._browser_ready_cb: Optional[Callable[[str], Awaitable[None]]] = None
+
+    def set_browser_ready_callback(self, cb: Callable[[str], Awaitable[None]]) -> None:
+        self._browser_ready_cb = cb
 
     async def run(self, ctx: JobContext, emit: ProgressEmitter) -> JobResult:
         Path(ctx.output_dir).mkdir(parents=True, exist_ok=True)
@@ -141,11 +146,23 @@ class OpenCodeBrain:
                 await emit(last_pct, text[:200])
 
     async def _stream_stderr(self, job_id: str) -> None:
+        import re
+        _browser_ready_re = re.compile(r"\[BROWSER_READY\]")
+        _browser_error_re = re.compile(r"\[BROWSER_ERROR\]")
         try:
             async for line in self._read_lines(self._stderr):
                 text = line.decode(errors="replace").strip()
-                if text:
-                    logger.info("opencode[%s][stderr]: %s", job_id, text[:500])
+                if not text:
+                    continue
+                logger.info("opencode[%s][stderr]: %s", job_id, text[:500])
+                if _browser_ready_re.search(text):
+                    logger.info("opencode[%s]: browser_ready detected", job_id)
+                    if self._browser_ready_cb:
+                        await self._browser_ready_cb("browser_ready")
+                elif _browser_error_re.search(text):
+                    logger.warning("opencode[%s]: browser_error detected", job_id)
+                    if self._browser_ready_cb:
+                        await self._browser_ready_cb("browser_error")
         except asyncio.CancelledError:
             pass
 

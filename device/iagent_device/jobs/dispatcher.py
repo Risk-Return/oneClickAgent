@@ -155,7 +155,7 @@ class JobDispatcher:
                     })
                     last_percent = percent
 
-                # Poll agent events for login_required
+                # Poll agent events for login_required and browser_ready
                 try:
                     events_data = await client.get_job_events(job_id, since=last_event_seq + 1)
                     for evt in events_data.get("events", []):
@@ -170,6 +170,26 @@ class JobDispatcher:
                                 "origin": evt.get("origin", ""),
                                 "label": evt.get("label", ""),
                                 "login_kind": evt.get("login_kind", "unknown"),
+                            })
+                        elif evt_type == "browser_ready":
+                            await self.outbox.enqueue_and_send(FrameType.JOB_LOGIN_REQUIRED, {
+                                "job_id": job_id,
+                                "event_seq": evt.get("event_seq", 0),
+                                "origin": status_data.get("message", ""),
+                                "login_kind": "browser_ready",
+                            })
+                            try:
+                                await client.vnc_start()
+                                logger.info("pre-started VNC on browser_ready for job %s", job_id)
+                            except Exception:
+                                logger.debug("VNC pre-start skipped for job %s (may already be running)", job_id)
+                        elif evt_type == "browser_error":
+                            await self.outbox.enqueue_and_send(FrameType.JOB_PROGRESS, {
+                                "job_id": job_id,
+                                "status": "running",
+                                "percent": percent,
+                                "event_seq": evt.get("event_seq", event_seq),
+                                "message": "Browser failed to launch",
                             })
                 except Exception:
                     logger.debug("failed to poll agent events for job %s", job_id)
