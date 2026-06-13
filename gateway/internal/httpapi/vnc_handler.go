@@ -57,7 +57,7 @@ func (deps *Dependencies) handleOpenVNC() http.HandlerFunc {
 		} else if r.TLS == nil {
 			scheme = "ws"
 		}
-		wsPath := "/ws/vnc/" + sess.ID.String()
+		wsPath := deps.Config.PathPrefix + "/ws/vnc/" + sess.ID.String()
 		wsURL := scheme + "://" + r.Host + wsPath + "?token=" + token
 
 		// Send VNC_OPEN over tunnel
@@ -65,7 +65,7 @@ func (deps *Dependencies) handleOpenVNC() http.HandlerFunc {
 			SessionID:    sess.ID,
 			AgentID:      *job.AgentID,
 			JobID:        jobID,
-			RelayURL:     scheme + "://" + r.Host + "/session/" + sess.ID.String(),
+			RelayURL:     scheme + "://" + r.Host + deps.Config.PathPrefix + "/session/" + sess.ID.String(),
 			SessionToken: token,
 			TTLSecs:      maxTTL,
 		})
@@ -311,7 +311,7 @@ func (deps *Dependencies) handleGetJobVNC() http.HandlerFunc {
 
 				if live.RFBPassword != "" {
 					resp.RFBPassword = &live.RFBPassword
-					wsURL := scheme + "://" + r.Host + "/ws/vnc/" + sess.ID.String()
+					wsURL := scheme + "://" + r.Host + deps.Config.PathPrefix + "/ws/vnc/" + sess.ID.String()
 					resp.WSUrl = &wsURL
 				}
 

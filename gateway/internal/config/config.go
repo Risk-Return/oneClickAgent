@@ -41,6 +41,7 @@ type Config struct {
 	FileRetentionHours     int           `env:"IAGENT_FILE_RETENTION_HOURS" envDefault:"24"`
 	JobResultRetentionDays int           `env:"IAGENT_JOB_RESULT_RETENTION_DAYS" envDefault:"90"`
 	WebDistDir             string        `env:"IAGENT_WEB_DIST_DIR"`
+	PathPrefix             string        `env:"IAGENT_PATH_PREFIX"`
 
 	// VNC session config
 	VNCIdleTTLSecs       int    `env:"IAGENT_VNC_IDLE_TTL" envDefault:"300"`
