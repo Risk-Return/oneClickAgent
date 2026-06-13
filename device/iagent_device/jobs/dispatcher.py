@@ -137,7 +137,6 @@ class JobDispatcher:
         while time.monotonic() < deadline:
             try:
                 status_data = await client.get_job(job_id)
-                consecutive_failures = 0
                 status = status_data.get("status", "running")
                 percent = status_data.get("percent", 0)
                 message = status_data.get("message", "")
@@ -209,6 +208,7 @@ class JobDispatcher:
                             "error_msg": _error_message(status_data.get("error"), status),
                         })
                     return
+                consecutive_failures = 0
             except Exception:
                 consecutive_failures += 1
                 if consecutive_failures >= 5:
