@@ -338,8 +338,10 @@ async def _graceful_shutdown():
 
 
 def main():
+    import os as _os
+    _log_level = getattr(logging, _os.environ.get("IAGENT_LOG_LEVEL", "INFO").upper(), logging.INFO)
     logging.basicConfig(
-        level=logging.INFO,
+        level=_log_level,
         format="%(asctime)s [%(name)s] %(levelname)s: %(message)s",
         handlers=[
             logging.StreamHandler(),
