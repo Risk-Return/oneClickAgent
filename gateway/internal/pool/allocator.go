@@ -365,7 +365,56 @@ func (a *Allocator) ReconcilePool(ctx context.Context, deviceID model.UUID, hell
 	// Device came online — attempt to dequeue any waiting jobs.
 	go a.dequeueNext(context.Background())
 
+	// Re-dispatch any jobs that were dispatched to this device's agents
+	// but never received JOB_ACCEPTED (likely lost during a tunnel drop).
+	// Only re-dispatch if the job has been in "dispatched" state for at
+	// least 15 seconds (enough time for a connection to die + reconnect).
+	a.redispatchLostJobs(ctx, deviceID, dbAgents)
+
 	return nil
+}
+
+// redispatchLostJobs finds jobs in "dispatched" state for this device's agents
+// that haven't progressed to "running" and re-sends JOB_DISPATCH frames.
+// This covers the case where the dispatch frame was sent but the tunnel dropped
+// before the device could acknowledge it.
+func (a *Allocator) redispatchLostJobs(ctx context.Context, deviceID model.UUID, dbAgents []model.Agent) {
+	const redispatchAfter = 15 * time.Second
+
+	for _, agent := range dbAgents {
+		activeJobs, err := a.jobs.ListByAgent(ctx, agent.ID)
+		if err != nil {
+			a.logger.Error("redispatch: list jobs by agent error", "error", err, "agent_id", agent.ID)
+			continue
+		}
+
+		for _, job := range activeJobs {
+			if job.Status != model.JobDispatched {
+				continue
+			}
+			if job.StartedAt == nil {
+				continue
+			}
+			if time.Since(*job.StartedAt) < redispatchAfter {
+				continue
+			}
+
+			a.logger.Info("re-dispatching lost job after device reconnect",
+				"job_id", job.ID,
+				"agent_id", agent.ID,
+				"dispatched_at", job.StartedAt,
+			)
+
+			if err := a.dispatchJob(ctx, &job, &agent); err != nil {
+				a.logger.Error("redispatch: send frame error", "error", err, "job_id", job.ID)
+				continue
+			}
+
+			if a.pushCredentials != nil {
+				_ = a.pushCredentials(ctx, job.ID, agent.ID, agent.DeviceID)
+			}
+		}
+	}
 }
 
 // DrainAgent marks an agent for drain (stop container and remove).

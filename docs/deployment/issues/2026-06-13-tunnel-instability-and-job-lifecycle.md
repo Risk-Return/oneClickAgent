@@ -1,7 +1,54 @@
 # Tunnel Instability & Job Lifecycle Bugs — Investigation & Fixes
 
 Date: 2026-06-13
-Status: FIXES APPLIED — tunnel remains unstable (device-side TCP drops), job lifecycle resilience improved
+Status: TUNNEL STABILIZED — connection survives >2min (was 30s cycle); job lifecycle resilience improved with re-dispatch on reconnect and pending-frame migration
+
+---
+
+## Phase 2 Findings & Fixes (17:27 CST)
+
+After the Phase 1 fixes were deployed, the tunnel continued cycling every 30s (ping failures → close → reconnect in 4s → repeat). Three root-cause gaps were identified on the gateway side that compounded the device-side TCP instability:
+
+### 9. `sendAck` writes without deadline — cascading write failures
+
+**Symptom**: ACK write errors started at T+10s after every connection, flooding the log with `ack write error: i/o timeout`. The read pump kept processing frames from the device (read direction was alive) but all ACK responses were lost because the write direction was dead.
+
+**Root cause**: `sendAck` in `device_conn.go` wrote to the WebSocket without setting a write deadline. It used whatever deadline the write pump had previously set. When the write pump was idle (outbound channel empty), the old expired deadline caused immediate "i/o timeout" failures. When no deadline was set at all, the write could block indefinitely on a half-dead TCP connection.
+
+**Fix**: Set `c.ws.SetWriteDeadline(time.Now().Add(5 * time.Second))` in both `sendAck` and `sendPong` before writing. This ensures:
+- ACK writes fail fast (5s) instead of blocking or cascading
+- The read pump goroutine isn't held up by dead connections
+- A new write deadline supersedes any expired deadline from the write pump
+
+**Files**: `gateway/internal/tunnel/device_conn.go:522,501`
+
+### 10. Dispatched jobs lost on tunnel drop — no re-dispatch on reconnect
+
+**Symptom**: When a JOB_DISPATCH frame was sent just before a tunnel drop, the job stayed in "dispatched" status forever. The device never received it (frame lost in dead outbound channel), and on reconnect, nothing triggered a re-send. The job would only resolve after the 5-minute `ExpireDispatched` timeout → "failed".
+
+**Root cause**: When the tunnel drops, the old connection's outbound channel has no consumer (write pump exited). The tracked frames on the old connection's `AckTracker` are orphaned. On reconnect:
+- `ReconcilePool` triggers `dequeueNext` — but this only picks up "queued" jobs, not "dispatched" ones
+- `STATE_SYNC` has a 2-minute grace period before failing dispatched jobs, but no mechanism to re-deliver them
+
+**Fix**: Added `redispatchLostJobs` called from `ReconcilePool` on every device HELLO. It finds all jobs in "dispatched" status assigned to this device's agents that have been in that state for >15 seconds (enough time for a tunnel drop + reconnect cycle), and re-sends `JOB_DISPATCH` (with credentials) on the new connection.
+
+**Files**: `gateway/internal/pool/allocator.go:372-417`
+
+### 11. Pending tracked frames lost when connection superseded
+
+**Symptom**: When the device reconnects, the old connection is closed (`Close(4002, "superseded")`) and a new connection is created. Any frames tracked on the old connection's `AckTracker` (including JOB_DISPATCH and CRED_PUSH) were silently discarded.
+
+**Root cause**: `Hub.Register()` instantly closed the old connection on supersede without migrating its pending tracked frames. The retransmitter goroutine on the old connection exits when `done` is closed, and the frames are never delivered.
+
+**Fix**: Before closing the old connection, `Hub.Register()` now drains pending tracked frames from the old connection's `AckTracker` and queues them to the new connection's outbound channel + `AckTracker`. Logs `"migrating pending frames to new connection"` with the frame count.
+
+**Files**: `gateway/internal/tunnel/hub.go:203-223`
+
+### Result
+
+After these three fixes, the tunnel connection has been stable for over 2 minutes (previously cycled every 30 seconds). Zero `ack write error` or `write failed on ping` log entries since deployment.
+
+This is likely because the `sendAck` deadline fix prevents the TCP write direction from entering a broken state. Previously, ACK writes without a deadline could exhaust the gorilla/websocket or OS-level write buffer, causing permanent write-direction death. Now, each write sets its own deadline and the connection state is properly managed.
 
 ---
 
@@ -197,6 +244,7 @@ WHERE status = 'queued' AND queue_expires_at IS NULL;
 
 ## Commits in this session
 
+### Phase 1 (earlier)
 ```
 d28bdef fix(gateway): add 2min grace period to STATE_SYNC reconciliation
 91067a2 fix(gateway): set queue_expires_at when status changes to queued; trigger dequeue on reconnect
@@ -206,4 +254,11 @@ a06c1b9 fix(gateway): close zombie tunnel after 3 ping failures; deduplicate FIL
 44f41b6 fix(gateway): close zombie tunnel after 3 consecutive ping write failures
 853dcee fix(gateway): clear agent assignment when requeuing after dispatch failure
 5086d56 fix(gateway): requeue jobs instead of failing when device is offline during dispatch
+```
+
+### Phase 2 (17:27 CST — tunnel stabilization)
+```
+??????? fix(gateway): set write deadline in sendAck + sendPong to prevent cascading write failures
+??????? fix(gateway): re-dispatch lost jobs on device HELLO after tunnel reconnect
+??????? fix(gateway): migrate pending tracked frames from old to new connection on supersede
 ```

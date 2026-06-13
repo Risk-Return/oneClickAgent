@@ -204,6 +204,28 @@ func (h *Hub) Register(conn *DeviceConn) {
 		h.logger.Warn("superseding existing device connection",
 			"device_id", conn.DeviceID(),
 		)
+		// Migrate pending tracked frames from the old connection to the new one.
+		// Without this, frames sent just before the tunnel drop (e.g. JOB_DISPATCH
+		// or CRED_PUSH) would be lost — the old connection's write pump is dead
+		// and the new connection never gets them.
+		pending := supersede.acks.Pending()
+		if len(pending) > 0 {
+			h.logger.Info("migrating pending frames to new connection",
+				"device_id", conn.DeviceID(),
+				"count", len(pending),
+			)
+			for _, tf := range pending {
+				conn.acks.Track(tf.Frame)
+				select {
+				case conn.outbound <- tf.Frame:
+				default:
+					h.logger.Warn("outbound queue full during pending frame migration",
+						"device_id", conn.DeviceID(),
+						"msg_id", tf.MsgID,
+					)
+				}
+			}
+		}
 		supersede.Close(4002, "superseded")
 	}
 

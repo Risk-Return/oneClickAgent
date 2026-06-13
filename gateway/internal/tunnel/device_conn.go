@@ -498,6 +498,7 @@ func (c *DeviceConn) sendPong() error {
 	}
 	c.mu.Lock()
 	defer c.mu.Unlock()
+	c.ws.SetWriteDeadline(time.Now().Add(5 * time.Second))
 	return c.ws.WriteMessage(websocket.TextMessage, data)
 }
 
@@ -520,6 +521,7 @@ func (c *DeviceConn) sendAck(msgID string) {
 	}
 	c.mu.Lock()
 	defer c.mu.Unlock()
+	c.ws.SetWriteDeadline(time.Now().Add(5 * time.Second))
 	if err := c.ws.WriteMessage(websocket.TextMessage, data); err != nil {
 		c.logger.Error("ack write error", "error", err)
 	}
