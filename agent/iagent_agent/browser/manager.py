@@ -233,7 +233,6 @@ class VNCStack:
                 "x11vnc",
                 "-display", self._display,
                 "-rfbport", str(self._rfb_port),
-                "-localhost",
                 "-nopw",
                 "-shared",
                 "-forever",
