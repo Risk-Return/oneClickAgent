@@ -106,7 +106,7 @@ class DockerManager:
                 remove=False,
                 volumes=[workspace_mount],
                 tmpfs={"/tmp": "exec", "/run": "exec,rw"},
-                pids_limit=256,
+                pids_limit=512,
                 environment=self.agent_env,
             )
             return container.id
