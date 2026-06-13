@@ -134,15 +134,28 @@ class OpenCodeBrain:
         )
 
     async def _stream_output(self, job_id: str, proc: asyncio.subprocess.Process, emit: ProgressEmitter) -> None:
+        import re
+        _browser_ready_re = re.compile(r"\[BROWSER_READY\]")
+        _browser_error_re = re.compile(r"\[BROWSER_ERROR\]")
         last_pct = 10
         async for line in self._read_lines(proc.stdout):
             text = line.decode(errors="replace").strip()
             if not text:
                 continue
             logger.info("opencode[%s]: %s", job_id, text[:500])
+            if _browser_ready_re.search(text):
+                logger.info("opencode[%s]: browser_ready detected on stdout", job_id)
+                if self._browser_ready_cb:
+                    await self._browser_ready_cb("browser_ready")
+            elif _browser_error_re.search(text):
+                logger.warning("opencode[%s]: browser_error detected on stdout", job_id)
+                if self._browser_ready_cb:
+                    await self._browser_ready_cb("browser_error")
             pct = self._guess_progress(text)
             if pct is not None and pct > last_pct:
                 last_pct = min(pct, 90)
+                await emit(last_pct, text[:200])
+            elif pct is None:
                 await emit(last_pct, text[:200])
 
     async def _stream_stderr(self, job_id: str) -> None:
