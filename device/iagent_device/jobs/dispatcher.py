@@ -196,13 +196,13 @@ class JobDispatcher:
                             logger.exception("pull_outputs failed for job %s", job_id)
 
                     if status == "succeeded":
-                        await self.outbox.enqueue_and_send(FrameType.JOB_RESULT, {
+                        await self.outbox.enqueue(FrameType.JOB_RESULT, {
                             "job_id": job_id,
                             "status": "succeeded",
                             "result": result_data,
                         })
                     else:
-                        await self.outbox.enqueue_and_send(FrameType.JOB_RESULT, {
+                        await self.outbox.enqueue(FrameType.JOB_RESULT, {
                             "job_id": job_id,
                             "status": status,
                             "error_msg": _error_message(status_data.get("error"), status),
