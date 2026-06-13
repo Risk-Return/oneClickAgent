@@ -139,8 +139,18 @@ func (deps *Dependencies) handleSubmitJob() http.HandlerFunc {
 		}
 		if dispatchFailed {
 			_ = deps.Allocator.Release(r.Context(), agent.ID)
-			_ = deps.Jobs.UpdateStatus(r.Context(), job.ID, model.JobFailed)
-			writeError(w, http.StatusServiceUnavailable, model.ErrCodeInternalError, "failed to dispatch job to device")
+			// Requeue instead of failing — the device may reconnect shortly
+			// and the allocator will retry naturally.
+			_ = deps.Jobs.UpdateStatus(r.Context(), job.ID, model.JobQueued)
+			pos, _ := deps.Jobs.GetQueuePosition(r.Context(), job.ID)
+			job.QueuePosition = &pos
+			resp := model.JobResponse{Job: *job}
+			if pos > 0 {
+				estWait := pos * 30
+				resp.QueuePosition = &pos
+				resp.EstimatedWaitSeconds = &estWait
+			}
+			writeJSON(w, http.StatusAccepted, resp)
 			return
 		}
 

@@ -170,7 +170,9 @@ func (a *Allocator) dequeueNext(ctx context.Context) {
 		if err := a.dispatchJob(ctx, job, agent); err != nil {
 			a.logger.Error("dispatch error", "error", err, "job_id", job.ID)
 			_ = a.agents.Release(ctx, agent.ID)
-			_ = a.jobs.UpdateStatus(ctx, job.ID, model.JobFailed)
+			// Requeue the job instead of failing immediately — the device
+			// may reconnect shortly and the allocator will retry naturally.
+			_ = a.jobs.UpdateStatus(ctx, job.ID, model.JobQueued)
 			continue
 		}
 
