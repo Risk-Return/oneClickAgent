@@ -138,6 +138,8 @@ class DockerManager:
         agent = self.repo.get_by_id(agent_id)
         if not agent:
             return
+        if agent.get("status") == "creating":
+            return
         url = f"http://127.0.0.1:{agent['port']}"
         client = AgentClient(url)
         ok = await client.healthz()
@@ -150,6 +152,9 @@ class DockerManager:
             else:
                 logger.warning("agent %s unhealthy, restart %d/%d", agent_id, restarts, self.max_restarts)
                 self._restart_container(agent_id)
+        elif agent.get("status") == "unhealthy":
+            self.repo.update_status(agent_id, "idle")
+            logger.info("agent %s recovered to idle", agent_id)
 
     def _restart_container(self, agent_id: str):
         agent = self.repo.get_by_id(agent_id)
