@@ -342,24 +342,52 @@ func (a *Allocator) ReconcilePool(ctx context.Context, deviceID model.UUID, hell
 		}
 	}
 
-	// Only delete creating agents that have been stuck for >2 minutes
+	// Delete creating agents that have been stuck for >2 minutes, AND
+	// delete idle/creating agents that the device no longer reports at all.
+	// (e.g. containers destroyed between sessions, or device restarted).
 	const gracePeriod = 2 * time.Minute
 	cutoff := time.Now().UTC().Add(-gracePeriod)
 	deleted := 0
 	for _, da := range dbAgents {
-		if !helloIDs[da.ID] && da.Status == model.AgentCreating && da.CreatedAt.Before(cutoff) {
-			if err := a.agents.Delete(ctx, da.ID); err != nil {
-				a.logger.Error("failed to delete stuck agent", "agent_id", da.ID, "error", err)
-				continue
+		if !helloIDs[da.ID] {
+			switch da.Status {
+			case model.AgentCreating:
+				if da.CreatedAt.Before(cutoff) {
+					if err := a.agents.Delete(ctx, da.ID); err != nil {
+						a.logger.Error("failed to delete stuck agent", "agent_id", da.ID, "error", err)
+						continue
+					}
+					deleted++
+				}
+			case model.AgentIdle:
+				// Idle agent not on device — container was destroyed.
+				// Delete and re-create so a running container exists for dispatch.
+				if err := a.agents.Delete(ctx, da.ID); err != nil {
+					a.logger.Error("failed to delete stale idle agent", "agent_id", da.ID, "error", err)
+					continue
+				}
+				deleted++
 			}
-			deleted++
 		}
 	}
 
 	if deleted > 0 {
-		a.logger.Info("pool reconciled: deleted stuck agents, re-creating",
-			"device_id", deviceID, "deleted", deleted, "remaining", len(dbAgents)-deleted)
-		return a.EnsurePoolSize(ctx, deviceID, len(dbAgents))
+		desired := len(dbAgents)
+		if desired < 1 {
+			desired = 1
+		}
+		a.logger.Info("pool reconciled: deleted stale agents, re-creating",
+			"device_id", deviceID, "deleted", deleted, "desired", desired)
+		return a.EnsurePoolSize(ctx, deviceID, desired)
+	}
+
+	// If device has no agents at all and the pool is empty, seed it with
+	// at least 1 agent so jobs can be dispatched.
+	remaining, _ := a.agents.CountByDevice(ctx, deviceID)
+	if remaining == 0 {
+		a.logger.Info("pool empty after reconcile, seeding minimum pool",
+			"device_id", deviceID)
+		_ = a.EnsurePoolSize(ctx, deviceID, 1)
 	}
 
 	// Device came online — attempt to dequeue any waiting jobs.
