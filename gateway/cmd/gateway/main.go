@@ -204,11 +204,18 @@ func main() {
 			for _, j := range payload.Jobs {
 				deviceJobs[j.JobID] = true
 			}
+			gracePeriod := 2 * time.Minute
 			agents, _ := agents.ListByDevice(ctx, deviceID)
 			for _, a := range agents {
 				activeJobs, _ := jobs.ListByAgent(ctx, a.ID)
 				for _, j := range activeJobs {
 					if j.Status.IsActive() && !deviceJobs[j.ID] {
+						// Don't fail jobs dispatched within the grace period —
+						// the agent may still be starting up or the dispatch frame
+						// may still be in the outbound queue.
+						if j.StartedAt != nil && time.Since(*j.StartedAt) < gracePeriod {
+							continue
+						}
 						_ = jobs.UpdateResult(ctx, j.ID, model.JobFailed, nil)
 						_ = allocator.Release(ctx, a.ID)
 					}
