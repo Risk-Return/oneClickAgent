@@ -3,6 +3,21 @@
 Use the cloakbrowser Python package for all web automation tasks.
 The browser binary is pre-installed at `/home/app/.cloakbrowser/`.
 
+## Browser Login Helper (recommended)
+
+For any task that requires user login via VNC, use the reusable helper:
+
+```bash
+python3 /home/app/iagent_agent/browser_login.py \
+    --url https://TARGET-SITE.com/login \
+    --output-dir /work/output \
+    --profile-dir /work/profile \
+    --wait-secs 120
+```
+
+Add `--anti-bot` for sites with captcha protection. The script prints `[BROWSER_READY]`
+after page load to signal the web UI.
+
 ## Quick Start
 
 ```python
@@ -12,13 +27,12 @@ browser = launch()
 page = browser.new_page()
 page.goto("https://target-website.com")
 print(page.title())
+print("[BROWSER_READY]")  # signal web UI that browser is visible
 page.screenshot(path="/work/output/screenshot.png", full_page=True)
 browser.close()
 ```
 
 ## Anti-Bot Sites (Captcha Bypass)
-
-For sites that block headless browsers, use this config:
 
 ```python
 from cloakbrowser import launch_persistent_context
@@ -28,15 +42,12 @@ ctx = launch_persistent_context(
     headless=False,
     humanize=True,
     human_preset="careful",
-    args=[
-        "--fingerprint-noise=false",
-        "--fingerprint=42069",
-        "--disable-http2",
-    ],
+    args=["--fingerprint-noise=false", "--fingerprint=42069", "--disable-http2"],
 )
 page = ctx.new_page()
 page.set_viewport_size({"width": 1920, "height": 1080})
 page.goto("https://target-site.com", timeout=30000, wait_until="networkidle")
+print("[BROWSER_READY]")  # signal web UI that browser is visible
 # ... do work ...
 ctx.close()
 ```
@@ -89,4 +100,5 @@ for link in links[:10]:
 
 - Always call `browser.close()` or `ctx.close()` when done
 - Screenshots go to `/work/output/`
+- After page load, print `[BROWSER_READY]` to trigger the web UI VNC prompt
 - The browser window is visible via VNC on display `:99`
