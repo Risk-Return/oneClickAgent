@@ -320,6 +320,16 @@ func (r *FileRelay) OnFilePullBegin(ctx context.Context, deviceID model.UUID, pa
 		return fmt.Errorf("invalid filename: %q", payload.Name)
 	}
 
+	// Deduplicate: if a file with the same name and job already exists,
+	// skip this pull (device may retransmit with a new fileID).
+	existing, _ := r.store.ListByJobAndRole(ctx, payload.JobID, "output")
+	for _, f := range existing {
+		if f.Name == payload.Name {
+			r.sendPullAck(deviceID, payload.FileID, "RECEIVED", "")
+			return nil
+		}
+	}
+
 	r.pullBufs[payload.FileID] = &pullTransfer{
 		fileID:   payload.FileID,
 		jobID:    payload.JobID,
