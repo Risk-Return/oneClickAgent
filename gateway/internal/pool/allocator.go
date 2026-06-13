@@ -172,6 +172,7 @@ func (a *Allocator) dequeueNext(ctx context.Context) {
 			_ = a.agents.Release(ctx, agent.ID)
 			// Requeue the job instead of failing immediately — the device
 			// may reconnect shortly and the allocator will retry naturally.
+			_ = a.jobs.ClearAgent(ctx, job.ID)
 			_ = a.jobs.UpdateStatus(ctx, job.ID, model.JobQueued)
 			continue
 		}

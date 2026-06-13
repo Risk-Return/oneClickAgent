@@ -141,6 +141,7 @@ func (deps *Dependencies) handleSubmitJob() http.HandlerFunc {
 			_ = deps.Allocator.Release(r.Context(), agent.ID)
 			// Requeue instead of failing — the device may reconnect shortly
 			// and the allocator will retry naturally.
+			_ = deps.Jobs.ClearAgent(r.Context(), job.ID)
 			_ = deps.Jobs.UpdateStatus(r.Context(), job.ID, model.JobQueued)
 			pos, _ := deps.Jobs.GetQueuePosition(r.Context(), job.ID)
 			job.QueuePosition = &pos
