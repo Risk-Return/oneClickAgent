@@ -243,7 +243,7 @@ func (c *DeviceConn) StartWritePump(ctx context.Context) {
 			if err != nil {
 				pingFailures++
 				c.logger.Warn("write failed on ping, continuing", "error", err, "consecutive", pingFailures)
-				if pingFailures >= 3 {
+				if pingFailures >= 2 {
 					c.logger.Error("write pump ping failures exceeded threshold, closing connection", "failures", pingFailures)
 					return
 				}
