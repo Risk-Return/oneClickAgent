@@ -227,6 +227,8 @@ func (c *DeviceConn) StartWritePump(ctx context.Context) {
 	wsPingTicker := time.NewTicker(15 * time.Second)
 	defer wsPingTicker.Stop()
 
+	var pingFailures int
+
 	for {
 		select {
 		case <-ctx.Done():
@@ -239,7 +241,14 @@ func (c *DeviceConn) StartWritePump(ctx context.Context) {
 			err := c.ws.WriteMessage(websocket.PingMessage, nil)
 			c.mu.Unlock()
 			if err != nil {
-				c.logger.Warn("write failed on ping, continuing", "error", err)
+				pingFailures++
+				c.logger.Warn("write failed on ping, continuing", "error", err, "consecutive", pingFailures)
+				if pingFailures >= 3 {
+					c.logger.Error("write pump ping failures exceeded threshold, closing connection", "failures", pingFailures)
+					return
+				}
+			} else {
+				pingFailures = 0
 			}
 		case frame, ok := <-c.outbound:
 			if !ok {
@@ -260,6 +269,7 @@ func (c *DeviceConn) StartWritePump(ctx context.Context) {
 				c.logger.Error("write error", "error", writeErr)
 				return
 			}
+			pingFailures = 0
 		}
 	}
 }
