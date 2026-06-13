@@ -210,8 +210,10 @@ class VNCStack:
         return self._rfb_password
 
     def ensure_xvfb(self) -> None:
-        if self._xvfb is not None and self._xvfb.poll() is None:
-            return
+        if self._xvfb is not None:
+            if self._xvfb.poll() is None:
+                return
+            self._xvfb.wait()
         self._xvfb = subprocess.Popen(
             ["Xvfb", self._display, "-screen", "0", "1280x720x24"],
             stdout=subprocess.DEVNULL,
@@ -253,15 +255,13 @@ class VNCStack:
         return self._rfb_password
 
     def stop(self) -> None:
-        for proc in (self._x11vnc, self._xvfb):
-            if proc and proc.poll() is None:
-                proc.terminate()
-                try:
-                    proc.wait(timeout=5)
-                except subprocess.TimeoutExpired:
-                    proc.kill()
+        if self._x11vnc and self._x11vnc.poll() is None:
+            self._x11vnc.terminate()
+            try:
+                self._x11vnc.wait(timeout=5)
+            except subprocess.TimeoutExpired:
+                self._x11vnc.kill()
         self._x11vnc = None
-        self._xvfb = None
         self._running = False
         self._rfb_password = None
         logger.info("VNC stack stopped")
