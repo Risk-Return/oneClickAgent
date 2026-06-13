@@ -18,6 +18,10 @@ class Outbox:
         self.repo = repo
         self.send_fn = send_fn  # async or sync function to send a frame
 
+    async def enqueue(self, frame_type: FrameType, payload: dict):
+        msg_id = new_msg_id()
+        self.repo.enqueue(msg_id, str(frame_type), payload)
+
     async def enqueue_and_send(self, frame_type: FrameType, payload: dict):
         msg_id = new_msg_id()
         self.repo.enqueue(msg_id, str(frame_type), payload)
