@@ -227,7 +227,6 @@ class VNCStack:
             return self._rfb_password or ""
 
         self.ensure_xvfb()
-        self._rfb_password = secrets.token_urlsafe(16)
 
         self._x11vnc = subprocess.Popen(
             [
@@ -235,7 +234,6 @@ class VNCStack:
                 "-display", self._display,
                 "-rfbport", str(self._rfb_port),
                 "-localhost",
-                "-passwd", self._rfb_password,
                 "-nopw",
                 "-shared",
                 "-forever",

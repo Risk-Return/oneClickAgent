@@ -50,6 +50,7 @@ class VNCBridge:
             vnc_info = await client.vnc_start()
             rfb_port = vnc_info.get("rfb_port", 5900)
             rfb_password = vnc_info.get("rfb_password", "")
+            container_ip = self.docker.get_container_ip(agent_id)
 
             self.repo.update_status(session_id, "ready", rfb_port, rfb_password)
 
@@ -60,7 +61,7 @@ class VNCBridge:
             })
 
             task = asyncio.create_task(
-                self._bridge(session_id, relay_url, session_token, rfb_port, agent_id, ttl_s)
+                self._bridge(session_id, relay_url, session_token, rfb_port, agent_id, ttl_s, container_ip)
             )
             self._sessions[session_id] = task
         except Exception as e:
@@ -71,7 +72,7 @@ class VNCBridge:
                 "error": str(e),
             })
 
-    async def _bridge(self, session_id: str, relay_url: str, session_token: str, rfb_port: int, agent_id: str, ttl_s: int = 0):
+    async def _bridge(self, session_id: str, relay_url: str, session_token: str, rfb_port: int, agent_id: str, ttl_s: int = 0, container_ip: str = "127.0.0.1"):
         try:
             async with ws_connect(
                 relay_url,
@@ -80,7 +81,7 @@ class VNCBridge:
                 max_size=BACKPRESSURE_BUFFER * 2,
             ) as ws:
                 reader, writer = await asyncio.wait_for(
-                    asyncio.open_connection("127.0.0.1", rfb_port),
+                    asyncio.open_connection(container_ip, rfb_port),
                     timeout=self.dial_timeout,
                 )
 

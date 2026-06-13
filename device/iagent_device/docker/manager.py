@@ -134,6 +134,21 @@ class DockerManager:
     def _release_port(self, port: int):
         self._allocated_ports.discard(port)
 
+    def get_container_ip(self, agent_id: str) -> str:
+        agent = self.repo.get_by_id(agent_id)
+        if not agent or not self.docker:
+            return "127.0.0.1"
+        try:
+            c = self.docker.containers.get(agent["container_id"])
+            nets = c.attrs.get("NetworkSettings", {}).get("Networks", {})
+            for net in nets.values():
+                ip = net.get("IPAddress", "")
+                if ip:
+                    return ip
+        except Exception:
+            pass
+        return "127.0.0.1"
+
     async def health_check(self, agent_id: str):
         agent = self.repo.get_by_id(agent_id)
         if not agent:
