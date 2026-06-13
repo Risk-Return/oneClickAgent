@@ -254,6 +254,12 @@ func (h *Hub) SendFrame(deviceID model.UUID, frame model.Frame) error {
 		return fmt.Errorf("device %s is offline on this node", deviceID)
 	}
 
+	// Reject if the write pump has already exited — the frame would
+	// sit in the outbound queue forever with no consumer.
+	if conn.closed.Load() {
+		return fmt.Errorf("device %s connection closed", deviceID)
+	}
+
 	// Track non-ACK frames for retransmission (spec §2).
 	if frame.Type != model.FrameAck {
 		conn.acks.Track(frame)
