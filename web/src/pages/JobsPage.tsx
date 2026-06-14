@@ -82,14 +82,15 @@ export function JobsPage() {
     ws.connect();
 
     ws.subscribe(`job:${detailJobId}`, (event) => {
+      const payload = event.payload ?? {};
       if (event.type === "job.progress") {
         setLiveJob((prev) => {
           if (!prev) return prev;
           return {
             ...prev,
-            status: (event.payload.status as JobStatus) || prev.status,
-            percent: (event.payload.percent as number) ?? prev.percent,
-            progress_message: (event.payload.message as string) ?? prev.progress_message,
+            status: (payload.status as JobStatus) || prev.status,
+            percent: (payload.percent as number) ?? prev.percent,
+            progress_message: (payload.message as string) ?? prev.progress_message,
           };
         });
       }
@@ -98,8 +99,8 @@ export function JobsPage() {
           if (!prev) return prev;
           return {
             ...prev,
-            queue_position: (event.payload.queue_position as number) ?? prev.queue_position,
-            estimated_wait_seconds: (event.payload.estimated_wait_seconds as number) ?? prev.estimated_wait_seconds,
+            queue_position: (payload.queue_position as number) ?? prev.queue_position,
+            estimated_wait_seconds: (payload.estimated_wait_seconds as number) ?? prev.estimated_wait_seconds,
           };
         });
       }
@@ -108,16 +109,15 @@ export function JobsPage() {
           if (!prev) return prev;
           return {
             ...prev,
-            status: (event.payload.status as JobStatus) || prev.status,
-            result: (event.payload.result as Record<string, unknown>) || prev.result,
+            status: (payload.status as JobStatus) || prev.status,
+            result: (payload.result as Record<string, unknown>) || prev.result,
           };
         });
-        if (event.payload.status === "succeeded") toast.success(t("jobs.jobCompleted"));
-        else if (event.payload.status === "failed") toast.error(t("jobs.jobFailed"));
+        if (payload.status === "succeeded") toast.success(t("jobs.jobCompleted"));
+        else if (payload.status === "failed") toast.error(t("jobs.jobFailed"));
         setLoginRequired(null);
       }
       if (event.type === "job.login_required") {
-        const payload = event.payload as Record<string, unknown>;
         setLoginRequired({
           origin: (payload.origin as string) || "",
           label: payload.label as string | undefined,
