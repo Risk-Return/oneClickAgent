@@ -36,6 +36,7 @@ export class WSClient {
       try {
         const event = JSON.parse(msg.data) as WSEvent;
         this.handlers.get(event.type)?.forEach((h) => h(event));
+        if (event.topic) this.handlers.get(event.topic)?.forEach((h) => h(event));
         this.handlers.get("*")?.forEach((h) => h(event));
       } catch {
         // ignore parse errors

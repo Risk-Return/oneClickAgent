@@ -296,6 +296,7 @@ export const WSMessage = z.discriminatedUnion("type", [
 
 export const WSEvent = z.object({
   type: z.string(),
+  topic: z.string().optional(),
   payload: z.record(z.unknown()),
 });
 export type WSEvent = z.infer<typeof WSEvent>;

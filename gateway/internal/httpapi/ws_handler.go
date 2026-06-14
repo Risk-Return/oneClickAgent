@@ -70,6 +70,8 @@ func (deps *Dependencies) handleWebSocket() http.HandlerFunc {
 		activeChs := make(map[string]chan model.WSEvent)
 		var chsMu sync.Mutex
 
+		slog.Info("ws client connected", "user_id", userID, "subscriber_id", subscriberID)
+
 		// Subscribe to user-scoped job topic.
 		jobSub := deps.Broker.Subscribe(pubsub.JobTopic(userID), subscriberID, userID)
 		activeChs["_init"] = jobSub.Ch
@@ -93,6 +95,7 @@ func (deps *Dependencies) handleWebSocket() http.HandlerFunc {
 				if err != nil {
 					continue
 				}
+				slog.Debug("ws write pump sending event", "type", event.Type, "topic", event.Topic)
 				if err := conn.WriteMessage(websocket.TextMessage, data); err != nil {
 					return
 				}
@@ -128,6 +131,7 @@ func (deps *Dependencies) handleWebSocket() http.HandlerFunc {
 							if subscriptionCount >= maxSubs {
 								break
 							}
+							slog.Info("ws client subscribing to topic", "subscriber_id", subscriberID, "topic", topicStr)
 							sub := deps.Broker.Subscribe(topicStr, subscriberID, userID)
 							subscriptionCount++
 							chsMu.Lock()
