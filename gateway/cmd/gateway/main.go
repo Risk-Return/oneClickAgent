@@ -325,6 +325,11 @@ func main() {
 			return fileRelay.OnFilePullEnd(ctx, deviceID, payload)
 		},
 		OnJobLoginRequired: func(ctx context.Context, deviceID model.UUID, payload model.JobLoginRequiredPayload) error {
+			obs.Logger("tunnel").Info("received JOB_LOGIN_REQUIRED",
+				"job_id", payload.JobID,
+				"origin", payload.Origin,
+				"login_kind", payload.LoginKind,
+			)
 			data, _ := json.Marshal(model.WSEventLoginRequiredData{
 				JobID:     payload.JobID.String(),
 				Origin:    payload.Origin,

@@ -17,7 +17,8 @@
     "status": "Status",
     "name": "Name",
     "description": "Description",
-    "created": "Created"
+    "created": "Created",
+    "dismiss": "Dismiss"
   },
   "auth": {
     "signIn": "Sign in",
@@ -109,6 +110,10 @@
     "jobCompleted": "Job completed!",
     "jobFailed": "Job failed",
     "jobExpired": "Job expired in queue. Cancel or resubmit.",
+    "loginRequired": "Login required on {{origin}} — open browser to continue",
+    "loginRequiredQR": "Scan QR code on {{origin}} — open browser to continue",
+    "loginRequiredBanner": "Login needed for {{origin}} — open the browser to continue",
+    "loginRequiredQRBanner": "QR login required for {{origin}} — open the browser to continue",
     "inQueue": "In Queue",
     "queuePosition": "#{{position}} in queue",
     "estWait": "~{{minutes}} min wait",

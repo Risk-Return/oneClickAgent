@@ -124,12 +124,16 @@ export function JobsPage() {
           loginKind: payload.login_kind as string | undefined,
         });
         const kind = payload.login_kind as string;
+        const toastOpts: { action: { label: string; onClick: () => void }; duration?: number } = {
+          action: { label: t("jobs.openBrowser"), onClick: handleOpenVNC },
+          duration: Infinity,
+        };
         if (kind === "qr") {
-          toast(t("jobs.loginRequiredQR", { origin: payload.origin as string || "site" }), { action: { label: t("jobs.openBrowser"), onClick: handleOpenVNC } });
+          toast(t("jobs.loginRequiredQR", { origin: payload.origin as string || "site" }), toastOpts);
         } else if (kind === "browser_ready") {
-          toast(t("jobs.browserReady", "Browser is ready — open VNC to view"), { action: { label: t("jobs.openBrowser"), onClick: handleOpenVNC } });
+          toast(t("jobs.browserReady", "Browser is ready — open VNC to view"), toastOpts);
         } else {
-          toast(t("jobs.loginRequired", { origin: payload.origin as string || "site" }), { action: { label: t("jobs.openBrowser"), onClick: handleOpenVNC } });
+          toast(t("jobs.loginRequired", { origin: payload.origin as string || "site" }), toastOpts);
         }
       }
     });
@@ -268,23 +272,29 @@ export function JobsPage() {
   const renderJobDetail = (job: Job) => (
     <div className="space-y-4">
       {loginRequired && (
-        <div className="rounded-lg border border-amber-200 bg-amber-50 p-4 dark:border-amber-800 dark:bg-amber-950">
-          <div className="flex items-center justify-between">
-            <div>
-              <p className="text-sm font-medium text-amber-900 dark:text-amber-100">
-                {loginRequired.loginKind === "qr"
-                  ? t("jobs.loginRequiredQRBanner", { origin: loginRequired.origin || "site" })
-                  : loginRequired.loginKind === "browser_ready"
-                    ? t("jobs.browserReadyBanner", "Browser is ready — open VNC to view the page")
-                    : t("jobs.loginRequiredBanner", { origin: loginRequired.origin || "site" })}
-              </p>
+        <div className="animate-pulse rounded-lg border-2 border-amber-400 bg-amber-50 p-5 shadow-lg shadow-amber-200/50 dark:border-amber-500 dark:bg-amber-950 dark:shadow-amber-900/30">
+          <div className="flex items-center justify-between gap-3">
+            <div className="flex items-center gap-3">
+              <span className="flex h-8 w-8 items-center justify-center rounded-full bg-amber-500 text-white text-lg font-bold">!</span>
+              <div>
+                <p className="text-base font-bold text-amber-900 dark:text-amber-100">
+                  {loginRequired.loginKind === "qr"
+                    ? t("jobs.loginRequiredQRBanner", { origin: loginRequired.origin || "site" })
+                    : loginRequired.loginKind === "browser_ready"
+                      ? t("jobs.browserReadyBanner", "Browser is ready — open VNC to view the page")
+                      : t("jobs.loginRequiredBanner", { origin: loginRequired.origin || "site" })}
+                </p>
+                <p className="text-sm text-amber-700 dark:text-amber-300">
+                  {t("jobs.openBrowserToProceed", "Open the browser to continue the job")}
+                </p>
+              </div>
             </div>
-            <div className="flex gap-2">
+            <div className="flex gap-2 shrink-0">
               <Button variant="outline" size="sm" onClick={() => setLoginRequired(null)}>
                 <X className="mr-1 h-3 w-3" /> {t("common.dismiss")}
               </Button>
-              <Button size="sm" onClick={handleOpenVNC} disabled={openVNC.isPending}>
-                <Monitor className="mr-1 h-3 w-3" /> {t("jobs.openBrowser")}
+              <Button size="lg" onClick={handleOpenVNC} disabled={openVNC.isPending} className="bg-amber-600 hover:bg-amber-700 text-white font-bold shadow-lg shadow-amber-500/40 dark:bg-amber-500 dark:hover:bg-amber-600 dark:shadow-amber-400/30">
+                <Monitor className="mr-2 h-5 w-5" /> {t("jobs.openBrowser")}
               </Button>
             </div>
           </div>
