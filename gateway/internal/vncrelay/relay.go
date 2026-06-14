@@ -78,19 +78,20 @@ func NewRelay(nodeID string, bufferCap int64, maxPerUser int) *Relay {
 }
 
 // CreateSession initialises a pending VNC session.
+// If a non-closed session already exists for this job, it is returned
+// (idempotent — the frontend may retry VNC open on reconnect).
 func (r *Relay) CreateSession(jobID, userID, deviceID, agentID model.UUID, idleTTL, maxTTL time.Duration) (*Session, string, error) {
 	r.mu.Lock()
 	defer r.mu.Unlock()
 
-	// Enforce per-user concurrency cap
-	count := 0
+	// If there's already a live session for this job, return it with a fresh token.
 	for _, s := range r.sessions {
-		if s.UserID == userID && s.Status.Load() != statusClosed {
-			count++
+		if s.JobID == jobID && s.Status.Load() != statusClosed {
+			newToken := generateSessionToken()
+			s.TokenHash = hashToken(newToken)
+			r.logger.Info("reusing existing VNC session for job", "session_id", s.ID, "job_id", jobID)
+			return s, newToken, nil
 		}
-	}
-	if count >= r.maxPerUser {
-		return nil, "", fmt.Errorf("max %d concurrent VNC sessions per user", r.maxPerUser)
 	}
 
 	sessionID := model.NewUUID()

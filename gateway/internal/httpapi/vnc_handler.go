@@ -44,23 +44,33 @@ func (deps *Dependencies) handleOpenVNC() http.HandlerFunc {
 		idleTTL := deps.Config.VNCIdleTTLSecs
 		maxTTL := deps.Config.VNCMaxTTLSecs
 
-		sess, token, err := deps.VNCRelay.CreateSession(jobID, userID, *job.DeviceID, *job.AgentID, msToDur(idleTTL), msToDur(maxTTL))
-		if err != nil {
-			writeError(w, http.StatusTooManyRequests, model.ErrCodeLimitExceeded, err.Error())
-			return
-		}
+	sess, token, err := deps.VNCRelay.CreateSession(jobID, userID, *job.DeviceID, *job.AgentID, msToDur(idleTTL), msToDur(maxTTL))
+	if err != nil {
+		writeError(w, http.StatusTooManyRequests, model.ErrCodeLimitExceeded, err.Error())
+		return
+	}
 
-		// Build absolute ws_url with scheme + host
-		scheme := "wss"
-		if r.Header.Get("X-Forwarded-Proto") == "https" {
-			scheme = "wss"
-		} else if r.TLS == nil {
-			scheme = "ws"
-		}
-		wsPath := deps.Config.PathPrefix + "/ws/vnc/" + sess.ID.String()
-		wsURL := scheme + "://" + r.Host + wsPath + "?token=" + token
+	// Build absolute ws_url with scheme + host
+	scheme := "wss"
+	if r.Header.Get("X-Forwarded-Proto") == "https" {
+		scheme = "wss"
+	} else if r.TLS == nil {
+		scheme = "ws"
+	}
+	wsPath := deps.Config.PathPrefix + "/ws/vnc/" + sess.ID.String()
+	wsURL := scheme + "://" + r.Host + wsPath + "?token=" + token
 
-		// Send VNC_OPEN over tunnel
+	// If session was reused (already ready/active), return immediately.
+	if sess.Status.Load() != 0 { // 0 = statusPending
+		writeJSON(w, http.StatusCreated, model.VNCOpenResponse{
+			SessionID: sess.ID,
+			WSUrl:     wsURL,
+			TTLSecs:   maxTTL,
+		})
+		return
+	}
+
+	// Send VNC_OPEN over tunnel
 		frame, _ := tunnel.NewFrame(model.FrameVNCOpen, model.VNCOpenPayload{
 			SessionID:    sess.ID,
 			AgentID:      *job.AgentID,
