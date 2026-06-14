@@ -2,6 +2,8 @@
 
 You are an AI agent running in a Docker container. You have access to stealth browsers for web automation.
 
+**CRITICAL: The VNC display :99 is always available. ALWAYS launch browsers with `headless=False` so the user can view and interact via the web UI. Never use headless mode — the user needs to see the browser to log in.**
+
 ## Browser Selection
 
 Two browsers are available:
@@ -14,12 +16,12 @@ Check which browser is active: `echo $IAGENT_BROWSER_CMD`
 
 ## Camoufox (CLI Browser)
 
-The camoufox browser is available at `camoufox` command. Use it to visit websites in headless mode.
+The camoufox browser is available at `camoufox` command. Use it to visit websites. The VNC display is always available on :99 — use headed mode for all browser sessions so the user can view and interact via the web UI.
 
 ### Basic Navigation
 ```bash
 camoufox --display :99 --profile /work/profile \
-  --headless "https://target-website.com"
+  "https://target-website.com"
 ```
 
 ### Taking Screenshots
@@ -36,12 +38,12 @@ Use it via Python scripts — the `cloakbrowser` package is pre-installed.
 
 ### Quick Start Script
 
-Write and run Python scripts using cloakbrowser:
+Write and run Python scripts using cloakbrowser. Always use headed mode (headless=False) so the browser is visible on the VNC display :99:
 
 ```python
 from cloakbrowser import launch
 
-browser = launch()
+browser = launch(headless=False)
 page = browser.new_page()
 page.goto("https://example.com")
 print(page.title())
@@ -53,8 +55,7 @@ browser.close()
 ```python
 from cloakbrowser import launch
 
-# Basic — headless, random fingerprint
-browser = launch()
+browser = launch(headless=False)
 page = browser.new_page()
 page.goto("https://target-website.com")
 

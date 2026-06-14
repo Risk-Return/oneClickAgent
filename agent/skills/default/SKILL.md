@@ -23,7 +23,7 @@ after page load to signal the web UI.
 ```python
 from cloakbrowser import launch
 
-browser = launch()
+browser = launch(headless=False)
 page = browser.new_page()
 page.goto("https://target-website.com")
 print(page.title())
