@@ -19,6 +19,9 @@ import sys
 import time
 from pathlib import Path
 
+sys.stdout.reconfigure(line_buffering=True)
+sys.stderr.reconfigure(line_buffering=True)
+
 
 def parse_args():
     p = argparse.ArgumentParser()
@@ -62,9 +65,9 @@ def main():
 
     page.screenshot(path=str(output_dir / "initial.png"), full_page=True)
 
-    print(f"[BROWSER_READY] {args.url}")
-    print(f"Browser is ready on VNC display :99. Waiting up to {args.wait_secs}s for login...")
-    print(f"Open the web UI VNC viewer to log in.")
+    print(f"[BROWSER_READY] {args.url}", flush=True)
+    print(f"Browser is ready on VNC display :99. Waiting up to {args.wait_secs}s for login...", flush=True)
+    print("Open the web UI VNC viewer to log in.", flush=True)
 
     deadline = time.time() + args.wait_secs
     login_detected = False
@@ -87,7 +90,7 @@ def main():
         if auth_cookies and not login_detected:
             login_detected = True
             print(f"Login detected at +{args.wait_secs - remaining}s. "
-                  f"Still waiting {remaining}s before closing...")
+                  f"Still waiting {remaining}s before closing...", flush=True)
             page.screenshot(path=str(output_dir / "logged_in.png"), full_page=True)
             # Save storage state immediately on login detection
             page.context.storage_state(path=str(profile_dir / "storage_state.json"))
