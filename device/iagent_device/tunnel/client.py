@@ -206,6 +206,8 @@ class TunnelClient:
         handler = self.handlers.get(frame_type) or self.handlers.get("*")
         if handler:
             payload = decode_payload(frame)
+            if str(frame_type) not in ("PONG", "ACK", "PING", "HELLO_ACK"):
+                logger.info("received frame type=%s msg_id=%s", frame_type, frame.get("msg_id", ""))
             await handler(frame_type, payload)
 
     async def _heartbeat_loop(self):

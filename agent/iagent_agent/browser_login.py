@@ -18,9 +18,43 @@ import os
 import sys
 import time
 from pathlib import Path
+from urllib.request import Request, urlopen
+from urllib.error import URLError
 
 sys.stdout.reconfigure(line_buffering=True)
 sys.stderr.reconfigure(line_buffering=True)
+
+AGENT_PORT = int(os.environ.get("IAGENT_AGENT_PORT", "8090"))
+
+
+def _signal_browser_ready(output_dir: Path) -> None:
+    """Post a browser_ready event directly to the agent's HTTP API and start VNC."""
+    job_id = output_dir.parent.name
+    if not job_id or len(job_id) < 20:
+        return
+    try:
+        data = json.dumps({"type": "browser_ready"}).encode()
+        req = Request(
+            f"http://127.0.0.1:{AGENT_PORT}/jobs/{job_id}/events",
+            data=data,
+            headers={"Content-Type": "application/json"},
+            method="POST",
+        )
+        urlopen(req, timeout=5)
+        print(f"[browser_ready posted for job {job_id[:13]}...]", flush=True)
+    except URLError as e:
+        print(f"[browser_ready post failed: {e}]", flush=True)
+    try:
+        req2 = Request(
+            f"http://127.0.0.1:{AGENT_PORT}/vnc/start",
+            data=b"{}",
+            headers={"Content-Type": "application/json"},
+            method="POST",
+        )
+        urlopen(req2, timeout=5)
+        print("[vnc pre-started]", flush=True)
+    except URLError as e:
+        print(f"[vnc pre-start failed: {e}]", flush=True)
 
 
 def parse_args():
@@ -65,6 +99,7 @@ def main():
 
     page.screenshot(path=str(output_dir / "initial.png"), full_page=True)
 
+    _signal_browser_ready(output_dir)
     print(f"[BROWSER_READY] {args.url}", flush=True)
     print(f"Browser is ready on VNC display :99. Waiting up to {args.wait_secs}s for login...", flush=True)
     print("Open the web UI VNC viewer to log in.", flush=True)
