@@ -5,6 +5,7 @@ import (
 	"log/slog"
 	"net/http"
 	"strings"
+	"sync"
 
 	"github.com/gorilla/websocket"
 	"github.com/oneClickAgent/gateway/internal/auth"
@@ -62,8 +63,24 @@ func (deps *Dependencies) handleWebSocket() http.HandlerFunc {
 		subscriptionCount := 1 // jobSub counts as 1
 		maxSubs := deps.Config.WSMaxSubscriptions
 
-		// Subscribe to relevant topics
+		// Fan-in all subscriber channels into a single dispatch channel.
+		// The write pump reads from dispatchCh; the read pump adds/removes
+		// subscribers as the client sends subscribe/unsubscribe messages.
+		dispatchCh := make(chan model.WSEvent, 256)
+		activeChs := make(map[string]chan model.WSEvent)
+		var chsMu sync.Mutex
+
+		// Subscribe to user-scoped job topic.
 		jobSub := deps.Broker.Subscribe(pubsub.JobTopic(userID), subscriberID, userID)
+		activeChs["_init"] = jobSub.Ch
+		go func() {
+			for event := range jobSub.Ch {
+				select {
+				case dispatchCh <- event:
+				default:
+				}
+			}
+		}()
 
 		defer func() {
 			deps.Broker.UnsubscribeAll(subscriberID)
@@ -71,19 +88,13 @@ func (deps *Dependencies) handleWebSocket() http.HandlerFunc {
 
 		// Write pump (send events to client)
 		go func() {
-			for {
-				select {
-				case event, ok := <-jobSub.Ch:
-					if !ok {
-						return
-					}
-					data, err := json.Marshal(event)
-					if err != nil {
-						continue
-					}
-					if err := conn.WriteMessage(websocket.TextMessage, data); err != nil {
-						return
-					}
+			for event := range dispatchCh {
+				data, err := json.Marshal(event)
+				if err != nil {
+					continue
+				}
+				if err := conn.WriteMessage(websocket.TextMessage, data); err != nil {
+					return
 				}
 			}
 		}()
@@ -110,22 +121,44 @@ func (deps *Dependencies) handleWebSocket() http.HandlerFunc {
 
 			msgType, _ := wsMsg["type"].(string)
 			switch msgType {
-		case "subscribe":
-			if topics, ok := wsMsg["topics"].([]interface{}); ok {
-				for _, t := range topics {
-					if topicStr, ok := t.(string); ok && topicStr != "" {
-						if subscriptionCount >= maxSubs {
-							break
+			case "subscribe":
+				if topics, ok := wsMsg["topics"].([]interface{}); ok {
+					for _, t := range topics {
+						if topicStr, ok := t.(string); ok && topicStr != "" {
+							if subscriptionCount >= maxSubs {
+								break
+							}
+							sub := deps.Broker.Subscribe(topicStr, subscriberID, userID)
+							subscriptionCount++
+							chsMu.Lock()
+							activeChs[topicStr] = sub.Ch
+							chsMu.Unlock()
+							go func(ch chan model.WSEvent) {
+								for event := range ch {
+									select {
+									case dispatchCh <- event:
+									default:
+									}
+								}
+							}(sub.Ch)
 						}
-						deps.Broker.Subscribe(topicStr, subscriberID, userID)
-						subscriptionCount++
 					}
 				}
-			}
-			if topic, ok := wsMsg["topic"].(string); ok && topic != "" && subscriptionCount < maxSubs {
-				deps.Broker.Subscribe(topic, subscriberID, userID)
-				subscriptionCount++
-			}
+				if topic, ok := wsMsg["topic"].(string); ok && topic != "" && subscriptionCount < maxSubs {
+					sub := deps.Broker.Subscribe(topic, subscriberID, userID)
+					subscriptionCount++
+					chsMu.Lock()
+					activeChs[topic] = sub.Ch
+					chsMu.Unlock()
+					go func(ch chan model.WSEvent) {
+						for event := range ch {
+							select {
+							case dispatchCh <- event:
+							default:
+							}
+						}
+					}(sub.Ch)
+				}
 		case "unsubscribe":
 			if topics, ok := wsMsg["topics"].([]interface{}); ok {
 				for _, t := range topics {

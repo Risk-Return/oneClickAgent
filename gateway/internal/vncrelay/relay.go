@@ -136,6 +136,7 @@ func (r *Relay) MarkReady(sessionID model.UUID, rfbPassword string) error {
 	sess.RFBPassword = rfbPassword
 	sess.mu.Unlock()
 	sess.Status.Store(statusReady)
+	r.logger.Info("MarkReady", "session_id", sessionID, "has_password", rfbPassword != "")
 
 	// Fire ready channel for async waiters
 	select {
@@ -153,6 +154,7 @@ func (r *Relay) MarkError(sessionID model.UUID, errMsg string) {
 		return
 	}
 	sess.readyErr = errMsg
+	r.logger.Info("MarkError", "session_id", sessionID, "error", errMsg)
 	select {
 	case <-sess.readyCh:
 	default:
@@ -168,20 +170,21 @@ func (r *Relay) WaitReady(sessionID model.UUID, timeout time.Duration) (password
 		return "", fmt.Errorf("session %s not found", sessionID)
 	}
 
+	r.logger.Info("WaitReady waiting for session", "session_id", sessionID, "status", sess.Status.Load(), "readyCh", fmt.Sprintf("%p", sess.readyCh))
+
 	select {
 	case <-sess.readyCh:
 		sess.mu.Lock()
 		password = sess.RFBPassword
 		errMsg := sess.readyErr
 		sess.mu.Unlock()
+		r.logger.Info("WaitReady unblocked", "session_id", sessionID, "has_password", password != "", "error", errMsg, "readyCh", fmt.Sprintf("%p", sess.readyCh))
 		if errMsg != "" {
 			return "", fmt.Errorf("VNC session error: %s", errMsg)
 		}
-		if password == "" {
-			return "", fmt.Errorf("VNC session closed before ready")
-		}
 		return password, nil
 	case <-time.After(timeout):
+		r.logger.Warn("WaitReady timed out", "session_id", sessionID, "timeout", timeout)
 		return "", fmt.Errorf("VNC session timed out waiting for ready")
 	}
 }
